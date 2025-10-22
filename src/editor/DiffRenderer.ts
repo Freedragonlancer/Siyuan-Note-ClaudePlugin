@@ -15,6 +15,12 @@ export class DiffRenderer implements IDiffRenderer {
     /**
      * Set edit history instance for undo functionality
      */
+    private plugin?: any;
+
+    constructor(plugin?: any) {
+        this.plugin = plugin;
+    }
+
     setEditHistory(history: EditHistory): void {
         this.editHistory = history;
     }
@@ -93,65 +99,116 @@ export class DiffRenderer implements IDiffRenderer {
         try {
             console.log(`[AIEdit] Applying changes for selection ${selection.id}`);
 
-            // Get the block element
-            const blockElement = document.querySelector(`[data-node-id="${selection.blockId}"]`);
-            if (!blockElement) {
-                throw new Error(`Block ${selection.blockId} not found`);
-            }
+            const modifiedText = selection.editResult.modified;
 
-            // Get the editable content element
-            const contentElement = blockElement.querySelector('[contenteditable="true"]');
-            if (!contentElement) {
-                throw new Error(`Editable content not found in block ${selection.blockId}`);
-            }
-
-            // Get current content (for history)
-            const originalContent = contentElement.textContent || '';
-            const lines = originalContent.split('\n');
-
-            // Replace the selected lines with modified text
-            const modifiedLines = selection.editResult.modified.split('\n');
-
-            let newContent: string;
-            // Validate line range
-            if (selection.startLine < 0 || selection.endLine >= lines.length) {
-                console.warn(`[AIEdit] Invalid line range: ${selection.startLine}-${selection.endLine}`);
-                // Fallback: replace entire content
-                newContent = selection.editResult.modified;
-                contentElement.textContent = newContent;
-            } else {
-                // Replace specific lines
-                const newLines = [
-                    ...lines.slice(0, selection.startLine),
-                    ...modifiedLines,
-                    ...lines.slice(selection.endLine + 1)
-                ];
-                newContent = newLines.join('\n');
-                contentElement.textContent = newContent;
-            }
-
-            // Add to history before applying
-            if (this.editHistory) {
-                this.editHistory.addToHistory({
-                    selection,
-                    originalContent,
-                    modifiedContent: newContent,
-                    blockId: selection.blockId,
-                    applied: true
+            // Try using SiYuan kernel API first
+            try {
+                const response = await fetch('/api/block/updateBlock', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        id: selection.blockId,
+                        dataType: 'markdown',
+                        data: modifiedText
+                    })
                 });
+
+                const result = await response.json();
+                
+                if (result.code === 0) {
+                    // Add to history after successful update
+                    if (this.editHistory) {
+                        this.editHistory.addToHistory({
+                            selection,
+                            originalContent: selection.selectedText,
+                            modifiedContent: modifiedText,
+                            blockId: selection.blockId,
+                            applied: true
+                        });
+                    }
+
+                    console.log(`[AIEdit] Successfully applied changes via kernel API for selection ${selection.id}`);
+                    return true;
+                } else {
+                    console.warn(`[AIEdit] Kernel API returned error:`, result);
+                    throw new Error(`API error: ${result.msg || 'Unknown error'}`);
+                }
+            } catch (apiError) {
+                console.warn(`[AIEdit] Kernel API failed, falling back to DOM:`, apiError);
+                return await this.applyChangesViaDom(selection);
             }
-
-            // Trigger SiYuan's update mechanism
-            const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-            contentElement.dispatchEvent(inputEvent);
-
-            console.log(`[AIEdit] Successfully applied changes for selection ${selection.id}`);
-            return true;
 
         } catch (error) {
             console.error(`[AIEdit] Error applying changes:`, error);
             throw error instanceof Error ? error : new Error(String(error));
         }
+    }
+
+    /**
+     * Fallback method to apply changes via DOM manipulation
+     */
+    private async applyChangesViaDom(selection: TextSelection): Promise<boolean> {
+        if (!selection.editResult) {
+            return false;
+        }
+
+        // Get the block element
+        const blockElement = document.querySelector(`[data-node-id="${selection.blockId}"]`) as HTMLElement;
+        if (!blockElement) {
+            throw new Error(`Block ${selection.blockId} not found`);
+        }
+
+        // Try multiple selectors to find editable content
+        const selectors = [
+            '[contenteditable="true"]',
+            '.protyle-wysiwyg div[data-node-id]',
+            '[data-type="NodeParagraph"]',
+            '[data-type="NodeHeading"]',
+            '[data-type="NodeList"]',
+            '[data-type="NodeListItem"]'
+        ];
+
+        let contentElement: Element | null = null;
+        for (const selector of selectors) {
+            contentElement = blockElement.querySelector(selector);
+            if (contentElement) break;
+        }
+
+        // If still not found, try the block element itself
+        if (!contentElement && blockElement.getAttribute('contenteditable') === 'true') {
+            contentElement = blockElement;
+        }
+
+        if (!contentElement) {
+            throw new Error(`Editable content not found in block ${selection.blockId}`);
+        }
+
+        // Get current content (for history)
+        const originalContent = contentElement.textContent || '';
+        const modifiedText = selection.editResult.modified;
+
+        // Update the content
+        contentElement.textContent = modifiedText;
+
+        // Add to history before applying
+        if (this.editHistory) {
+            this.editHistory.addToHistory({
+                selection,
+                originalContent,
+                modifiedContent: modifiedText,
+                blockId: selection.blockId,
+                applied: true
+            });
+        }
+
+        // Trigger SiYuan's update mechanism
+        const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+        contentElement.dispatchEvent(inputEvent);
+
+        console.log(`[AIEdit] Successfully applied changes via DOM for selection ${selection.id}`);
+        return true;
     }
 
     /**

@@ -3,6 +3,16 @@
  */
 
 /**
+ * Custom instruction with optional diff display
+ */
+export interface CustomInstruction {
+    /** Instruction text */
+    text: string;
+    /** Whether to show diff comparison */
+    showDiff: boolean;
+}
+
+/**
  * Represents a text selection for AI editing
  */
 export interface TextSelection {
@@ -118,26 +128,14 @@ export interface EditSettings {
     smartContextExtraction: boolean;
 
     /** Custom instruction templates for quick selection */
-    customInstructions: string[];
+    customInstructions: CustomInstruction[];
 }
 
 /**
  * Preset custom instructions for quick selection
+ * Now empty by default - users configure in settings
  */
-export const PRESET_INSTRUCTIONS = [
-    "润色优化文本",
-    "翻译为英文",
-    "翻译为中文",
-    "简化表达，使其更易理解",
-    "扩展详细说明，增加更多细节",
-    "修正语法和拼写错误",
-    "改为更正式的语气",
-    "改为更口语化的表达",
-    "重写为列表格式",
-    "添加代码注释",
-    "代码重构优化",
-    "解释这段代码的功能",
-];
+export const PRESET_INSTRUCTIONS: CustomInstruction[] = [];
 
 /**
  * Default settings for text editing
@@ -153,7 +151,7 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
     maxTextLength: 5000,
     requestTimeout: 30000,
     smartContextExtraction: true,
-    customInstructions: PRESET_INSTRUCTIONS
+    customInstructions: []
 };
 
 /**

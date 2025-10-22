@@ -45,6 +45,11 @@ export class UnifiedAIPanel {
         processingCount: 0
     };
 
+    // Edit mode state
+    private isEditMode: boolean = false;
+    private editModeSelection: TextSelection | null = null;
+    private editModeShowDiff: boolean = true;
+
     // Configuration
     private config: UnifiedPanelConfig;
     private onSettingsCallback?: () => void;
@@ -168,9 +173,7 @@ export class UnifiedAIPanel {
 
             <!-- Messages Container -->
             <div class="claude-messages" id="claude-messages" style="flex: 1; overflow-y: auto; padding: 6px;">
-                <div class="ft__secondary" style="text-align: center; padding: 16px; font-size: 13px;">
-                    Start a conversation with Claude or select text and click the select button above.
-                </div>
+
             </div>
 
             <!-- Compact Input Area -->
@@ -269,6 +272,12 @@ export class UnifiedAIPanel {
             return;
         }
 
+        // Handle edit mode
+        if (this.isEditMode && this.editModeSelection) {
+            await this.processEditModeRequest(userMessage);
+            return;
+        }
+
         if (!this.claudeClient.isConfigured()) {
             this.addSystemMessage("Please configure your Claude API key in settings first.");
             return;
@@ -339,6 +348,45 @@ export class UnifiedAIPanel {
                 this.addChatMessageToUI(assistantMessage);
             }
         );
+    }
+
+    /**
+     * Process edit mode request with user instruction
+     * @param instruction User's editing instruction
+     */
+    private async processEditModeRequest(instruction: string): Promise<void> {
+        if (!this.editModeSelection) return;
+
+        const input = this.element.querySelector("#claude-input") as HTMLTextAreaElement;
+        const sendBtn = this.element.querySelector("#claude-send-btn") as HTMLButtonElement;
+
+        // Clear input
+        input.value = "";
+
+        // Update selection with instruction
+        this.editModeSelection.customInstruction = instruction;
+        
+        // Add to selection manager
+        const selection = this.textSelectionManager.addSelection(
+            this.editModeSelection.blockId,
+            this.editModeSelection.startLine,
+            this.editModeSelection.endLine,
+            this.editModeSelection.selectedText,
+            instruction
+        );
+
+        // Add to edit queue for processing
+        this.editQueue.enqueue(selection);
+        
+        // Update UI
+        this.addEditSelection(selection);
+
+        // Exit edit mode
+        this.exitEditMode();
+
+        // Restore button
+        sendBtn.disabled = false;
+        sendBtn.textContent = '发送';
     }
 
     private addChatMessageToUI(message: ChatMessage) {
@@ -1140,13 +1188,7 @@ export class UnifiedAIPanel {
             }
         });
 
-        if (this.messages.length === 0) {
-            this.messagesContainer.innerHTML = `
-                <div class="ft__secondary" style="text-align: center; padding: 20px;">
-                    Start a conversation with Claude or select text and click the select button above.
-                </div>
-            `;
-        }
+        // No empty state message needed
     }
 
     private truncate(text: string, maxLength: number): string {
@@ -1164,6 +1206,120 @@ export class UnifiedAIPanel {
     //#region Public API
     setProtyle(protyle: any) {
         this.currentProtyle = protyle;
+    }
+
+    /**
+     * Enter edit mode with selected text
+     * @param textSelection The text selection to edit
+     * @param showDiff Whether to show diff comparison
+     */
+    public enterEditMode(textSelection: TextSelection, showDiff: boolean = true): void {
+        this.isEditMode = true;
+        this.editModeSelection = textSelection;
+        this.editModeShowDiff = showDiff;
+        
+        // Update UI to show edit mode
+        this.showEditModeUI();
+    }
+
+    /**
+     * Exit edit mode and return to normal chat
+     */
+    public exitEditMode(): void {
+        this.isEditMode = false;
+        this.editModeSelection = null;
+        
+        // Restore normal chat UI
+        this.restoreNormalUI();
+    }
+
+    /**
+     * Show edit mode UI with text preview
+     */
+    private showEditModeUI(): void {
+        if (!this.editModeSelection) return;
+
+        const inputArea = this.element.querySelector('.claude-input-area') as HTMLElement;
+        if (!inputArea) return;
+
+        // Create preview container if not exists
+        let previewContainer = this.element.querySelector('.edit-mode-preview') as HTMLElement;
+        if (!previewContainer) {
+            previewContainer = document.createElement('div');
+            previewContainer.className = 'edit-mode-preview';
+            inputArea.insertBefore(previewContainer, inputArea.firstChild);
+        }
+
+        // Show text preview (first 100 characters)
+        const preview = this.editModeSelection.selectedText.substring(0, 100);
+        const truncated = this.editModeSelection.selectedText.length > 100 ? '...' : '';
+        
+        previewContainer.innerHTML = `
+            <div class="edit-mode-header">
+                <span class="edit-mode-icon">✏️</span>
+                <span class="edit-mode-title">编辑模式</span>
+                <button class="edit-mode-close" data-action="exit-edit-mode">×</button>
+            </div>
+            <div class="edit-mode-text-preview">
+                <strong>选中文本预览：</strong>
+                <div class="preview-content">${this.escapeHtml(preview)}${truncated}</div>
+            </div>
+            <div class="edit-mode-options">
+                <label>
+                    <input type="checkbox" class="edit-mode-diff-checkbox" ${this.editModeShowDiff ? 'checked' : ''} />
+                    显示对比差异
+                </label>
+            </div>
+        `;
+
+        // Update input placeholder
+        const textarea = this.element.querySelector('#claude-input') as HTMLTextAreaElement;
+        if (textarea) {
+            textarea.placeholder = '请输入编辑指令，然后按发送...';
+            textarea.focus();
+        }
+
+        // Update send button text
+        const sendButton = this.element.querySelector('#claude-send-btn') as HTMLElement;
+        if (sendButton) {
+            sendButton.textContent = '编辑文本';
+        }
+
+        // Attach event listeners
+        const closeBtn = previewContainer.querySelector('.edit-mode-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.exitEditMode());
+        }
+
+        const diffCheckbox = previewContainer.querySelector('.edit-mode-diff-checkbox') as HTMLInputElement;
+        if (diffCheckbox) {
+            diffCheckbox.addEventListener('change', (e) => {
+                this.editModeShowDiff = (e.target as HTMLInputElement).checked;
+            });
+        }
+    }
+
+    /**
+     * Restore normal chat UI
+     */
+    private restoreNormalUI(): void {
+        // Remove preview container
+        const previewContainer = this.element.querySelector('.edit-mode-preview');
+        if (previewContainer) {
+            previewContainer.remove();
+        }
+
+        // Restore input placeholder
+        const textarea = this.element.querySelector('#claude-input') as HTMLTextAreaElement;
+        if (textarea) {
+            textarea.placeholder = '输入消息...';
+        }
+
+        // Restore send button text
+        const sendButton = this.element.querySelector('.unified-send-btn') as HTMLElement;
+        if (sendButton) {
+            sendButton.textContent = '发送';
+        }
     }
 
     getElement(): HTMLElement {

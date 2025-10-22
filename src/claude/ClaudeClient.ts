@@ -20,6 +20,8 @@ export class ClaudeClient {
         const config: any = {
             apiKey: this.settings.apiKey,
             dangerouslyAllowBrowser: true, // Enable browser usage
+            timeout: 120000, // 120 seconds timeout for long AI responses
+            maxRetries: 2, // Retry failed requests up to 2 times
         };
 
         // Support custom API endpoint (for reverse proxy)
@@ -92,6 +94,10 @@ export class ClaudeClient {
         }
 
         try {
+            console.log(`[ClaudeClient] Sending request to ${this.settings.baseURL || 'official API'}`);
+            console.log(`[ClaudeClient] Messages count: ${messages.length}, Model: ${this.settings.model}`);
+            
+            const startTime = Date.now();
             const response = await this.client!.messages.create({
                 model: this.settings.model,
                 max_tokens: this.settings.maxTokens,
@@ -102,11 +108,19 @@ export class ClaudeClient {
                     content: m.content
                 })),
             });
+            
+            const duration = Date.now() - startTime;
+            console.log(`[ClaudeClient] Request completed in ${duration}ms`);
 
             const textContent = response.content.find(block => block.type === "text");
             return textContent && "text" in textContent ? textContent.text : "";
         } catch (error) {
-            console.error("Claude API error:", error);
+            console.error("[ClaudeClient] API error:", error);
+            // Log more details about the error
+            if (error instanceof Error) {
+                console.error("[ClaudeClient] Error name:", error.name);
+                console.error("[ClaudeClient] Error message:", error.message);
+            }
             throw error instanceof Error ? error : new Error(String(error));
         }
     }

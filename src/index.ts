@@ -17,6 +17,7 @@ import {
     EditQueue,
     EditHistory
 } from "./editor";
+import type { TextSelection } from "./editor/types";
 
 const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
@@ -265,7 +266,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         this.textSelectionManager = new TextSelectionManager(editSettings);
         this.aiEditProcessor = new AIEditProcessor(this.claudeClient);
         this.editHistory = new EditHistory();
-        this.diffRenderer = new DiffRenderer();
+        this.diffRenderer = new DiffRenderer(this);
         this.diffRenderer.setEditHistory(this.editHistory); // Link history to renderer
         this.editQueue = new EditQueue(
             this.aiEditProcessor,
@@ -280,41 +281,14 @@ export default class ClaudeAssistantPlugin extends Plugin {
      * Send selected text to AI for editing
      */
     private sendToAIEdit(protyle: any): void {
-        if (!this.textSelectionManager || !this.editQueue) {
-            console.error("[AIEdit] Edit feature not initialized");
-            showMessage("AI 编辑功能未初始化", 3000, "error");
+        const selection = this.getEditorSelection(protyle);
+        if (!selection) {
+            showMessage("请先选择要编辑的文本", 3000, "info");
             return;
         }
 
-        try {
-            // Get the selected text and block info
-            const selection = this.getEditorSelection(protyle);
-
-            if (!selection) {
-                showMessage("请先选择要编辑的文本", 3000, "info");
-                return;
-            }
-
-            // Add to selection manager
-            const textSelection = this.textSelectionManager.addSelection(
-                selection.blockId,
-                selection.startLine,
-                selection.endLine,
-                selection.selectedText
-            );
-
-            console.log(`[AIEdit] Added selection ${textSelection.id} to queue`);
-
-            // Notify unified panel and open dock
-            this.unifiedPanel?.addEditSelection(textSelection);
-            this.toggleDock();
-
-            showMessage(`已添加到编辑队列 (${selection.startLine + 1}-${selection.endLine + 1} 行)`, 2000, "info");
-
-        } catch (error) {
-            console.error("[AIEdit] Error sending to AI edit:", error);
-            showMessage("添加编辑任务失败", 3000, "error");
-        }
+        const textSelection = this.createTextSelection(selection);
+        this.requestAIEdit(textSelection);  // No instruction → edit mode
     }
 
     /**
@@ -325,6 +299,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
         startLine: number;
         endLine: number;
         selectedText: string;
+        contextBefore?: string;
+        contextAfter?: string;
+        fullBlockContent?: string;
     } | null {
         try {
             // Get the selection from the editor
@@ -364,16 +341,141 @@ export default class ClaudeAssistantPlugin extends Plugin {
             const startLine = beforeSelection.split('\n').length - 1;
             const endLine = startLine + selectedText.split('\n').length - 1;
 
+            // Extract context (lines before and after)
+            const allLines = lines;
+            const editSettings = this.settingsManager.getSettings().editSettings;
+            const contextLinesBefore = editSettings?.contextLinesBefore || 5;
+            const contextLinesAfter = editSettings?.contextLinesAfter || 3;
+
+            // Get context before
+            const contextBeforeStartLine = Math.max(0, startLine - contextLinesBefore);
+            const contextBeforeLines = allLines.slice(contextBeforeStartLine, startLine);
+            const contextBefore = contextBeforeLines.join('\n');
+
+            // Get context after
+            const contextAfterEndLine = Math.min(allLines.length, endLine + 1 + contextLinesAfter);
+            const contextAfterLines = allLines.slice(endLine + 1, contextAfterEndLine);
+            const contextAfter = contextAfterLines.join('\n');
+
             return {
                 blockId,
                 startLine,
                 endLine,
-                selectedText
+                selectedText,
+                contextBefore,
+                contextAfter,
+                fullBlockContent: fullText
             };
 
         } catch (error) {
             console.error("[AIEdit] Error getting editor selection:", error);
             return null;
+        }
+    }
+
+    /**
+     * Create TextSelection object from selection data
+     */
+    private createTextSelection(data: {
+        blockId: string;
+        startLine: number;
+        endLine: number;
+        selectedText: string;
+        contextBefore?: string;
+        contextAfter?: string;
+        fullBlockContent?: string;
+    }): TextSelection {
+        return {
+            id: `edit-${Date.now()}`,
+            blockId: data.blockId,
+            startLine: data.startLine,
+            endLine: data.endLine,
+            selectedText: data.selectedText,
+            contextBefore: data.contextBefore || '',
+            contextAfter: data.contextAfter || '',
+            timestamp: Date.now(),
+            status: 'pending',
+            fullBlockContent: data.fullBlockContent
+        };
+    }
+
+    /**
+     * Get block selection information
+     */
+    private getBlockSelection(blockElement: HTMLElement): {
+        blockId: string;
+        startLine: number;
+        endLine: number;
+        selectedText: string;
+        fullBlockContent: string;
+    } | null {
+        const blockId = blockElement.getAttribute('data-node-id');
+        if (!blockId) {
+            showMessage("无法获取块 ID", 3000, "error");
+            return null;
+        }
+
+        const textContent = blockElement.textContent?.trim();
+        if (!textContent) {
+            showMessage("块内容为空", 3000, "info");
+            return null;
+        }
+
+        const lines = textContent.split('\n');
+        return {
+            blockId,
+            startLine: 0,
+            endLine: lines.length - 1,
+            selectedText: textContent,
+            fullBlockContent: textContent
+        };
+    }
+
+    /**
+     * Unified AI edit request method
+     * @param textSelection Text selection object
+     * @param instruction Optional editing instruction
+     * @param showDiff Whether to show diff comparison
+     */
+    private requestAIEdit(
+        textSelection: TextSelection,
+        instruction?: string,
+        showDiff: boolean = true
+    ): void {
+        if (!this.textSelectionManager || !this.editQueue) {
+            console.error("[AIEdit] Edit feature not initialized");
+            showMessage("AI 编辑功能未初始化", 3000, "error");
+            return;
+        }
+
+        if (instruction) {
+            // Has instruction → process directly
+            console.log(`[AIEdit] Processing with instruction: ${instruction}`);
+            
+            const selection = this.textSelectionManager.addSelection(
+                textSelection.blockId,
+                textSelection.startLine,
+                textSelection.endLine,
+                textSelection.selectedText,
+                instruction
+            );
+            
+            this.editQueue.enqueue(selection);
+            this.unifiedPanel?.addEditSelection(selection);
+            this.toggleDock();
+            
+            showMessage(`已添加到编辑队列: ${instruction}`, 2000, "info");
+        } else {
+            // No instruction → enter edit mode
+            console.log(`[AIEdit] Entering edit mode for selection ${textSelection.id}`);
+            
+            this.toggleDock();
+            this.unifiedPanel?.enterEditMode(textSelection, showDiff);
+            
+            const lineInfo = textSelection.startLine === textSelection.endLine
+                ? `第 ${textSelection.startLine + 1} 行`
+                : `第 ${textSelection.startLine + 1}-${textSelection.endLine + 1} 行`;
+            showMessage(`已进入编辑模式 (${lineInfo})`, 2000, "info");
         }
     }
 
@@ -444,17 +546,17 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add custom instruction submenu
         const editSettings = this.settingsManager.getSettings().editSettings;
         if (editSettings?.customInstructions && editSettings.customInstructions.length > 0) {
-            const submenus = editSettings.customInstructions.map((instruction: string) => ({
-                label: instruction,
+            const submenus = editSettings.customInstructions.map((instr: any) => ({
+                label: instr.text,
                 click: () => {
-                    console.log("[AIEdit] Submenu item clicked:", instruction);
-                    this.sendBlockToAIEditWithInstruction(protyle, blockElement, instruction);
+                    console.log("[AIEdit] Submenu item clicked:", instr.text);
+                    this.sendBlockToAIEditWithPreset(protyle, blockElement, instr);
                 }
             }));
 
             menu.addItem({
                 icon: "iconList",
-                label: "AI Edit with...",
+                label: "预设指令编辑...",
                 type: "submenu",
                 submenu: submenus
             });
@@ -506,140 +608,44 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     /**
-     * Send to AI edit with custom instruction
-     */
-    private sendToAIEditWithInstruction(protyle: any, instruction: string): void {
-        if (!this.textSelectionManager || !this.editQueue) {
-            console.error("[AIEdit] Edit feature not initialized");
-            showMessage("AI 编辑功能未初始化", 3000, "error");
-            return;
-        }
-
-        try {
-            const selection = this.getEditorSelection(protyle);
-
-            if (!selection) {
-                showMessage("请先选择要编辑的文本", 3000, "info");
-                return;
-            }
-
-            // Add to selection manager with custom instruction
-            const textSelection = this.textSelectionManager.addSelection(
-                selection.blockId,
-                selection.startLine,
-                selection.endLine,
-                selection.selectedText,
-                instruction  // Pass custom instruction
-            );
-
-            console.log(`[AIEdit] Added selection ${textSelection.id} with instruction: ${instruction}`);
-
-            // Notify unified panel and open dock
-            this.unifiedPanel?.addEditSelection(textSelection);
-            this.toggleDock();
-
-            showMessage(`已添加到编辑队列: ${instruction}`, 2000, "info");
-
-        } catch (error) {
-            console.error("[AIEdit] Error sending to AI edit:", error);
-            showMessage("添加编辑任务失败", 3000, "error");
-        }
-    }
-
-    /**
      * Send entire block to AI edit (when text selection is not available)
      */
     private sendBlockToAIEdit(protyle: any, blockElement: HTMLElement): void {
-        if (!this.textSelectionManager || !this.editQueue) {
-            console.error("[AIEdit] Edit feature not initialized");
-            showMessage("AI 编辑功能未初始化", 3000, "error");
-            return;
-        }
+        const blockSelection = this.getBlockSelection(blockElement);
+        if (!blockSelection) return;
 
-        try {
-            const blockId = blockElement.getAttribute('data-node-id');
-            if (!blockId) {
-                showMessage("无法获取块 ID", 3000, "error");
-                return;
-            }
-
-            const textContent = blockElement.textContent?.trim();
-            if (!textContent) {
-                showMessage("块内容为空", 3000, "info");
-                return;
-            }
-
-            console.log(`[AIEdit] Sending entire block ${blockId} to AI edit`);
-
-            // Send entire block as selection (line 0 to end)
-            const lines = textContent.split('\n');
-            const textSelection = this.textSelectionManager.addSelection(
-                blockId,
-                0,
-                lines.length - 1,
-                textContent
-            );
-
-            console.log(`[AIEdit] Added block selection ${textSelection.id} to queue`);
-
-            // Notify unified panel and open dock
-            this.unifiedPanel?.addEditSelection(textSelection);
-            this.toggleDock();
-
-            showMessage(`已添加到编辑队列 (整个块，共 ${lines.length} 行)`, 2000, "info");
-
-        } catch (error) {
-            console.error("[AIEdit] Error sending block to AI edit:", error);
-            showMessage("添加编辑任务失败", 3000, "error");
-        }
+        const textSelection = this.createTextSelection(blockSelection);
+        this.requestAIEdit(textSelection);  // No instruction → edit mode
     }
 
     /**
-     * Send entire block to AI edit with custom instruction
+     * Send entire block to AI edit with preset instruction
      */
-    private sendBlockToAIEditWithInstruction(protyle: any, blockElement: HTMLElement, instruction: string): void {
-        if (!this.textSelectionManager || !this.editQueue) {
-            console.error("[AIEdit] Edit feature not initialized");
-            showMessage("AI 编辑功能未初始化", 3000, "error");
-            return;
-        }
+    private sendBlockToAIEditWithPreset(protyle: any, blockElement: HTMLElement, preset: any): void {
+        const blockSelection = this.getBlockSelection(blockElement);
+        if (!blockSelection) return;
 
-        try {
-            const blockId = blockElement.getAttribute('data-node-id');
-            if (!blockId) {
-                showMessage("无法获取块 ID", 3000, "error");
-                return;
-            }
+        const textSelection = this.createTextSelection(blockSelection);
 
-            const textContent = blockElement.textContent?.trim();
-            if (!textContent) {
-                showMessage("块内容为空", 3000, "info");
-                return;
-            }
-
-            console.log(`[AIEdit] Sending entire block ${blockId} with instruction: ${instruction}`);
-
-            // Send entire block with custom instruction
-            const lines = textContent.split('\n');
-            const textSelection = this.textSelectionManager.addSelection(
-                blockId,
-                0,
-                lines.length - 1,
-                textContent,
-                instruction
-            );
-
-            console.log(`[AIEdit] Added block selection ${textSelection.id} with instruction`);
-
-            // Notify unified panel and open dock
-            this.unifiedPanel?.addEditSelection(textSelection);
+        if (preset.showDiff) {
+            // Has instruction and showDiff → process directly
+            this.requestAIEdit(textSelection, preset.text, true);
+        } else {
+            // No showDiff → enter edit mode with pre-filled instruction
+            if (!this.unifiedPanel) return;
+            
             this.toggleDock();
-
-            showMessage(`已添加到编辑队列: ${instruction}`, 2000, "info");
-
-        } catch (error) {
-            console.error("[AIEdit] Error sending block to AI edit:", error);
-            showMessage("添加编辑任务失败", 3000, "error");
+            this.unifiedPanel.enterEditMode(textSelection, false);
+            
+            // Pre-fill the instruction in textarea
+            setTimeout(() => {
+                const textarea = document.querySelector('#claude-input') as HTMLTextAreaElement;
+                if (textarea) {
+                    textarea.value = preset.text;
+                }
+            }, 100);
+            
+            showMessage(`已进入编辑模式: ${preset.text}`, 2000, "info");
         }
     }
 }

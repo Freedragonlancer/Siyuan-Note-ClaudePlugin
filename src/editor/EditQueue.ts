@@ -31,14 +31,8 @@ export class EditQueue implements IEditQueue {
         this.manager = manager;
         this.settings = settings;
 
-        // Listen to selection events
-        this.manager.addEventListener((event) => {
-            if (event.type === 'selection_added' && this.settings.autoProcessQueue) {
-                if (event.selection) {
-                    this.enqueue(event.selection);
-                }
-            }
-        });
+        // Note: Removed auto-enqueue listener
+        // All enqueue operations should be explicit via enqueue() calls
     }
 
     /**

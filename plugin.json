@@ -1,0 +1,36 @@
+{
+  "name": "siyuan-plugin-claude-assistant",
+  "author": "Your Name",
+  "url": "https://github.com/yourusername/siyuan-plugin-claude-assistant",
+  "version": "0.1.0",
+  "minAppVersion": "2.12.0",
+  "backends": ["all"],
+  "frontends": ["all"],
+  "displayName": {
+    "default": "Claude AI Assistant",
+    "zh_CN": "Claude AI 助手"
+  },
+  "description": {
+    "default": "Integrate Claude AI into SiYuan Note. Select text, send to Claude, and get AI-powered responses with streaming support.",
+    "zh_CN": "将 Claude AI 集成到思源笔记。选择文本，发送给 Claude，获取 AI 驱动的响应，支持流式输出。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh_CN": "README_zh_CN.md"
+  },
+  "funding": {
+    "openCollective": "",
+    "patreon": "",
+    "github": "",
+    "custom": [
+      ""
+    ]
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "assistant",
+    "chat",
+    "anthropic"
+  ]
+}

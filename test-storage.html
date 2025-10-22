@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LocalStorage Test</title>
+</head>
+<body>
+    <h1>LocalStorage 测试</h1>
+    <button onclick="testSave()">保存测试数据</button>
+    <button onclick="testLoad()">读取测试数据</button>
+    <button onclick="testClear()">清除测试数据</button>
+    <pre id="output"></pre>
+
+    <script>
+        const STORAGE_KEY = "claude-assistant-settings";
+        const output = document.getElementById('output');
+
+        function log(message) {
+            output.textContent += message + '\n';
+            console.log(message);
+        }
+
+        function testSave() {
+            output.textContent = '';
+            log('=== 保存测试 ===');
+
+            try {
+                const testData = {
+                    apiKey: "sk-ant-test123456",
+                    model: "claude-sonnet-4-20250514",
+                    temperature: 0.7,
+                    maxTokens: 4096
+                };
+
+                log('测试数据: ' + JSON.stringify(testData, null, 2));
+
+                const serialized = JSON.stringify(testData);
+                log('序列化后: ' + serialized);
+
+                localStorage.setItem(STORAGE_KEY, serialized);
+                log('✅ 保存成功');
+
+                // 验证保存
+                const verification = localStorage.getItem(STORAGE_KEY);
+                log('验证读取: ' + verification);
+
+            } catch (error) {
+                log('❌ 保存失败: ' + error.message);
+            }
+        }
+
+        function testLoad() {
+            output.textContent = '';
+            log('=== 读取测试 ===');
+
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                log('读取到的值: ' + stored);
+
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    log('解析后: ' + JSON.stringify(parsed, null, 2));
+                    log('✅ 读取成功');
+                } else {
+                    log('⚠️ 未找到存储的数据');
+                }
+
+            } catch (error) {
+                log('❌ 读取失败: ' + error.message);
+            }
+        }
+
+        function testClear() {
+            output.textContent = '';
+            log('=== 清除测试 ===');
+
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                log('✅ 清除成功');
+
+                const verification = localStorage.getItem(STORAGE_KEY);
+                if (verification === null) {
+                    log('✅ 确认已清除');
+                } else {
+                    log('❌ 清除失败，仍然存在: ' + verification);
+                }
+
+            } catch (error) {
+                log('❌ 清除失败: ' + error.message);
+            }
+        }
+
+        // 自动运行测试
+        window.onload = function() {
+            log('=== 环境检测 ===');
+            log('localStorage 可用: ' + (typeof localStorage !== 'undefined'));
+            log('当前域名: ' + window.location.hostname);
+            log('协议: ' + window.location.protocol);
+            log('\n点击按钮进行测试');
+        };
+    </script>
+</body>
+</html>

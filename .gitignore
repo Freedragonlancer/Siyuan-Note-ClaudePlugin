@@ -1,0 +1,37 @@
+node_modules/
+dist/
+.idea/
+.vscode/
+*.log
+.DS_Store
+temp/
+dev/
+.env
+.env.local
+*.js.map
+
+# Python scripts (temporary development tools)
+*.py
+*.pyc
+
+# Backup files
+*.backup
+*.backup2
+*.bak
+*.txt.backup
+
+# Development markdown files
+DEBUG_*.md
+DEPLOYMENT_*.md
+FIX_*.md
+
+# Temporary files
+new_*.txt
+optimized_*.txt
+edit_message_original.txt
+
+# IDE
+.serena/
+
+# OS
+Thumbs.db

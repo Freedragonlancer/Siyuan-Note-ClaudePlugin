@@ -41,7 +41,17 @@
       "Bash(find:*)",
       "Bash(git init:*)",
       "Bash(git config:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "mcp__serena__replace_symbol_body",
+      "mcp__serena__insert_before_symbol",
+      "Bash(unzip:*)",
+      "Skill(siyuan-plugin)",
+      "Bash(curl:*)",
+      "Bash(rm:*)"
     ],
     "deny": [],
     "ask": []

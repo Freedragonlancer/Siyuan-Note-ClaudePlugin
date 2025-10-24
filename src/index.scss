@@ -599,3 +599,110 @@
         }
     }
 }
+
+/* Edit Mode Styles */
+.edit-mode-preview {
+    background: var(--b3-theme-surface);
+    border: 1px solid var(--b3-border-color);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+    animation: fadeIn 0.2s ease-in;
+
+    .edit-mode-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--b3-border-color);
+
+        .edit-mode-icon {
+            margin-right: 6px;
+            font-size: 14px;
+        }
+
+        .edit-mode-title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--b3-theme-on-surface);
+        }
+
+        .edit-mode-close {
+            background: none;
+            border: none;
+            font-size: 18px;
+            color: var(--b3-theme-on-surface-light);
+            cursor: pointer;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            line-height: 18px;
+            text-align: center;
+            border-radius: 2px;
+            transition: all 0.15s;
+
+            &:hover {
+                background: var(--b3-theme-error-lighter);
+                color: var(--b3-theme-error);
+            }
+        }
+    }
+
+    .edit-mode-text-preview {
+        margin-bottom: 8px;
+        font-size: 12px;
+
+        strong {
+            color: var(--b3-theme-on-surface);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .preview-content {
+            background: var(--b3-theme-background);
+            padding: 6px;
+            border-radius: 3px;
+            border-left: 3px solid var(--b3-theme-primary);
+            color: var(--b3-theme-on-background);
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: var(--b3-font-family-code);
+            font-size: 11px;
+            line-height: 1.4;
+            max-height: 80px;
+            overflow-y: auto;
+
+            &::-webkit-scrollbar {
+                width: 4px;
+            }
+
+            &::-webkit-scrollbar-thumb {
+                background-color: var(--b3-scroll-color);
+                border-radius: 2px;
+            }
+        }
+    }
+
+    .edit-mode-options {
+        font-size: 12px;
+
+        label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            color: var(--b3-theme-on-surface);
+            user-select: none;
+
+            &:hover {
+                color: var(--b3-theme-primary);
+            }
+
+            input[type="checkbox"] {
+                margin-right: 6px;
+                cursor: pointer;
+            }
+        }
+    }
+}

@@ -101,23 +101,45 @@ export class DiffRenderer implements IDiffRenderer {
 
             const modifiedText = selection.editResult.modified;
 
-            // Try using SiYuan kernel API first
+            // Use SiYuan's transaction API for safe block updates
             try {
-                const response = await fetch('/api/block/updateBlock', {
+                // First, get the current block content to understand its structure
+                const getResponse = await fetch('/api/block/getBlockKramdown', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        id: selection.blockId,
-                        dataType: 'markdown',
-                        data: modifiedText
+                        id: selection.blockId
                     })
                 });
 
-                const result = await response.json();
-                
-                if (result.code === 0) {
+                const getResult = await getResponse.json();
+                if (getResult.code !== 0) {
+                    console.warn(`[AIEdit] Failed to get block kramdown:`, getResult);
+                    throw new Error(`Failed to get block content: ${getResult.msg || 'Unknown error'}`);
+                }
+
+                // Convert modified text to kramdown format
+                // For simple text blocks, we can wrap it appropriately
+                const kramdown = modifiedText;
+
+                // Update block using proper transaction
+                const updateResponse = await fetch('/api/block/updateBlock', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        dataType: 'markdown',
+                        data: kramdown,
+                        id: selection.blockId
+                    })
+                });
+
+                const updateResult = await updateResponse.json();
+
+                if (updateResult.code === 0) {
                     // Add to history after successful update
                     if (this.editHistory) {
                         this.editHistory.addToHistory({
@@ -130,10 +152,14 @@ export class DiffRenderer implements IDiffRenderer {
                     }
 
                     console.log(`[AIEdit] Successfully applied changes via kernel API for selection ${selection.id}`);
+
+                    // Wait a bit for SiYuan to process the update
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
                     return true;
                 } else {
-                    console.warn(`[AIEdit] Kernel API returned error:`, result);
-                    throw new Error(`API error: ${result.msg || 'Unknown error'}`);
+                    console.warn(`[AIEdit] Kernel API returned error:`, updateResult);
+                    throw new Error(`API error: ${updateResult.msg || 'Unknown error'}`);
                 }
             } catch (apiError) {
                 console.warn(`[AIEdit] Kernel API failed, falling back to DOM:`, apiError);
@@ -148,8 +174,11 @@ export class DiffRenderer implements IDiffRenderer {
 
     /**
      * Fallback method to apply changes via DOM manipulation
+     * WARNING: This method is deprecated and may cause issues. Use API method instead.
      */
     private async applyChangesViaDom(selection: TextSelection): Promise<boolean> {
+        console.warn('[AIEdit] Using DOM fallback method - this may cause index rebuild issues!');
+
         if (!selection.editResult) {
             return false;
         }
@@ -157,58 +186,70 @@ export class DiffRenderer implements IDiffRenderer {
         // Get the block element
         const blockElement = document.querySelector(`[data-node-id="${selection.blockId}"]`) as HTMLElement;
         if (!blockElement) {
-            throw new Error(`Block ${selection.blockId} not found`);
+            throw new Error(`Block ${selection.blockId} not found in DOM`);
         }
 
-        // Try multiple selectors to find editable content
-        const selectors = [
-            '[contenteditable="true"]',
-            '.protyle-wysiwyg div[data-node-id]',
-            '[data-type="NodeParagraph"]',
-            '[data-type="NodeHeading"]',
-            '[data-type="NodeList"]',
-            '[data-type="NodeListItem"]'
-        ];
+        try {
+            // Use input event to trigger SiYuan's internal update mechanism
+            // This is safer than direct text manipulation
+            const modifiedText = selection.editResult.modified;
 
-        let contentElement: Element | null = null;
-        for (const selector of selectors) {
-            contentElement = blockElement.querySelector(selector);
-            if (contentElement) break;
-        }
+            // Find the protyle instance
+            const protyle = (window as any).siyuan?.ws?.app?.plugins?.[0]?.protyle;
+            if (!protyle) {
+                console.warn('[AIEdit] Could not find protyle instance');
+            }
 
-        // If still not found, try the block element itself
-        if (!contentElement && blockElement.getAttribute('contenteditable') === 'true') {
-            contentElement = blockElement;
-        }
+            // Get editable content
+            const editableDiv = blockElement.querySelector('[contenteditable="true"]');
+            if (!editableDiv) {
+                throw new Error(`No editable content found in block ${selection.blockId}`);
+            }
 
-        if (!contentElement) {
-            throw new Error(`Editable content not found in block ${selection.blockId}`);
-        }
+            // Store original for history
+            const originalContent = editableDiv.textContent || '';
 
-        // Get current content (for history)
-        const originalContent = contentElement.textContent || '';
-        const modifiedText = selection.editResult.modified;
+            // Clear and set new content
+            editableDiv.textContent = '';
+            const textNode = document.createTextNode(modifiedText);
+            editableDiv.appendChild(textNode);
 
-        // Update the content
-        contentElement.textContent = modifiedText;
-
-        // Add to history before applying
-        if (this.editHistory) {
-            this.editHistory.addToHistory({
-                selection,
-                originalContent,
-                modifiedContent: modifiedText,
-                blockId: selection.blockId,
-                applied: true
+            // Create a proper input event
+            const event = new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: modifiedText
             });
+            editableDiv.dispatchEvent(event);
+
+            // Also trigger change event
+            const changeEvent = new Event('change', { bubbles: true });
+            editableDiv.dispatchEvent(changeEvent);
+
+            // Add to history
+            if (this.editHistory) {
+                this.editHistory.addToHistory({
+                    selection,
+                    originalContent,
+                    modifiedContent: modifiedText,
+                    blockId: selection.blockId,
+                    applied: true
+                });
+            }
+
+            // Wait for SiYuan to process
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            console.log(`[AIEdit] Applied changes via DOM (fallback) for selection ${selection.id}`);
+            console.warn('[AIEdit] Please note: DOM method may cause data consistency issues');
+
+            return true;
+
+        } catch (error) {
+            console.error('[AIEdit] DOM fallback failed:', error);
+            throw error;
         }
-
-        // Trigger SiYuan's update mechanism
-        const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-        contentElement.dispatchEvent(inputEvent);
-
-        console.log(`[AIEdit] Successfully applied changes via DOM for selection ${selection.id}`);
-        return true;
     }
 
     /**
@@ -229,13 +270,55 @@ export class DiffRenderer implements IDiffRenderer {
         try {
             console.log(`[AIEdit] Undoing edit ${lastEdit.id}`);
 
-            // Get the block element
+            // Use SiYuan API to restore original content
+            const response = await fetch('/api/block/updateBlock', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    dataType: 'markdown',
+                    data: lastEdit.originalContent,
+                    id: lastEdit.blockId
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.code === 0) {
+                // Remove from history
+                this.editHistory.removeEntry(lastEdit.id);
+
+                // Wait for SiYuan to process
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                console.log(`[AIEdit] Successfully undone edit ${lastEdit.id}`);
+                return true;
+            } else {
+                console.error(`[AIEdit] Failed to undo via API:`, result);
+                // Try DOM fallback
+                return await this.undoViaDom(lastEdit);
+            }
+
+        } catch (error) {
+            console.error(`[AIEdit] Error undoing edit:`, error);
+            // Try DOM fallback
+            return await this.undoViaDom(lastEdit);
+        }
+    }
+
+    /**
+     * Fallback method to undo via DOM
+     */
+    private async undoViaDom(lastEdit: any): Promise<boolean> {
+        console.warn('[AIEdit] Using DOM fallback for undo');
+
+        try {
             const blockElement = document.querySelector(`[data-node-id="${lastEdit.blockId}"]`);
             if (!blockElement) {
                 throw new Error(`Block ${lastEdit.blockId} not found`);
             }
 
-            // Get the editable content element
             const contentElement = blockElement.querySelector('[contenteditable="true"]');
             if (!contentElement) {
                 throw new Error(`Editable content not found in block ${lastEdit.blockId}`);
@@ -244,18 +327,27 @@ export class DiffRenderer implements IDiffRenderer {
             // Restore original content
             contentElement.textContent = lastEdit.originalContent;
 
-            // Trigger SiYuan's update mechanism
-            const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-            contentElement.dispatchEvent(inputEvent);
+            // Trigger proper input event
+            const event = new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: lastEdit.originalContent
+            });
+            contentElement.dispatchEvent(event);
 
             // Remove from history
-            this.editHistory.removeEntry(lastEdit.id);
+            if (this.editHistory) {
+                this.editHistory.removeEntry(lastEdit.id);
+            }
 
-            console.log(`[AIEdit] Successfully undone edit ${lastEdit.id}`);
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            console.log(`[AIEdit] Undone edit ${lastEdit.id} via DOM fallback`);
             return true;
 
         } catch (error) {
-            console.error(`[AIEdit] Error undoing edit:`, error);
+            console.error(`[AIEdit] DOM undo fallback failed:`, error);
             return false;
         }
     }

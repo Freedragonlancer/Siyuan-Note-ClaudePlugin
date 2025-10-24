@@ -283,7 +283,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private sendToAIEdit(protyle: any): void {
         const selection = this.getEditorSelection(protyle);
         if (!selection) {
-            showMessage("请先选择要编辑的文本", 3000, "info");
+            showMessage(this.i18n.noTextSelected, 3000, "info");
             return;
         }
 
@@ -451,7 +451,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         if (instruction) {
             // Has instruction → process directly
             console.log(`[AIEdit] Processing with instruction: ${instruction}`);
-            
+
             const selection = this.textSelectionManager.addSelection(
                 textSelection.blockId,
                 textSelection.startLine,
@@ -459,23 +459,23 @@ export default class ClaudeAssistantPlugin extends Plugin {
                 textSelection.selectedText,
                 instruction
             );
-            
+
             this.editQueue.enqueue(selection);
             this.unifiedPanel?.addEditSelection(selection);
             this.toggleDock();
-            
-            showMessage(`已添加到编辑队列: ${instruction}`, 2000, "info");
+
+            showMessage(`${this.i18n.aiEditQueued}: ${instruction}`, 2000, "info");
         } else {
             // No instruction → enter edit mode
             console.log(`[AIEdit] Entering edit mode for selection ${textSelection.id}`);
-            
+
             this.toggleDock();
             this.unifiedPanel?.enterEditMode(textSelection, showDiff);
-            
+
             const lineInfo = textSelection.startLine === textSelection.endLine
-                ? `第 ${textSelection.startLine + 1} 行`
-                : `第 ${textSelection.startLine + 1}-${textSelection.endLine + 1} 行`;
-            showMessage(`已进入编辑模式 (${lineInfo})`, 2000, "info");
+                ? `${textSelection.startLine + 1}`
+                : `${textSelection.startLine + 1}-${textSelection.endLine + 1}`;
+            showMessage(`${this.i18n.enterEditMode} (Line ${lineInfo})`, 2000, "info");
         }
     }
 
@@ -488,12 +488,15 @@ export default class ClaudeAssistantPlugin extends Plugin {
         console.log("[AIEdit] Setting up context menu");
 
         // Register event handlers with arrow functions to preserve 'this' context
+
+        // Block icon click - for block-level operations
         this.eventBus.on("click-blockicon", (event) => {
             this.onBlockIconClick(event);
         });
 
-        this.eventBus.on("click-editorcontent", (event) => {
-            this.onEditorContentClick(event);
+        // Editor content menu - for text selection operations
+        this.eventBus.on("open-menu-content", (event) => {
+            this.onEditorContentMenu(event);
         });
 
         console.log("[AIEdit] Context menu setup complete");
@@ -536,9 +539,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add AI Edit menu item
         menu.addItem({
             icon: "iconEdit",
-            label: this.i18n.aiEdit || "发送到 AI 编辑",
+            label: this.i18n.aiEditBlock,
             click: () => {
-                console.log("[AIEdit] Menu item clicked");
+                console.log("[AIEdit] Edit block menu item clicked");
                 this.sendBlockToAIEdit(protyle, blockElement);
             }
         });
@@ -547,16 +550,17 @@ export default class ClaudeAssistantPlugin extends Plugin {
         const editSettings = this.settingsManager.getSettings().editSettings;
         if (editSettings?.customInstructions && editSettings.customInstructions.length > 0) {
             const submenus = editSettings.customInstructions.map((instr: any) => ({
+                icon: instr.icon || "iconEdit",
                 label: instr.text,
                 click: () => {
-                    console.log("[AIEdit] Submenu item clicked:", instr.text);
+                    console.log("[AIEdit] Block preset instruction clicked:", instr.text);
                     this.sendBlockToAIEditWithPreset(protyle, blockElement, instr);
                 }
             }));
 
             menu.addItem({
                 icon: "iconList",
-                label: "预设指令编辑...",
+                label: this.i18n.aiEditPresets,
                 type: "submenu",
                 submenu: submenus
             });
@@ -566,21 +570,66 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     /**
-     * Handle editor content click event
+     * Handle editor content menu event (right-click on selected text)
      */
-    private onEditorContentClick(event: any): void {
+    private onEditorContentMenu(event: any): void {
         const detail = event.detail;
-        const { protyle, event: mouseEvent } = detail;
+        const { menu, range, protyle } = detail;
 
-        // Check if it's a right-click (context menu)
-        if (mouseEvent.button !== 2) {
+        console.log("[AIEdit] Editor content menu opened");
+
+        // Check if there's a text selection
+        if (!range || range.collapsed) {
+            console.log("[AIEdit] No text selected, skipping menu");
             return;
         }
 
-        const selection = protyle?.wysiwyg?.element?.ownerDocument?.getSelection();
-        if (selection && selection.toString().trim()) {
-            console.log("[AIEdit] Text selected on right-click:", selection.toString().substring(0, 50));
+        const selectedText = range.toString().trim();
+        if (!selectedText) {
+            console.log("[AIEdit] Selected text is empty, skipping menu");
+            return;
         }
+
+        console.log("[AIEdit] Text selected (first 50 chars):", selectedText.substring(0, 50));
+
+        // Add separator
+        menu.addSeparator();
+
+        // Add "Send to AI Edit" menu item
+        menu.addItem({
+            icon: "iconEdit",
+            label: this.i18n.aiEdit,
+            click: () => {
+                console.log("[AIEdit] 'Send to AI Edit' clicked from context menu");
+                this.sendToAIEdit(protyle);
+            }
+        });
+
+        // Add custom instruction submenu
+        const editSettings = this.settingsManager.getSettings().editSettings;
+        if (editSettings?.customInstructions && editSettings.customInstructions.length > 0) {
+            const submenus = editSettings.customInstructions.map((instr: any) => ({
+                icon: instr.icon || "iconEdit",
+                label: instr.text,
+                click: () => {
+                    console.log("[AIEdit] Preset instruction clicked:", instr.text);
+                    const selection = this.getEditorSelection(protyle);
+                    if (selection) {
+                        const textSelection = this.createTextSelection(selection);
+                        this.requestAIEdit(textSelection, instr.text, instr.showDiff !== false);
+                    }
+                }
+            }));
+
+            menu.addItem({
+                icon: "iconList",
+                label: this.i18n.aiEditPresets,
+                type: "submenu",
+                submenu: submenus
+            });
+        }
+
+        console.log("[AIEdit] Context menu items added for text selection");
     }
 
     /**
@@ -644,8 +693,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
                     textarea.value = preset.text;
                 }
             }, 100);
-            
-            showMessage(`已进入编辑模式: ${preset.text}`, 2000, "info");
+
+            showMessage(`${this.i18n.enterEditMode}: ${preset.text}`, 2000, "info");
         }
     }
 }

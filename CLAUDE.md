@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Using the SiYuan Plugin Skill
+
+**Important**: This project has a dedicated `siyuan-plugin` skill that provides comprehensive guidance for general SiYuan plugin development. Use it when you need help with:
+
+- Plugin lifecycle methods (`onload`, `onLayoutReady`, `onunload`)
+- UI elements (`addDock`, `addTopBar`, `addStatusBar`, `addTab`)
+- Event handling (`eventBus`, SiYuan events)
+- Data storage (`saveData`, `loadData`)
+- Dialogs and menus
+- Internationalization (i18n)
+- SiYuan Kernel API
+- General best practices
+
+**This CLAUDE.md focuses on**:
+- Claude AI integration specifics
+- Dual-dock architecture (Chat + Edit)
+- AI text editing system
+- Anthropic SDK usage
+- Project-specific workflows
+
+To use the skill in Claude Code, simply ask about SiYuan plugin topics and Claude will automatically use the skill, or you can explicitly mention "using the siyuan-plugin skill".
+
 ## Project Overview
 
 This is a SiYuan Note plugin that integrates Claude AI into the note-taking workflow. Users can select text, chat with Claude via a sidebar panel, and insert/replace text with AI-generated responses. The plugin uses the Anthropic SDK for streaming API responses and is built with TypeScript, Svelte, and Vite.
@@ -62,13 +84,10 @@ This separation allows users to:
 - Different UI paradigms (conversational vs task-oriented)
 
 ### Plugin Lifecycle
-The main plugin class `ClaudeAssistantPlugin` (in `src/index.ts`) extends SiYuan's `Plugin` class and handles:
-- **onload**: Initialize SettingsManager, ClaudeClient, and register commands (keyboard shortcuts)
-- **onLayoutReady**: Add dock panel and topbar icon (UI elements must be added here, not in onload!)
-- **onunload**: Cleanup (destroy ChatPanel)
-- **uninstall**: Plugin removal cleanup
-
-**⚠️ Important**: All UI-related methods (`addDock`, `addTopBar`, `addStatusBar`) MUST be called in `onLayoutReady()`, not `onload()`. This is a SiYuan requirement to ensure the layout is fully initialized before adding UI elements.
+The main plugin class `ClaudeAssistantPlugin` (in `src/index.ts`) implements:
+- **onload**: Initialize SettingsManager, ClaudeClient, EditHistory, and register commands
+- **onLayoutReady**: Register dual-dock panels (chat + edit) and topbar icon
+- **onunload**: Cleanup ChatPanel, EditPanel, and remove event listeners
 
 ### Core Components
 
@@ -179,29 +198,18 @@ Helper utilities for interacting with SiYuan's Protyle editor:
 7. User can undo with `Ctrl+Shift+Z` → EditHistory.undo() restores original
 
 ### SiYuan Integration Points
-- **Chat Dock**: Right sidebar panel registered via `addDock()` in `onLayoutReady()`
-  - Position: `"RightBottom"`
-  - Type: `"claude-dock"` (SiYuan internally uses `pluginName + type` as key)
-  - Init function: Creates ChatPanel when dock is first opened
-- **Edit Dock**: Second dock panel for AI text editing
-  - Type: `"claude-edit-dock"`
-  - Init function: Creates EditPanel for diff review and edit management
-- **Topbar Icon**: Robot icon added via `addTopBar()` in `onLayoutReady()`
-- **Commands**: Registered via `addCommand()` in `onload()` with keyboard shortcuts
-  - `Alt+Shift+C`: Open Claude chat panel
-  - `Ctrl+Shift+E`: Send selection to AI Edit
-  - `Ctrl+Shift+Z`: Undo last AI edit
-- **Context Menu**: Right-click menu item "Send to AI Edit" added via `addMenu` in `setupContextMenu()`
-  - Only appears when text is selected
-  - Sends selected text to EditPanel for AI processing
-- **Protyle**: SiYuan's editor instance passed to ChatPanel and EditorHelper for text operations
-- **Toggle Dock**: Uses `window.siyuan.layout.rightDock.toggleModel(dockType)` to show/hide
+**Dual Docks**:
+- **Chat Dock** (`"claude-dock"`): Right sidebar, position `"RightBottom"`
+- **Edit Dock** (`"claude-edit-dock"`): Separate panel for AI text editing with diff review
 
-**Important Implementation Notes:**
-- The `init()` function in `addDock()` is NOT called immediately when `addDock()` is executed
-- Instead, it's called when the user first opens the dock (clicks icon or uses hotkey)
-- The `model` returned by `addDock()` is a factory function that creates the dock instance
-- Must use regular function (not arrow function) for `init()` to preserve `this` context
+**Commands**:
+- `Alt+Shift+C`: Open Claude chat panel
+- `Ctrl+Shift+E`: Send selection to AI Edit
+- `Ctrl+Shift+Z`: Undo last AI edit
+
+**Context Menu**: "Send to AI Edit" appears when text is selected
+
+**Protyle Integration**: Editor instance passed to ChatPanel and EditorHelper for text operations
 
 ## Important Implementation Notes
 
@@ -238,11 +246,7 @@ this.dockModel = this.addDock({
 ```
 
 ### Context Menu Implementation
-The right-click context menu for "Send to AI Edit" is implemented via `setupContextMenu()`:
-- Uses SiYuan's `Menu` API to add custom menu items
-- Menu items are added to editor's protyle context menu
-- Menu only appears when text is selected (checked via `getSelection()`)
-- Clicking menu item triggers same flow as `Ctrl+Shift+E` hotkey
+Custom right-click menu "Send to AI Edit" implemented in `setupContextMenu()` - only appears when text is selected, triggers AI edit workflow.
 
 ## Key Technical Details
 
@@ -254,15 +258,9 @@ The right-click context menu for "Send to AI Edit" is implemented via `setupCont
 - Asset handling: Renames `style.css` to `index.css`
 
 ### TypeScript Configuration
-- Target: ES2020
-- Strict mode enabled with noUnusedLocals, noUnusedParameters, noImplicitReturns
+- Target: ES2020, strict mode enabled
 - Path alias: `@/*` → `src/*`
-- Extends `@tsconfig/svelte` for Svelte support (though not heavily used)
-
-### Plugin Metadata (plugin.json)
-- `minAppVersion`: "2.12.0" - Minimum SiYuan version required
-- `backends`/`frontends`: ["all"] - Cross-platform support
-- Internationalization: English and Chinese (zh_CN) display names/descriptions
+- Extends `@tsconfig/svelte`
 
 ### API Key Storage
 API keys are stored in browser localStorage (not secure). Users should:
@@ -272,62 +270,31 @@ API keys are stored in browser localStorage (not secure). Users should:
 
 ## Plugin Installation & Testing
 
-### Method 1: Direct Copy (Recommended for Testing)
-1. Build the plugin:
-   ```bash
-   npm install  # or pnpm install
-   npm run build
-   ```
+See `siyuan-plugin` skill for general installation instructions. This project provides:
 
-2. Copy files to SiYuan plugins directory:
-   ```bash
-   # Windows example
-   cp -r dist/* /path/to/SiYuan/data/plugins/siyuan-plugin-claude-assistant/
-   ```
+**Development Link Script**:
+```bash
+# Build first
+pnpm build
 
-3. **Important**: Create required files if missing:
-   - `icon.png` - 160x160 plugin icon (required for plugin to load)
-   - `preview.png` - Preview screenshot
-   - `i18n/en_US.json` - English translations
-   - `i18n/zh_CN.json` - Chinese translations
+# Create symlink (Windows)
+pnpm make-link-win --dir=C:/SiYuan/data/plugins
 
-4. Restart SiYuan completely (close and reopen)
+# Or use the script directly
+node scripts/make_dev_link.cjs --dir=/path/to/SiYuan/data/plugins
+```
 
-5. Verify installation:
-   - Check Settings → Marketplace → Downloaded → Plugins
-   - Look for robot icon in topbar
-   - Or press `Alt+Shift+C` to open Claude panel
+**Verify Installation**:
+- Look for robot icon in topbar
+- Press `Alt+Shift+C` to open Claude chat panel
+- Press `Ctrl+Shift+E` with text selected to test AI edit
 
-### Method 2: Development Link (For Active Development)
-1. Build first: `npm run build`
-2. Create symlink:
-   ```bash
-   node scripts/make_dev_link.cjs --dir=/path/to/SiYuan/data/plugins
-   ```
-3. Run `npm run dev` to watch for changes
-4. Restart SiYuan after each build
+### Troubleshooting
 
-**Note**: Windows symlinks may not work in all cases. If plugin doesn't load, use Method 1 instead.
-
-### Troubleshooting Installation
-
-**Plugin not appearing:**
-- Check SiYuan version >= 2.12.0 (Settings → About)
-- Verify all required files exist in plugin directory:
-  - `plugin.json`, `index.js`, `index.css`, `icon.png`
-  - `i18n/en_US.json`, `i18n/zh_CN.json`
-- Check `N:/Siyuan-Note/temp/siyuan.log` for errors
-- Try deleting plugin folder and reinstalling
-
-**Icon/UI not showing:**
-- `icon.png` must exist and be valid PNG format
-- Minimum size 160x160 pixels recommended
-- If missing, plugin may not load at all
-
-**Plugin loads but crashes:**
-- Open DevTools (F12) and check Console tab
-- Look for errors with "Claude Assistant Plugin" prefix
-- Verify API key is configured correctly
+**API Connection Issues:**
+- Verify API key is configured in Settings panel
+- Test connection using "Test Connection" button
+- Check console (F12) for API errors
 
 **AI Edit feature not working:**
 - Verify `diff-match-patch` library is installed (check package.json dependencies)
@@ -350,17 +317,19 @@ API keys are stored in browser localStorage (not secure). Users should:
 
 ## Development Workflow
 
-1. Make code changes in `src/`
-2. Run `npm run build` to rebuild
-3. Copy updated files to SiYuan plugins directory (or use dev link)
-4. Restart SiYuan to see changes
-5. Check browser console (F12 in Electron) for errors
+**General Plugin Development**: Use the `siyuan-plugin` skill for standard workflows (build, install, debug).
 
-### Testing Plugin Changes
-- Open SiYuan Developer Tools: F12 or Help → Developer Tools
-- Check console logs (plugin logs with "Claude Assistant Plugin" prefix)
-- Test API connection via Settings → Test Connection button
-- Verify streaming responses display correctly in chat panel
+**This Project**:
+1. Make changes in `src/`
+2. Run `pnpm build`
+3. Restart SiYuan
+4. Check console (F12) for errors
+
+**Project-Specific Testing:**
+- Test API connection: Settings → Test Connection
+- Verify streaming: Chat panel should show real-time responses
+- Test markdown rendering: Code blocks, tables, lists in chat
+- Test Insert/Replace buttons in chat panel
 
 ### Testing AI Edit Feature
 1. **Basic Edit Flow**:
@@ -404,10 +373,10 @@ The plugin uses several key libraries:
 ## Common Patterns
 
 ### Adding a New Setting
-1. Update `ClaudeSettings` interface in `src/claude/types.ts`
+1. Update `ClaudeSettings` or `EditSettings` interface in `src/claude/types.ts`
 2. Update `DEFAULT_SETTINGS` in `src/claude/index.ts`
-3. Add UI field in `SettingsPanel.ts`
-4. Handle the setting in `ClaudeClient.ts` if it affects API calls
+3. Add UI field in `SettingsPanelV2.ts` (use existing grouped sections)
+4. Handle in `ClaudeClient.ts` or `AIEditProcessor.ts` as needed
 
 ### Modifying Chat UI
 Edit `ChatPanel.ts` which builds DOM elements manually. Look for:
@@ -416,14 +385,10 @@ Edit `ChatPanel.ts` which builds DOM elements manually. Look for:
 - `appendAssistantMessage()` for streaming response handling
 
 ### Changing Editor Interactions
-Modify `EditorHelper.ts` methods which use SiYuan's Protyle API:
-- `getSelectedText()` - Reads selection from editor
-- `insertAtCursor()` - Inserts text at current position
-- `replaceSelection()` - Replaces selected text
-- `getBlockContent()` - Retrieves full block content by ID
-- `updateBlockContent()` - Updates block content (used by AI edit apply)
-- 插件代码接口在官方文档中查找 https://docs.siyuan-note.club/zh-Hans/guide/plugin/
-- 思源官方api文档 https://docs.siyuan-note.club/zh-Hans/reference/api/plugin/
+Key methods in `EditorHelper.ts`:
+- `getSelectedText()` - Reads selection with context extraction
+- `insertAtCursor()` / `replaceSelection()` - Insert/replace text
+- `getBlockContent()` / `updateBlockContent()` - Block-level operations for AI edits
 
 ### Adding AI Edit Features
 To extend the AI text editing system:

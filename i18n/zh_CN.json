@@ -3,5 +3,19 @@
   "askClaude": "使用选中文本问 Claude",
   "settings": "Claude AI 设置",
   "aiEdit": "发送到 AI 编辑",
-  "undoAIEdit": "撤销上次 AI 编辑"
+  "aiEditPresets": "AI 预设指令",
+  "aiEditBlock": "编辑整个块",
+  "undoAIEdit": "撤销上次 AI 编辑",
+  "aiEditWithPreset": "预设指令编辑...",
+  "editMode": "编辑模式",
+  "editModeInputPlaceholder": "请输入编辑指令，然后按发送...",
+  "editModeTextPreview": "选中文本预览：",
+  "editModeShowDiff": "显示对比差异",
+  "editModeButtonText": "编辑文本",
+  "normalInputPlaceholder": "输入消息...",
+  "normalSendButtonText": "发送",
+  "noTextSelected": "请先选择要编辑的文本",
+  "aiEditQueued": "已添加到编辑队列",
+  "aiEditProcessing": "正在处理 AI 编辑...",
+  "enterEditMode": "已进入编辑模式"
 }

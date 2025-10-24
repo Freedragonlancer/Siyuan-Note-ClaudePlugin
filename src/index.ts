@@ -7,7 +7,7 @@ import "@/index.scss";
 
 import { ClaudeClient, DEFAULT_SETTINGS } from "./claude";
 import type { ClaudeSettings } from "./claude";
-import { SettingsManager, SettingsPanelV2 } from "./settings";
+import { SettingsManager, SettingsPanelV2, SettingsPanelV3, ConfigManager, PromptEditorPanel } from "./settings";
 import { UnifiedAIPanel } from "./sidebar/UnifiedAIPanel";
 import { CLAUDE_ICON_SVG } from "./assets/icons";
 import {
@@ -23,6 +23,7 @@ const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
 export default class ClaudeAssistantPlugin extends Plugin {
     private settingsManager!: SettingsManager;
+    private configManager!: ConfigManager;
     private claudeClient!: ClaudeClient;
     private unifiedPanel: UnifiedAIPanel | null = null;
     private dockElement: HTMLElement | null = null;
@@ -42,12 +43,29 @@ export default class ClaudeAssistantPlugin extends Plugin {
         this.addIcons(CLAUDE_ICON_SVG);
         console.log("Custom Claude icon registered");
 
+        // Initialize ConfigManager (new configuration system)
+        this.configManager = new ConfigManager(this);
+        console.log("[Plugin] ConfigManager initialized");
+
+        // Migrate old settings to config system if needed
+        this.migrateOldSettings();
+
         // Initialize settings with callback to update ClaudeClient when async load completes
         this.settingsManager = new SettingsManager(this, (loadedSettings) => {
             console.log("[Plugin] Settings loaded asynchronously, updating ClaudeClient");
-            this.claudeClient.updateSettings(loadedSettings);
+            if (this.claudeClient) {
+                this.claudeClient.updateSettings(loadedSettings);
+            } else {
+                console.log("[Plugin] ClaudeClient not yet initialized, will use loaded settings on init");
+            }
         });
-        const settings = this.settingsManager.getSettings();
+
+        // Get settings from active profile
+        const activeProfile = this.configManager.getActiveProfile();
+        const settings = activeProfile.settings;
+
+        // Sync to SettingsManager for backward compatibility
+        await this.settingsManager.saveSettings(settings);
 
         // Initialize Claude client
         this.claudeClient = new ClaudeClient(settings);
@@ -206,19 +224,17 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     private openSettings() {
-        const currentSettings = this.settingsManager.getSettings();
-
         const dialog = new Dialog({
             title: "⚙️ Claude AI 设置",
             content: `<div id="claude-settings-container"></div>`,
-            width: "680px",
+            width: "720px",
             height: "auto",
         });
 
         const container = dialog.element.querySelector("#claude-settings-container");
         if (container) {
-            const settingsPanel = new SettingsPanelV2(
-                currentSettings,
+            const settingsPanel = new SettingsPanelV3(
+                this.configManager,
                 async (newSettings) => {
                     console.log("[ClaudePlugin] Settings save callback triggered with:", newSettings);
 
@@ -229,28 +245,74 @@ export default class ClaudeAssistantPlugin extends Plugin {
                     }
 
                     try {
-                        // Save settings (now async)
+                        // Get current active profile
+                        const activeProfile = this.configManager.getActiveProfile();
+
+                        // Update profile settings
+                        this.configManager.updateProfile(activeProfile.id, {
+                            settings: { ...activeProfile.settings, ...newSettings }
+                        });
+
+                        // Sync to SettingsManager for backward compatibility
                         console.log("[ClaudePlugin] Calling settingsManager.saveSettings");
                         await this.settingsManager.saveSettings(newSettings);
 
                         // Update Claude client
                         console.log("[ClaudePlugin] Updating Claude client");
-                        this.claudeClient.updateSettings(this.settingsManager.getSettings());
+                        this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
                         // Show success message
                         showMessage("✅ 设置已保存", 2000, "info");
-
-                        // Close dialog
-                        dialog.destroy();
                     } catch (error) {
                         console.error("[ClaudePlugin] Failed to save settings:", error);
                         showMessage("❌ 保存设置失败", 3000, "error");
                     }
+                },
+                () => {
+                    // Open Prompt Editor Panel
+                    this.openPromptEditor();
                 }
             );
 
+            settingsPanel.open(dialog);
             container.appendChild(settingsPanel.getElement());
         }
+    }
+
+    /**
+     * Open Prompt Editor Panel
+     */
+    private openPromptEditor(): void {
+        console.log("[ClaudePlugin] Opening Prompt Editor Panel");
+
+        const activeProfile = this.configManager.getActiveProfile();
+        const promptEditor = new PromptEditorPanel(
+            this.configManager,
+            activeProfile.settings,
+            async (newSettings) => {
+                console.log("[ClaudePlugin] Prompt Editor save callback triggered");
+
+                try {
+                    // Update profile settings
+                    this.configManager.updateProfile(activeProfile.id, {
+                        settings: { ...activeProfile.settings, ...newSettings }
+                    });
+
+                    // Sync to SettingsManager for backward compatibility
+                    await this.settingsManager.saveSettings({ ...activeProfile.settings, ...newSettings });
+
+                    // Update Claude client
+                    this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
+
+                    console.log("[ClaudePlugin] Prompt settings updated successfully");
+                } catch (error) {
+                    console.error("[ClaudePlugin] Failed to save prompt settings:", error);
+                    showMessage("❌ 保存提示词失败", 3000, "error");
+                }
+            }
+        );
+
+        promptEditor.open();
     }
 
     /**
@@ -695,6 +757,62 @@ export default class ClaudeAssistantPlugin extends Plugin {
             }, 100);
 
             showMessage(`${this.i18n.enterEditMode}: ${preset.text}`, 2000, "info");
+        }
+    }
+
+    /**
+     * Migrate old settings to new config system
+     * This runs once on first load after upgrade
+     */
+    private migrateOldSettings(): void {
+        try {
+            // Check if migration has already been done
+            const migrationDone = localStorage.getItem('claude-migration-v3-done');
+            if (migrationDone === 'true') {
+                console.log('[Migration] Already migrated to config system');
+                return;
+            }
+
+            // Check if there are existing profiles
+            const existingProfiles = this.configManager.getAllProfiles();
+            if (existingProfiles.length > 1) {
+                // Multiple profiles exist, assume migration done
+                console.log('[Migration] Multiple profiles found, skipping migration');
+                localStorage.setItem('claude-migration-v3-done', 'true');
+                return;
+            }
+
+            // Try to load old settings
+            const oldSettingsKey = 'claude-assistant-settings';
+            const oldSettingsData = localStorage.getItem(oldSettingsKey);
+
+            if (!oldSettingsData) {
+                console.log('[Migration] No old settings found');
+                localStorage.setItem('claude-migration-v3-done', 'true');
+                return;
+            }
+
+            console.log('[Migration] Found old settings, starting migration...');
+
+            // Parse old settings
+            const oldSettings = JSON.parse(oldSettingsData);
+
+            // Get default profile
+            const defaultProfile = this.configManager.getActiveProfile();
+
+            // Merge old settings into default profile
+            this.configManager.updateProfile(defaultProfile.id, {
+                settings: { ...defaultProfile.settings, ...oldSettings }
+            });
+
+            console.log('[Migration] Successfully migrated old settings to default profile');
+
+            // Mark migration as done
+            localStorage.setItem('claude-migration-v3-done', 'true');
+
+        } catch (error) {
+            console.error('[Migration] Error during migration:', error);
+            // Don't block plugin loading on migration failure
         }
     }
 }

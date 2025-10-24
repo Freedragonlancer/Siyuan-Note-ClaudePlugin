@@ -43,6 +43,14 @@ export class ClaudeClient {
         return !!this.client && !!this.settings.apiKey;
     }
 
+    getSettings(): ClaudeSettings {
+        return { ...this.settings };
+    }
+
+    getAppendedPrompt(): string {
+        return this.settings.appendedPrompt || "";
+    }
+
     /**
      * Send a message to Claude and get a streaming response
      */

@@ -11,6 +11,7 @@ export interface ClaudeSettings {
     maxTokens: number;
     temperature: number;
     systemPrompt: string;
+    appendedPrompt: string; // Prompt appended to end of each request
 
     // AI Text Editing settings
     editSettings?: EditSettings;

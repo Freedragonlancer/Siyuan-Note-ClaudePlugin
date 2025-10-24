@@ -313,6 +313,15 @@ export class UnifiedAIPanel {
             content: m.content
         }));
 
+        // Append the appended prompt to the last user message (if any)
+        const appendedPrompt = this.claudeClient.getAppendedPrompt();
+        if (appendedPrompt && apiMessages.length > 0) {
+            const lastMessage = apiMessages[apiMessages.length - 1];
+            if (lastMessage.role === 'user') {
+                lastMessage.content += '\n\n' + appendedPrompt;
+            }
+        }
+
         await this.claudeClient.sendMessage(
             apiMessages,
             (chunk) => {

@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
     maxTokens: 4096,
     temperature: 0.7,
     systemPrompt: "You are a helpful AI assistant integrated into SiYuan Note. Help users with their writing, editing, and note-taking tasks. Be concise and clear in your responses.",
+    appendedPrompt: "请用清晰的 Markdown 格式回复，确保回答准确、简洁、易于理解。",
     editSettings: DEFAULT_EDIT_SETTINGS,
 };
 

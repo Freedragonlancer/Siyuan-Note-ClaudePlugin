@@ -3,28 +3,33 @@ import { AVAILABLE_MODELS } from "../claude";
 import { ClaudeClient } from "../claude/ClaudeClient";
 
 /**
- * System Prompt Templates
+ * System Prompt Templates with Appended Prompts
  */
 const PROMPT_TEMPLATES = [
     {
         name: "默认助手",
-        value: "You are a helpful AI assistant integrated into SiYuan Note. Help users with their notes, writing, and questions.",
+        systemPrompt: "You are a helpful AI assistant integrated into SiYuan Note. Help users with their notes, writing, and questions.",
+        appendedPrompt: "请用清晰的 Markdown 格式回复，确保回答准确、简洁、易于理解。",
     },
     {
         name: "代码助手",
-        value: "You are an expert programming assistant. Provide clear, well-commented code examples and explain technical concepts concisely.",
+        systemPrompt: "You are an expert programming assistant. Provide clear, well-commented code examples and explain technical concepts concisely.",
+        appendedPrompt: "请提供完整可运行的代码，包含必要注释，遵循最佳实践和代码规范。",
     },
     {
         name: "写作助手",
-        value: "You are a professional writing assistant. Help improve clarity, grammar, and style while maintaining the user's voice.",
+        systemPrompt: "You are a professional writing assistant. Help improve clarity, grammar, and style while maintaining the user's voice.",
+        appendedPrompt: "请保持原文风格，注重语言流畅性和可读性，标注修改要点。",
     },
     {
         name: "翻译助手",
-        value: "You are a professional translator. Provide accurate, natural-sounding translations while preserving the original meaning and tone.",
+        systemPrompt: "You are a professional translator. Provide accurate, natural-sounding translations while preserving the original meaning and tone.",
+        appendedPrompt: "请确保译文准确、自然、符合目标语言习惯，保留原文格式。",
     },
     {
         name: "自定义",
-        value: "",
+        systemPrompt: "",
+        appendedPrompt: "",
     },
 ];
 
@@ -241,17 +246,17 @@ export class SettingsPanelV2 {
 
     private createSystemPromptSection(): string {
         const selectedTemplate = PROMPT_TEMPLATES.find(t =>
-            t.value === this.currentSettings.systemPrompt
+            t.systemPrompt === this.currentSettings.systemPrompt
         )?.name || "自定义";
 
         return `
             <div class="settings-section">
                 <div class="section-header" style="margin-bottom: 16px;">
                     <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
-                        📝 系统提示词
+                        📝 系统提示词与追加提示词
                     </h3>
                     <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
-                        自定义 Claude 的行为和角色
+                        自定义 Claude 的行为和角色，追加提示词会自动附加到每次请求末尾
                     </div>
                 </div>
 
@@ -269,10 +274,11 @@ export class SettingsPanelV2 {
                     </select>
                 </div>
 
-                <!-- Custom Prompt -->
-                <div class="setting-item">
+                <!-- System Prompt -->
+                <div class="setting-item" style="margin-bottom: 16px;">
                     <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">自定义指令</span>
+                        <span style="font-weight: 500;">系统提示词</span>
+                        <span class="ft__smaller ft__secondary"> (请求开始时的角色定义)</span>
                     </div>
                     <textarea
                         class="b3-text-field"
@@ -283,6 +289,24 @@ export class SettingsPanelV2 {
                     >${this.currentSettings.systemPrompt}</textarea>
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
                         💡 提示: 清晰具体的指令能获得更好的回应
+                    </div>
+                </div>
+
+                <!-- Appended Prompt -->
+                <div class="setting-item">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">追加提示词</span>
+                        <span class="ft__smaller ft__secondary"> (自动附加到每次请求末尾)</span>
+                    </div>
+                    <textarea
+                        class="b3-text-field"
+                        id="claude-appended-prompt"
+                        rows="3"
+                        placeholder="例如：请用清晰的 Markdown 格式回复..."
+                        style="width: 100%; resize: vertical;"
+                    >${this.currentSettings.appendedPrompt || ""}</textarea>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        💡 用于输出格式控制、质量要求、行为约束等
                     </div>
                 </div>
             </div>
@@ -381,13 +405,19 @@ export class SettingsPanelV2 {
         // Prompt template selection
         const templateSelect = container.querySelector("#prompt-template");
         const systemPromptTextarea = container.querySelector("#claude-system-prompt") as HTMLTextAreaElement;
+        const appendedPromptTextarea = container.querySelector("#claude-appended-prompt") as HTMLTextAreaElement;
 
         templateSelect?.addEventListener("change", (e) => {
             const templateName = (e.target as HTMLSelectElement).value;
             const template = PROMPT_TEMPLATES.find(t => t.name === templateName);
-            if (template && systemPromptTextarea) {
+            if (template) {
                 if (template.name !== "自定义") {
-                    systemPromptTextarea.value = template.value;
+                    if (systemPromptTextarea) {
+                        systemPromptTextarea.value = template.systemPrompt;
+                    }
+                    if (appendedPromptTextarea) {
+                        appendedPromptTextarea.value = template.appendedPrompt;
+                    }
                 }
             }
         });
@@ -429,6 +459,7 @@ export class SettingsPanelV2 {
             maxTokens: parseInt((container.querySelector("#claude-max-tokens") as HTMLInputElement)?.value) || this.currentSettings.maxTokens,
             temperature: parseFloat((container.querySelector("#claude-temperature") as HTMLInputElement)?.value) || this.currentSettings.temperature,
             systemPrompt: (container.querySelector("#claude-system-prompt") as HTMLTextAreaElement)?.value || this.currentSettings.systemPrompt,
+            appendedPrompt: (container.querySelector("#claude-appended-prompt") as HTMLTextAreaElement)?.value || "",
         };
     }
 

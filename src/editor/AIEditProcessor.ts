@@ -97,6 +97,14 @@ export class AIEditProcessor implements IAIEditProcessor {
         parts.push('<编辑指令>');
         parts.push(instruction);
         parts.push('只输出修改后的「待编辑文本」部分的内容，保持格式一致，不要输出上文和下文。');
+
+        // Add appended prompt if available
+        const appendedPrompt = this.client.getAppendedPrompt();
+        if (appendedPrompt && appendedPrompt.trim()) {
+            parts.push('');
+            parts.push(appendedPrompt);
+        }
+
         parts.push('</编辑指令>');
 
         const finalPrompt = parts.join('\n');

@@ -129,6 +129,34 @@ export interface EditSettings {
 
     /** Custom instruction templates for quick selection */
     customInstructions: CustomInstruction[];
+
+    // Quick Edit Mode Settings
+    /** Whether quick edit mode is enabled (default: true) */
+    quickEditEnabled: boolean;
+
+    /** Hotkey for triggering quick edit dialog (default: Ctrl+Shift+Q) */
+    quickEditHotkey: string;
+
+    /** Default instruction for quick edit (default: same as defaultInstruction) */
+    quickEditDefaultInstruction: string;
+
+    /** Whether to show context by default in quick edit (default: true) */
+    quickEditShowContextByDefault: boolean;
+
+    /** Quick edit dialog width in pixels (default: 600) */
+    quickEditDialogWidth: number;
+
+    /** Quick edit dialog max height in pixels (default: 700) */
+    quickEditDialogMaxHeight: number;
+
+    /** Show loading animation during processing (default: true) */
+    quickEditShowLoadingAnimation: boolean;
+
+    /** Auto-close dialog after applying edit (default: true) */
+    quickEditAutoCloseAfterApply: boolean;
+
+    /** Show keyboard shortcuts hint in dialog (default: true) */
+    quickEditShowKeyboardHints: boolean;
 }
 
 /**
@@ -151,7 +179,24 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
     maxTextLength: 5000,
     requestTimeout: 30000,
     smartContextExtraction: true,
-    customInstructions: []
+    customInstructions: [],
+
+    // Quick Edit Mode Defaults (Inline Comparison)
+    quickEditEnabled: true,
+    quickEditHotkey: 'Ctrl+Shift+Q',
+    quickEditDefaultInstruction: "请优化这段文本，使其更加清晰、准确、易读。保持原意不变。",
+    quickEditShowContextByDefault: true,
+    quickEditDialogWidth: 600,
+    quickEditDialogMaxHeight: 700,
+    quickEditShowLoadingAnimation: true,
+    quickEditAutoCloseAfterApply: true,
+    quickEditShowKeyboardHints: true,
+
+    // Inline Edit specific
+    quickEditShowProgressIndicator: true,
+    quickEditEnableTypingAnimation: true,
+    quickEditOriginalTextColor: 'rgba(239, 68, 68, 0.1)',
+    quickEditSuggestionTextColor: 'rgba(34, 197, 94, 0.1)'
 };
 
 /**

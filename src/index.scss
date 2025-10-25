@@ -706,3 +706,555 @@
         }
     }
 }
+
+/* Quick Edit Dialog Styles */
+.quick-edit-dialog {
+    position: fixed;
+    background: var(--b3-theme-surface);
+    border: 1px solid var(--b3-border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    width: 600px;
+    max-height: 700px;
+    display: flex;
+    flex-direction: column;
+    z-index: 9999;
+    font-family: var(--b3-font-family);
+    animation: quickEditFadeIn 0.15s ease-out;
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--b3-border-color);
+        background: var(--b3-theme-background);
+        border-radius: 8px 8px 0 0;
+    }
+
+    &__title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--b3-theme-on-background);
+    }
+
+    &__body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+
+        &::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        &::-webkit-scrollbar-thumb {
+            background-color: var(--b3-scroll-color);
+            border-radius: 3px;
+        }
+
+        &::-webkit-scrollbar-track {
+            background-color: transparent;
+        }
+    }
+}
+
+.qe-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.qe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.qe-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--b3-theme-on-surface);
+}
+
+.qe-instruction-row {
+    display: flex;
+    gap: 8px;
+
+    select {
+        min-width: 150px;
+        flex-shrink: 0;
+    }
+
+    input {
+        flex: 1;
+    }
+}
+
+.qe-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--b3-theme-on-surface);
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+        color: var(--b3-theme-primary);
+    }
+
+    input[type="checkbox"] {
+        cursor: pointer;
+    }
+}
+
+.qe-textarea {
+    min-height: 120px;
+    resize: vertical;
+    font-family: var(--b3-font-family);
+    line-height: 1.6;
+}
+
+.qe-error {
+    padding: 8px 12px;
+    background: var(--b3-card-error-background);
+    color: var(--b3-card-error-color);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.qe-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px;
+    color: var(--b3-theme-on-surface);
+    font-size: 13px;
+
+    &__spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--b3-border-color);
+        border-top-color: var(--b3-theme-primary);
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+}
+
+.qe-diff-container {
+    background: var(--b3-theme-background);
+    border: 1px solid var(--b3-border-color);
+    border-radius: 4px;
+    padding: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: var(--b3-font-family-code);
+    font-size: 12px;
+    line-height: 1.6;
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background-color: var(--b3-scroll-color);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background-color: transparent;
+    }
+
+    // Diff highlighting
+    .diff-add {
+        background: rgba(34, 197, 94, 0.15);
+        color: var(--b3-theme-on-background);
+    }
+
+    .diff-delete {
+        background: rgba(239, 68, 68, 0.15);
+        color: var(--b3-theme-on-background);
+        text-decoration: line-through;
+    }
+
+    .diff-equal {
+        color: var(--b3-theme-on-background);
+    }
+}
+
+.qe-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--b3-border-color);
+    background: var(--b3-theme-background);
+}
+
+.qe-keyboard-hints {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--b3-theme-on-surface-light);
+    border-top: 1px solid var(--b3-border-color);
+
+    span {
+        opacity: 0.7;
+    }
+}
+
+/* Animations */
+@keyframes quickEditFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* PHASE 4: Marked Original Text (Cursor-style inline marking) */
+.inline-edit-marked-text {
+    background: linear-gradient(to right, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.12) 100%);
+    color: rgba(239, 68, 68, 0.95);
+    // 移除删除线 - 用户反馈只需要红色背景标记
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+    animation: markedTextPulse 0.3s ease-out;
+
+    &:hover {
+        background: linear-gradient(to right, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.15) 100%);
+    }
+}
+
+/* Pulse animation for marked text */
+@keyframes markedTextPulse {
+    0% {
+        background: rgba(239, 68, 68, 0.25);
+        transform: scale(1.02);
+    }
+    50% {
+        background: rgba(239, 68, 68, 0.2);
+    }
+    100% {
+        background: rgba(239, 68, 68, 0.15);
+        transform: scale(1);
+    }
+}
+
+/* Inline Edit Block Styles (Cursor-like Inline Diff) */
+.inline-edit-block {
+    display: block;
+    margin: 4px 0;  // 减小上下边距
+    // 移除左侧边框 - 实现与原文左对齐
+    border-radius: 4px;
+    overflow: hidden;
+    font-family: var(--b3-font-family);
+    background: var(--b3-theme-surface);
+    // 使用更subtle的阴影
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    animation: inlineBlockSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    clear: both;  // Ensure it appears on a new line
+
+    &__container {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    &__loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 16px;
+        color: var(--b3-theme-on-surface);
+        background: var(--b3-theme-background);
+
+        .loading-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--b3-border-color);
+            border-top-color: var(--b3-theme-primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        span {
+            font-size: 13px;
+            opacity: 0.8;
+        }
+    }
+
+    &__progress {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
+        background: var(--b3-theme-background);
+        font-size: 11px;
+        color: var(--b3-theme-on-surface-light);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+
+        .progress-count {
+            font-weight: 600;
+            color: var(--b3-theme-primary);
+            margin: 0 2px;
+        }
+    }
+
+    // Cursor-style compact diff blocks
+    &__original, &__suggestion {
+        padding: 0;
+        border: none;
+        position: relative;
+
+        .block-label {
+            display: none; // Hide labels for more compact look
+        }
+
+        .block-content {
+            font-family: var(--b3-font-family-code);
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            // 左对齐 - 移除左侧padding
+            padding: 8px 0;
+            margin: 0;
+            transition: background-color 0.15s ease;
+        }
+    }
+
+    // Deletion block (red, like Cursor)
+    &__original {
+        background: linear-gradient(to right, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.08) 100%);
+        border-bottom: 1px solid rgba(239, 68, 68, 0.15);
+
+        .block-content {
+            color: rgba(239, 68, 68, 0.9);
+            text-decoration: line-through;
+            text-decoration-color: rgba(239, 68, 68, 0.5);
+            opacity: 0.85;
+        }
+    }
+
+    // Addition block (green, like Cursor)
+    &__suggestion {
+        background: linear-gradient(to right, rgba(34, 197, 94, 0.12) 0%, rgba(34, 197, 94, 0.08) 100%);
+
+        .block-content {
+            color: var(--b3-theme-on-surface);
+        }
+    }
+
+    &__error {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 16px;
+        background: var(--b3-card-error-background);
+        color: var(--b3-card-error-color);
+
+        .error-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .error-message {
+            flex: 1;
+            font-size: 13px;
+        }
+    }
+
+    &__toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.02);
+        border-top: 1px solid rgba(0, 0, 0, 0.06);
+
+        .toolbar-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .toolbar-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            padding: 5px 10px;
+            min-height: 28px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+            cursor: pointer;
+
+            svg {
+                width: 13px;
+                height: 13px;
+                opacity: 0.8;
+            }
+
+            span:not(.shortcut) {
+                font-weight: 500;
+            }
+
+            .shortcut {
+                margin-left: 2px;
+                padding: 1px 5px;
+                background: rgba(0, 0, 0, 0.08);
+                border-radius: 2px;
+                font-size: 9px;
+                font-family: var(--b3-font-family-code);
+                opacity: 0.6;
+                letter-spacing: 0.3px;
+            }
+
+            &:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+
+                .shortcut {
+                    opacity: 0.8;
+                }
+            }
+
+            &--primary {
+                background: var(--b3-theme-primary);
+                color: white;
+                font-weight: 600;
+
+                svg {
+                    opacity: 1;
+                }
+
+                .shortcut {
+                    background: rgba(255, 255, 255, 0.2);
+                    color: white;
+                    opacity: 0.9;
+                }
+
+                &:hover {
+                    background: var(--b3-theme-primary-light);
+                    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+                }
+            }
+        }
+    }
+}
+
+/* Instruction Input Popup */
+.instruction-input-popup {
+    position: fixed;
+    z-index: 10000;
+    background: var(--b3-theme-surface);
+    border: 1px solid var(--b3-border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    min-width: 400px;
+    animation: popupFadeIn 0.15s ease-out;
+
+    .popup-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--b3-border-color);
+        font-size: 13px;
+        font-weight: 500;
+
+        .popup-close {
+            padding: 4px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            opacity: 0.6;
+
+            &:hover {
+                opacity: 1;
+            }
+
+            svg {
+                width: 14px;
+                height: 14px;
+            }
+        }
+    }
+
+    .popup-body {
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .b3-select {
+            width: 100%;
+        }
+
+        .b3-text-field {
+            width: 100%;
+        }
+
+        .popup-hint {
+            font-size: 11px;
+            color: var(--b3-theme-on-surface-light);
+            opacity: 0.7;
+            text-align: center;
+        }
+    }
+}
+
+/* Animations */
+// Cursor-style slide-in animation
+@keyframes inlineBlockSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        max-height: 500px;
+    }
+}
+
+@keyframes inlineBlockFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes popupFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}

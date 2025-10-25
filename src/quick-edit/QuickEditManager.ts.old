@@ -1,0 +1,371 @@
+/**
+ * Quick Edit Manager - Manages the quick edit workflow
+ */
+
+import type { Plugin } from 'siyuan';
+import type {
+    QuickEditRequest,
+    QuickEditResponse,
+    QuickEditEvent,
+    QuickEditEventType,
+    QuickEditEventCallback
+} from './types';
+import type { CustomInstruction, EditSettings, TextSelection } from '@/editor/types';
+import { QuickEditDialog } from './QuickEditDialog';
+import { AIEditProcessor } from '@/editor/AIEditProcessor';
+import { EditorHelper } from '@/editor/EditorHelper';
+import { EditHistory, type HistoryEntry } from '@/editor/EditHistory';
+import { ClaudeClient } from '@/claude';
+
+export class QuickEditManager {
+    private plugin: Plugin;
+    private dialog: QuickEditDialog;
+    private processor: AIEditProcessor;
+    private history: EditHistory;
+    private editSettings: EditSettings;
+    private eventListeners: QuickEditEventCallback[] = [];
+
+    // Track current edit context
+    private currentBlockId?: string;
+    private currentSelectionRange?: { startOffset: number; endOffset: number };
+    private hasActiveSelection: boolean = false;
+
+    constructor(
+        plugin: Plugin,
+        claudeClient: ClaudeClient,
+        history: EditHistory,
+        editSettings: EditSettings
+    ) {
+        this.plugin = plugin;
+        this.history = history;
+        this.editSettings = editSettings;
+
+        // Initialize components
+        this.processor = new AIEditProcessor(claudeClient);
+        this.dialog = new QuickEditDialog(plugin, editSettings);
+
+        // Setup dialog callbacks
+        this.dialog.setCallbacks({
+            onSend: (request) => this.handleSendRequest(request),
+            onApply: (response) => this.handleApplyEdit(response),
+            onReject: () => this.handleRejectEdit(),
+            onRetry: (request) => this.handleRetryEdit(request),
+            onStateChange: (oldState, newState) => {
+                console.log(`[QuickEdit] State changed: ${oldState} -> ${newState}`);
+            }
+        });
+    }
+
+    /**
+     * Trigger quick edit (show dialog)
+     */
+    public trigger(): void {
+        if (!this.editSettings.quickEditEnabled) {
+            console.warn('[QuickEdit] Quick edit is disabled in settings');
+            return;
+        }
+
+        // Get selected text from editor
+        const selectedText = this.getSelectedTextWithContext();
+
+        // Show dialog
+        this.dialog.show(selectedText || undefined);
+
+        // Emit event
+        this.emitEvent('dialog_opened' as QuickEditEventType);
+    }
+
+    /**
+     * Update edit settings
+     */
+    public updateEditSettings(editSettings: EditSettings): void {
+        this.editSettings = editSettings;
+        this.dialog.updateSettings(editSettings);
+    }
+
+    /**
+     * Add event listener
+     */
+    public addEventListener(callback: QuickEditEventCallback): void {
+        this.eventListeners.push(callback);
+    }
+
+    /**
+     * Remove event listener
+     */
+    public removeEventListener(callback: QuickEditEventCallback): void {
+        const index = this.eventListeners.indexOf(callback);
+        if (index > -1) {
+            this.eventListeners.splice(index, 1);
+        }
+    }
+
+    /**
+     * Get selected text with context
+     */
+    private getSelectedTextWithContext(): string | null {
+        try {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                return null;
+            }
+
+            const selectedText = selection.toString().trim();
+            if (!selectedText) {
+                return null;
+            }
+
+            this.hasActiveSelection = true;
+
+            // Try to get block ID if we're in a SiYuan editor
+            // This is a simplified version - full implementation would need Protyle API
+            const range = selection.getRangeAt(0);
+            const container = range.commonAncestorContainer;
+            const blockElement = this.findBlockElement(container);
+
+            if (blockElement) {
+                this.currentBlockId = blockElement.getAttribute('data-node-id') || undefined;
+            }
+
+            return selectedText;
+
+        } catch (error) {
+            console.error('[QuickEdit] Error getting selected text:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Find nearest block element
+     */
+    private findBlockElement(node: Node): HTMLElement | null {
+        let current: Node | null = node;
+
+        while (current && current !== document.body) {
+            if (current instanceof HTMLElement) {
+                if (current.hasAttribute('data-node-id')) {
+                    return current;
+                }
+            }
+            current = current.parentNode;
+        }
+
+        return null;
+    }
+
+    /**
+     * Handle send request
+     */
+    private async handleSendRequest(request: QuickEditRequest): Promise<void> {
+        console.log('[QuickEdit] Processing request:', request.id);
+
+        // Show processing state
+        this.dialog.showProcessing();
+
+        // Emit event
+        this.emitEvent('request_sent' as QuickEditEventType, { request });
+
+        try {
+            // Create a TextSelection object for AIEditProcessor
+            const selection = this.createTextSelection(request);
+
+            // Process with AI
+            const editResult = await this.processor.processSelection(
+                selection,
+                request.instruction
+            );
+
+            // Create response
+            const response: QuickEditResponse = {
+                requestId: request.id,
+                result: editResult,
+                timestamp: Date.now()
+            };
+
+            // Show diff review
+            this.dialog.showDiffReview(response);
+
+            // Emit event
+            this.emitEvent('response_received' as QuickEditEventType, { response });
+
+        } catch (error) {
+            console.error('[QuickEdit] Error processing request:', error);
+
+            // Show error
+            this.dialog.showError(error instanceof Error ? error : new Error(String(error)));
+
+            // Emit event
+            this.emitEvent('error_occurred' as QuickEditEventType, {
+                error: error instanceof Error ? error : new Error(String(error))
+            });
+        }
+    }
+
+    /**
+     * Handle apply edit
+     */
+    private async handleApplyEdit(response: QuickEditResponse): Promise<void> {
+        console.log('[QuickEdit] Applying edit:', response.requestId);
+
+        try {
+            const { original, modified } = response.result;
+
+            // Apply to editor
+            const success = this.applyToEditor(modified);
+
+            if (success) {
+                // Add to history
+                const historyEntry = this.history.addToHistory({
+                    selection: this.createTextSelectionForHistory(response),
+                    originalContent: original,
+                    modifiedContent: modified,
+                    blockId: this.currentBlockId || 'unknown',
+                    applied: true
+                });
+
+                console.log('[QuickEdit] Edit applied and added to history:', historyEntry.id);
+
+                // Emit event
+                this.emitEvent('edit_applied' as QuickEditEventType, { response });
+
+                // Show success message
+                this.plugin.showMessage('修改已应用', 2000);
+            } else {
+                throw new Error('Failed to apply edit to editor');
+            }
+
+        } catch (error) {
+            console.error('[QuickEdit] Error applying edit:', error);
+            this.plugin.showMessage('应用修改失败: ' + (error instanceof Error ? error.message : String(error)), 5000);
+
+            // Emit event
+            this.emitEvent('error_occurred' as QuickEditEventType, {
+                error: error instanceof Error ? error : new Error(String(error))
+            });
+        }
+    }
+
+    /**
+     * Handle reject edit
+     */
+    private handleRejectEdit(): void {
+        console.log('[QuickEdit] Edit rejected');
+
+        // Emit event
+        this.emitEvent('edit_rejected' as QuickEditEventType);
+    }
+
+    /**
+     * Handle retry edit
+     */
+    private async handleRetryEdit(request: QuickEditRequest): Promise<void> {
+        console.log('[QuickEdit] Retrying edit:', request.id);
+
+        // Create new request with same parameters
+        const newRequest: QuickEditRequest = {
+            ...request,
+            id: Date.now().toString(),
+            timestamp: Date.now()
+        };
+
+        // Emit event
+        this.emitEvent('retry_requested' as QuickEditEventType, { request: newRequest });
+
+        // Process new request
+        await this.handleSendRequest(newRequest);
+    }
+
+    /**
+     * Apply modified text to editor
+     */
+    private applyToEditor(modifiedText: string): boolean {
+        try {
+            // If there was an active selection, replace it
+            if (this.hasActiveSelection) {
+                const success = EditorHelper.replaceSelectedText(modifiedText);
+                if (success) {
+                    this.hasActiveSelection = false;
+                    this.currentBlockId = undefined;
+                    this.currentSelectionRange = undefined;
+                    return true;
+                }
+            }
+
+            // Otherwise, insert at cursor
+            const success = EditorHelper.insertTextAtCursor(modifiedText);
+            return success;
+
+        } catch (error) {
+            console.error('[QuickEdit] Error applying to editor:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Create TextSelection object from QuickEditRequest
+     */
+    private createTextSelection(request: QuickEditRequest): TextSelection {
+        return {
+            id: request.id,
+            blockId: request.blockId || 'quick-edit',
+            startLine: 0,
+            endLine: 0,
+            selectedText: request.text,
+            contextBefore: request.includeContext ? (request.contextBefore || '') : '',
+            contextAfter: request.includeContext ? (request.contextAfter || '') : '',
+            timestamp: request.timestamp,
+            status: 'processing',
+            customInstruction: request.instruction
+        };
+    }
+
+    /**
+     * Create TextSelection for history entry
+     */
+    private createTextSelectionForHistory(response: QuickEditResponse): TextSelection {
+        return {
+            id: response.requestId,
+            blockId: this.currentBlockId || 'quick-edit',
+            startLine: 0,
+            endLine: 0,
+            selectedText: response.result.original,
+            contextBefore: '',
+            contextAfter: '',
+            timestamp: response.timestamp,
+            status: 'completed',
+            editResult: response.result
+        };
+    }
+
+    /**
+     * Emit event to listeners
+     */
+    private emitEvent(
+        type: QuickEditEventType,
+        data?: { request?: QuickEditRequest; response?: QuickEditResponse; error?: Error }
+    ): void {
+        const event: QuickEditEvent = {
+            type,
+            request: data?.request,
+            response: data?.response,
+            error: data?.error,
+            timestamp: Date.now()
+        };
+
+        this.eventListeners.forEach(callback => {
+            try {
+                callback(event);
+            } catch (error) {
+                console.error('[QuickEdit] Error in event listener:', error);
+            }
+        });
+    }
+
+    /**
+     * Cleanup
+     */
+    public destroy(): void {
+        this.dialog.close();
+        this.eventListeners = [];
+    }
+}

@@ -18,6 +18,7 @@ import {
     EditHistory
 } from "./editor";
 import type { TextSelection } from "./editor/types";
+import { QuickEditManager } from "./quick-edit";
 
 const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
@@ -36,8 +37,20 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private editQueue: EditQueue | null = null;
     private editHistory: EditHistory | null = null;
 
+    // Quick Edit Mode
+    private quickEditManager: QuickEditManager | null = null;
+
+    // Initialization promise to track when onload completes
+    private initializationComplete: Promise<void> | null = null;
+    private initializationResolver: (() => void) | null = null;
+
     async onload() {
         console.log("Loading Claude Assistant Plugin");
+
+        // Create initialization promise
+        this.initializationComplete = new Promise<void>((resolve) => {
+            this.initializationResolver = resolve;
+        });
 
         // Register custom icons
         this.addIcons(CLAUDE_ICON_SVG);
@@ -60,21 +73,61 @@ export default class ClaudeAssistantPlugin extends Plugin {
             }
         });
 
-        // Get settings from active profile
-        const activeProfile = this.configManager.getActiveProfile();
-        const settings = activeProfile.settings;
+        // FIX: Wait for async settings load to complete before proceeding
+        // The SettingsManager constructor starts an async file load that needs to complete
+        // before we access settings, otherwise we'll get defaults and overwrite saved data
+        let settings: ClaudeSettings;
 
-        // Sync to SettingsManager for backward compatibility
-        await this.settingsManager.saveSettings(settings);
+        try {
+            await new Promise<void>(resolve => setTimeout(resolve, 100));
+            console.log("[Plugin] Waited for settings async load");
+
+            // Get settings from SettingsManager (which has now loaded from file)
+            const loadedSettings = this.settingsManager.getSettings();
+            console.log("[Plugin] Loaded settings from SettingsManager:", { hasApiKey: !!loadedSettings.apiKey });
+
+            // Sync loaded settings to ConfigManager active profile if needed
+            const activeProfile = this.configManager.getActiveProfile();
+
+            // Only update ConfigManager if the loaded settings have an API key
+            // (indicates they are real saved settings, not just defaults)
+            if (loadedSettings.apiKey) {
+                console.log("[Plugin] Syncing loaded settings to ConfigManager");
+                this.configManager.updateProfile(activeProfile.id, {
+                    settings: { ...activeProfile.settings, ...loadedSettings }
+                });
+            } else {
+                console.log("[Plugin] No saved settings found, using ConfigManager defaults");
+            }
+
+            // Use the loaded settings for initialization
+            settings = loadedSettings.apiKey ? loadedSettings : activeProfile.settings;
+        } catch (error) {
+            console.error("[Plugin] Error during settings load, using defaults:", error);
+            // Fallback to defaults if anything fails
+            settings = this.configManager.getActiveProfile().settings;
+        }
 
         // Initialize Claude client
         this.claudeClient = new ClaudeClient(settings);
+        console.log("[Plugin] ClaudeClient initialized");
 
         // Initialize AI Text Editing feature
-        this.initializeEditFeature(settings);
+        try {
+            this.initializeEditFeature(settings);
+            console.log("[Plugin] Edit feature initialized successfully");
+        } catch (error) {
+            console.error("[Plugin] ❌ Failed to initialize edit feature:", error);
+            // Continue anyway, we can still show the panel even if edit features fail
+        }
 
         // Setup right-click context menu for AI Edit
-        this.setupContextMenu();
+        try {
+            this.setupContextMenu();
+            console.log("[Plugin] Context menu setup complete");
+        } catch (error) {
+            console.error("[Plugin] ❌ Failed to setup context menu:", error);
+        }
 
         // Add commands (non-UI initialization)
         this.addCommand({
@@ -120,11 +173,26 @@ export default class ClaudeAssistantPlugin extends Plugin {
             },
         });
 
+        // Quick Edit command
+        this.addCommand({
+            langKey: "quickEdit",
+            hotkey: "⌃⇧Q",
+            callback: () => {
+                this.triggerQuickEdit();
+            },
+        });
+
         // Check if API key is configured
         if (!settings.apiKey) {
             setTimeout(() => {
                 showMessage("Claude Assistant: Please configure your API key in settings", 5000, "info");
             }, 1000);
+        }
+
+        // Signal that initialization is complete
+        if (this.initializationResolver) {
+            this.initializationResolver();
+            console.log("[Plugin] ✅ Initialization complete");
         }
     }
 
@@ -147,23 +215,50 @@ export default class ClaudeAssistantPlugin extends Plugin {
             init() {
                 const plugin = this.data.plugin;
 
-                // Initialize UnifiedAIPanel with all dependencies
-                if (plugin.textSelectionManager && plugin.aiEditProcessor && 
-                    plugin.editQueue && plugin.diffRenderer) {
-                    plugin.unifiedPanel = new UnifiedAIPanel(
-                        plugin.claudeClient,
-                        plugin.textSelectionManager,
-                        plugin.aiEditProcessor,
-                        plugin.editQueue,
-                        plugin.diffRenderer,
-                        () => plugin.openSettings()
-                    );
-                    this.element.innerHTML = '';
-                    this.element.appendChild(plugin.unifiedPanel.getElement());
-                    plugin.dockElement = this.element;
+                console.log("[Dock] Initializing dock panel...");
 
-                    console.log("Claude AI unified panel ready");
-                }
+                // Wait for plugin initialization to complete
+                (async () => {
+                    try {
+                        if (plugin.initializationComplete) {
+                            console.log("[Dock] Waiting for plugin initialization...");
+                            await plugin.initializationComplete;
+                            console.log("[Dock] Plugin initialization complete, proceeding...");
+                        }
+
+                        console.log("[Dock] Dependencies check:", {
+                            textSelectionManager: !!plugin.textSelectionManager,
+                            aiEditProcessor: !!plugin.aiEditProcessor,
+                            editQueue: !!plugin.editQueue,
+                            diffRenderer: !!plugin.diffRenderer,
+                            claudeClient: !!plugin.claudeClient
+                        });
+
+                        // Initialize UnifiedAIPanel with all dependencies
+                        if (plugin.textSelectionManager && plugin.aiEditProcessor &&
+                            plugin.editQueue && plugin.diffRenderer) {
+                            plugin.unifiedPanel = new UnifiedAIPanel(
+                                plugin.claudeClient,
+                                plugin.textSelectionManager,
+                                plugin.aiEditProcessor,
+                                plugin.editQueue,
+                                plugin.diffRenderer,
+                                () => plugin.openSettings()
+                            );
+                            this.element.innerHTML = '';
+                            this.element.appendChild(plugin.unifiedPanel.getElement());
+                            plugin.dockElement = this.element;
+
+                            console.log("[Dock] ✅ Claude AI unified panel ready");
+                        } else {
+                            console.error("[Dock] ❌ Missing required dependencies, cannot initialize panel");
+                            this.element.innerHTML = '<div style="padding: 20px; color: orange;">缺少必要组件，请重启插件</div>';
+                        }
+                    } catch (error) {
+                        console.error("[Dock] ❌ Failed to initialize UnifiedAIPanel:", error);
+                        this.element.innerHTML = '<div style="padding: 20px; color: red;">初始化失败: ' + (error as Error).message + '</div>';
+                    }
+                })();
             },
         });
 
@@ -323,20 +418,40 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         // Get edit settings or use defaults
         const editSettings = settings.editSettings || DEFAULT_SETTINGS.editSettings!;
+        console.log("[AIEdit] Using editSettings:", editSettings ? "loaded" : "ERROR: undefined");
 
         // Initialize managers
+        console.log("[AIEdit] Creating TextSelectionManager...");
         this.textSelectionManager = new TextSelectionManager(editSettings);
+
+        console.log("[AIEdit] Creating AIEditProcessor...");
         this.aiEditProcessor = new AIEditProcessor(this.claudeClient);
+
+        console.log("[AIEdit] Creating EditHistory...");
         this.editHistory = new EditHistory();
+
+        console.log("[AIEdit] Creating DiffRenderer...");
         this.diffRenderer = new DiffRenderer(this);
         this.diffRenderer.setEditHistory(this.editHistory); // Link history to renderer
+
+        console.log("[AIEdit] Creating EditQueue...");
         this.editQueue = new EditQueue(
             this.aiEditProcessor,
             this.textSelectionManager,
             editSettings
         );
 
-        console.log("[AIEdit] AI text editing feature initialized");
+        // Initialize Quick Edit Manager
+        console.log("[AIEdit] Creating QuickEditManager...");
+        this.quickEditManager = new QuickEditManager(
+            this,
+            this.claudeClient,
+            this.editHistory,
+            editSettings
+        );
+
+        console.log("[AIEdit] ✅ AI text editing feature initialized");
+        console.log("[QuickEdit] ✅ Quick Edit Manager initialized");
     }
 
     /**
@@ -715,6 +830,24 @@ export default class ClaudeAssistantPlugin extends Plugin {
         } catch (error) {
             console.error("[AIEdit] Error undoing edit:", error);
             showMessage("撤销编辑失败", 3000, "error");
+        }
+    }
+
+    /**
+     * Trigger Quick Edit dialog
+     */
+    private triggerQuickEdit(): void {
+        if (!this.quickEditManager) {
+            console.error("[QuickEdit] Quick Edit Manager not initialized");
+            showMessage("快速编辑功能未初始化", 3000, "error");
+            return;
+        }
+
+        try {
+            this.quickEditManager.trigger();
+        } catch (error) {
+            console.error("[QuickEdit] Error triggering quick edit:", error);
+            showMessage("打开快速编辑失败", 3000, "error");
         }
     }
 

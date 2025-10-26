@@ -82,6 +82,10 @@ export interface InlineEditBlock {
 
     /** 缩进前缀字符串（空格或tab），用于给AI返回的每一行添加缩进 */
     indentPrefix?: string;
+
+    /** 原始块类型信息（用于保留块格式） - FIX Issue #1 */
+    originalBlockType?: string;       // data-type attribute (e.g., "h", "l", "p", "c")
+    originalBlockSubtype?: string;    // data-subtype attribute (e.g., "h1", "h2", "u", "o")
 }
 
 /**

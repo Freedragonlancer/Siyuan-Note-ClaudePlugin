@@ -322,6 +322,16 @@ export class QuickEditManager {
         // Clear immediately to prevent reuse
         this.pendingSelection = null;
 
+        // FIX Issue #1: Read original block type and subtype to preserve formatting
+        const originalBlockType = selection.blockElement.getAttribute('data-type') || undefined;
+        const originalBlockSubtype = selection.blockElement.getAttribute('data-subtype') || undefined;
+
+        console.log('[QuickEdit] Original block type info:', {
+            type: originalBlockType,
+            subtype: originalBlockSubtype,
+            blockId: selection.blockId
+        });
+
         // Create inline edit block
         const blockId = `inline-edit-${Date.now()}`;
         const inlineBlock: InlineEditBlock = {
@@ -341,7 +351,10 @@ export class QuickEditManager {
             updatedAt: Date.now(),
             locked: true,
             // PHASE 4: Store range for text marking
-            originalRange: selection.range.cloneRange()
+            originalRange: selection.range.cloneRange(),
+            // FIX Issue #1: Store block type for format preservation
+            originalBlockType,
+            originalBlockSubtype
         };
 
         this.activeBlocks.set(blockId, inlineBlock);
@@ -651,6 +664,61 @@ ${block.originalText}
     }
 
     /**
+     * FIX Issue #1: Add Markdown formatting based on block type
+     * Preserves original block formatting when possible
+     */
+    private applyMarkdownFormatting(text: string, blockType?: string, blockSubtype?: string): string {
+        if (!blockType || !blockSubtype) {
+            return text; // No type info, return as-is
+        }
+
+        console.log(`[QuickEdit] Applying Markdown formatting: type=${blockType}, subtype=${blockSubtype}`);
+
+        // Handle headings (h1-h6)
+        if (blockType === 'h' && blockSubtype) {
+            const headingLevel = blockSubtype; // "h1", "h2", etc.
+            const level = parseInt(headingLevel.substring(1)); // Extract number
+
+            if (level >= 1 && level <= 6) {
+                const prefix = '#'.repeat(level);
+                // For headings, only format the first line (headings should be single-line)
+                const firstLine = text.split('\n')[0];
+                const restLines = text.split('\n').slice(1);
+
+                if (restLines.length > 0) {
+                    // Multi-line content: format first line as heading, rest as paragraphs
+                    return `${prefix} ${firstLine}\n\n${restLines.join('\n')}`;
+                } else {
+                    // Single line: format as heading
+                    return `${prefix} ${firstLine}`;
+                }
+            }
+        }
+
+        // Handle list items
+        if (blockType === 'l') {
+            // Lists are complex - for now, return as-is and let SiYuan handle it
+            // TODO: Future enhancement to preserve list formatting
+            return text;
+        }
+
+        // Handle code blocks
+        if (blockType === 'c') {
+            // Wrap in code fence
+            return `\`\`\`\n${text}\n\`\`\``;
+        }
+
+        // Handle quotes
+        if (blockType === 'b') {
+            // Add quote markers
+            return text.split('\n').map(line => `> ${line}`).join('\n');
+        }
+
+        // For all other types (paragraphs, etc.), return as-is
+        return text;
+    }
+
+    /**
      * Handle accept
      * FIX 1.3: Implement real block update via SiYuan Kernel API
      * PHASE 4: Also handle marked text replacement
@@ -668,8 +736,25 @@ ${block.originalText}
             // Do NOT modify DOM directly - let SiYuan handle all rendering
 
             // FIX: Use indented text if available (preserves indentation shown in preview)
-            const textToApply = block.suggestedTextWithIndent || block.suggestedText;
+            let textToApply = block.suggestedTextWithIndent || block.suggestedText;
             console.log(`[QuickEdit] Using ${block.suggestedTextWithIndent ? 'indented' : 'non-indented'} text for application`);
+
+            // FIX Issue #1: Apply Markdown formatting for single-block selections
+            const isSingleBlock = !block.selectedBlockIds || block.selectedBlockIds.length === 1;
+            if (isSingleBlock && block.originalBlockType) {
+                console.log(`[QuickEdit] Single block selection detected, applying Markdown formatting`);
+                console.log(`[QuickEdit] Original block type: ${block.originalBlockType}, subtype: ${block.originalBlockSubtype}`);
+
+                textToApply = this.applyMarkdownFormatting(
+                    textToApply,
+                    block.originalBlockType,
+                    block.originalBlockSubtype
+                );
+
+                console.log(`[QuickEdit] Formatted text preview: "${textToApply.substring(0, 100)}..."`);
+            } else {
+                console.log(`[QuickEdit] Multi-block selection or no type info, skipping format preservation`);
+            }
 
             // UNIFIED APPROACH: Split AI-generated content into paragraphs
             // In SiYuan, \n\n separates different blocks (paragraphs)

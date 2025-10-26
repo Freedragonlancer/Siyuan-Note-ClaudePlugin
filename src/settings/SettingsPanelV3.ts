@@ -39,6 +39,19 @@ export class SettingsPanelV3 {
         this.element = this.createPanel();
     }
 
+    /**
+     * FIX Critical 1.4: Escape HTML to prevent XSS attacks
+     * Escapes special HTML characters in user-controlled strings
+     */
+    private escapeHtml(unsafe: string): string {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     private createPanel(): HTMLElement {
         console.log("[SettingsPanelV3] Creating panel...");
         const container = document.createElement("div");
@@ -100,13 +113,13 @@ export class SettingsPanelV3 {
                     </div>
                     <select class="b3-select" id="profile-selector" style="width: 100%;">
                         ${profiles.map(p => `
-                            <option value="${p.id}" ${p.id === activeProfileId ? 'selected' : ''}>
-                                ${p.icon || '📋'} ${p.name}${p.isDefault ? ' (默认)' : ''}
+                            <option value="${this.escapeHtml(p.id)}" ${p.id === activeProfileId ? 'selected' : ''}>
+                                ${this.escapeHtml(p.icon || '📋')} ${this.escapeHtml(p.name)}${p.isDefault ? ' (默认)' : ''}
                             </option>
                         `).join('')}
                     </select>
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;" id="profile-description">
-                        ${this.currentProfile.description || ''}
+                        ${this.escapeHtml(this.currentProfile.description || '')}
                     </div>
                 </div>
 
@@ -724,9 +737,10 @@ export class SettingsPanelV3 {
         if (!selector) return;
 
         const profiles = this.configManager.getAllProfiles();
+        // FIX Critical 1.4: Escape HTML to prevent XSS in profile names
         selector.innerHTML = profiles.map(p => `
-            <option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>
-                ${p.icon || '📋'} ${p.name}${p.isDefault ? ' (默认)' : ''}
+            <option value="${this.escapeHtml(p.id)}" ${p.id === selectedId ? 'selected' : ''}>
+                ${this.escapeHtml(p.icon || '📋')} ${this.escapeHtml(p.name)}${p.isDefault ? ' (默认)' : ''}
             </option>
         `).join('');
     }

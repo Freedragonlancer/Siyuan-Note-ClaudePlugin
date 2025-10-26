@@ -147,23 +147,24 @@ export class SettingsManager {
 
     async saveSettings(settings: Partial<ClaudeSettings>) {
         console.log("[SettingsManager] Saving settings:", settings);
-        this.settings = { ...this.settings, ...settings };
-        console.log("[SettingsManager] Merged settings:", this.settings);
+
+        // FIX Critical 1.5: Save old settings for rollback in case of failure
+        const oldSettings = { ...this.settings };
+        const newSettings = { ...this.settings, ...settings };
+        console.log("[SettingsManager] Merged settings:", newSettings);
 
         try {
-            const serialized = JSON.stringify(this.settings, null, 2);
+            const serialized = JSON.stringify(newSettings, null, 2);
             console.log("[SettingsManager] Serialized settings (length:", serialized.length, ")");
-            
+
+            // FIX Critical 1.5: Save to all storages BEFORE updating in-memory state
+            // This ensures atomicity - either all succeed or none succeed
+
             // Save to memory storages
             localStorage.setItem(STORAGE_KEY, serialized);
             sessionStorage.setItem(STORAGE_KEY, serialized);
-            
-            // Save to global variable
-            if (typeof window !== 'undefined') {
-                (window as any).__CLAUDE_SETTINGS__ = this.settings;
-            }
-            
-            // Save to file system using SiYuan plugin API
+
+            // Save to file system using SiYuan plugin API (most likely to fail)
             if (this.plugin && typeof this.plugin.saveData === 'function') {
                 console.log("[SettingsManager] Saving to plugin data file:", STORAGE_FILE);
                 await this.plugin.saveData(STORAGE_FILE, serialized);
@@ -171,11 +172,28 @@ export class SettingsManager {
             } else {
                 console.warn("[SettingsManager] ⚠️ Plugin instance not available, file save skipped");
             }
-            
+
+            // FIX Critical 1.5: Only update in-memory settings after all saves succeed
+            this.settings = newSettings;
+
+            // Save to global variable (safe to do after memory update)
+            if (typeof window !== 'undefined') {
+                (window as any).__CLAUDE_SETTINGS__ = this.settings;
+            }
+
             console.log("[SettingsManager] ✅ Settings saved successfully");
-            
+
         } catch (error) {
-            console.error("[SettingsManager] Failed to save settings:", error);
+            // FIX Critical 1.5: Rollback localStorage/sessionStorage on failure
+            console.error("[SettingsManager] ❌ Failed to save settings, rolling back:", error);
+            try {
+                const oldSerialized = JSON.stringify(oldSettings, null, 2);
+                localStorage.setItem(STORAGE_KEY, oldSerialized);
+                sessionStorage.setItem(STORAGE_KEY, oldSerialized);
+                console.log("[SettingsManager] ✅ Rolled back to previous settings");
+            } catch (rollbackError) {
+                console.error("[SettingsManager] ❌ Failed to rollback settings:", rollbackError);
+            }
             throw error;
         }
     }

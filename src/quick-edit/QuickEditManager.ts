@@ -113,7 +113,10 @@ export class QuickEditManager {
     private pauseObserver(): void {
         if (this.mutationObserver) {
             this.mutationObserver.disconnect();
-            console.log('[QuickEdit] MutationObserver paused');
+            // FIX Critical 1.1: Clear observed containers to prevent memory leak
+            // Without this, stale container references accumulate indefinitely
+            this.observedContainers.clear();
+            console.log('[QuickEdit] MutationObserver paused and containers cleared');
         }
     }
 
@@ -138,6 +141,12 @@ export class QuickEditManager {
      */
     private observeContainer(container: HTMLElement): void {
         if (!this.mutationObserver || this.observedContainers.has(container)) {
+            return;
+        }
+
+        // FIX Critical 1.1: Verify container still exists in DOM before observing
+        if (!document.contains(container)) {
+            console.warn('[QuickEdit] Container no longer in DOM, skipping observation');
             return;
         }
 
@@ -457,11 +466,11 @@ export class QuickEditManager {
             block.state = 'streaming' as InlineEditState;
 
             // Use streaming API
-            let fullResponse = '';
-            let fullResponseWithIndent = ''; // 包含缩进的完整响应（用于验证DOM）
+            // FIX Critical 1.3: Use array accumulation instead of string concatenation for O(n) performance
+            let fullResponseChunks: string[] = []; // Original chunks without indent
+            let fullResponseWithIndentChunks: string[] = []; // Chunks with indent
             let chunkCount = 0;
             let totalChars = 0;
-            let receivedChunks: string[] = []; // 记录所有原始chunk
 
             console.log(`[QuickEdit] Starting AI request for block ${block.id}`);
             console.log(`[QuickEdit] Original text length: ${block.originalText.length} chars`);
@@ -480,16 +489,9 @@ ${block.originalText}
                 (chunk) => {
                     chunkCount++;
                     totalChars += chunk.length;
-                    receivedChunks.push(chunk); // 记录原始chunk
-                    fullResponse += chunk;
 
-                    // 验证fullResponse长度
-                    const expectedLength = receivedChunks.join('').length;
-                    if (fullResponse.length !== expectedLength) {
-                        console.error(`[QuickEdit] ⚠️ CRITICAL: fullResponse length mismatch at chunk ${chunkCount}!`);
-                        console.error(`[QuickEdit] Expected: ${expectedLength}, Got: ${fullResponse.length}`);
-                        console.error(`[QuickEdit] Current chunk: "${chunk}"`);
-                    }
+                    // FIX Critical 1.3: O(1) array push instead of O(n) string concatenation
+                    fullResponseChunks.push(chunk);
 
                     // 如果有缩进前缀，给每一行（除了第一行）添加缩进
                     let processedChunk = chunk;
@@ -501,8 +503,14 @@ ${block.originalText}
                         console.log(`[QuickEdit] Chunk #${chunkCount}: ${chunk.length} chars, content: "${chunk.substring(0, 50).replace(/\n/g, '\\n')}..."`);
                     }
 
-                    fullResponseWithIndent += processedChunk;
-                    block.suggestedText = fullResponse;
+                    fullResponseWithIndentChunks.push(processedChunk);
+
+                    // Update block.suggestedText periodically (every 10 chunks) instead of every chunk
+                    // This reduces O(n) join operations from every chunk to every 10 chunks
+                    if (chunkCount % 10 === 0) {
+                        block.suggestedText = fullResponseChunks.join('');
+                        console.log(`[QuickEdit] Updated suggestedText at chunk ${chunkCount}, length: ${block.suggestedText.length}`);
+                    }
 
                     if (block.element) {
                         this.renderer.appendStreamingChunk(
@@ -529,6 +537,10 @@ ${block.originalText}
                     block.state = 'reviewing' as InlineEditState;
                     block.updatedAt = Date.now();
 
+                    // FIX Critical 1.3: Join all chunks once at the end (O(n) instead of O(n²))
+                    const fullResponse = fullResponseChunks.join('');
+                    const fullResponseWithIndent = fullResponseWithIndentChunks.join('');
+
                     // 验证完整性 - 多层验证
                     console.log(`[QuickEdit] ========== Streaming Complete ==========`);
                     console.log(`[QuickEdit] Total chunks received: ${chunkCount}`);
@@ -536,21 +548,12 @@ ${block.originalText}
                     console.log(`[QuickEdit] fullResponse length: ${fullResponse.length}`);
                     console.log(`[QuickEdit] fullResponseWithIndent length: ${fullResponseWithIndent.length}`);
 
-                    // 验证1: fullResponse长度是否等于totalChars
+                    // 验证: fullResponse长度是否等于totalChars
                     if (fullResponse.length !== totalChars) {
                         console.error(`[QuickEdit] ⚠️ WARNING: Response length mismatch!`);
                         console.error(`[QuickEdit] Expected: ${totalChars}, Got: ${fullResponse.length}, Missing: ${totalChars - fullResponse.length} chars`);
                     } else {
                         console.log(`[QuickEdit] ✓ fullResponse length matches totalChars`);
-                    }
-
-                    // 验证2: receivedChunks合并后是否等于fullResponse
-                    const joinedChunks = receivedChunks.join('');
-                    if (joinedChunks.length !== fullResponse.length) {
-                        console.error(`[QuickEdit] ⚠️ CRITICAL: Chunk join mismatch!`);
-                        console.error(`[QuickEdit] Joined: ${joinedChunks.length}, fullResponse: ${fullResponse.length}`);
-                    } else {
-                        console.log(`[QuickEdit] ✓ All chunks properly concatenated`);
                     }
 
                     // 验证3: DOM中的文本
@@ -582,9 +585,10 @@ ${block.originalText}
                         this.renderer.completeStreaming(block.element);
                     }
 
-                    // FIX: Save indented text for final application
+                    // FIX Critical 1.3: Save final joined responses to block
+                    block.suggestedText = fullResponse;
                     block.suggestedTextWithIndent = fullResponseWithIndent;
-                    console.log(`[QuickEdit] ✅ Saved suggestedTextWithIndent (${fullResponseWithIndent.length} chars) for final application`);
+                    console.log(`[QuickEdit] ✅ Saved final responses: plain=${fullResponse.length} chars, indented=${fullResponseWithIndent.length} chars`);
 
                     console.log(`[QuickEdit] ==========================================`);
                 }
@@ -833,12 +837,12 @@ ${block.originalText}
 
             // Step 6: Delete ALL originally selected blocks (including the first one)
             // This unified approach treats all blocks equally
+            // FIX Critical 1.2: Use Promise.all for safer concurrent deletion with error handling
             if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
                 console.log(`[QuickEdit] Deleting ${block.selectedBlockIds.length} original blocks...`);
 
-                // Delete all original blocks
-                for (let i = 0; i < block.selectedBlockIds.length; i++) {
-                    const blockIdToDelete = block.selectedBlockIds[i];
+                // Delete all blocks concurrently with individual error handling
+                const deletePromises = block.selectedBlockIds.map(async (blockIdToDelete, i) => {
                     try {
                         const deleteResponse = await fetch('/api/block/deleteBlock', {
                             method: 'POST',
@@ -850,13 +854,27 @@ ${block.originalText}
 
                         const deleteResult = await deleteResponse.json();
                         if (deleteResult.code === 0) {
-                            console.log(`[QuickEdit] Deleted original block ${i + 1}/${block.selectedBlockIds.length}: ${blockIdToDelete}`);
+                            console.log(`[QuickEdit] Deleted block ${i + 1}/${block.selectedBlockIds.length}: ${blockIdToDelete}`);
+                            return { success: true, blockId: blockIdToDelete };
                         } else {
                             console.warn(`[QuickEdit] Failed to delete block ${blockIdToDelete}:`, deleteResult);
+                            return { success: false, blockId: blockIdToDelete, error: deleteResult };
                         }
                     } catch (error) {
                         console.error(`[QuickEdit] Error deleting block ${blockIdToDelete}:`, error);
+                        return { success: false, blockId: blockIdToDelete, error };
                     }
+                });
+
+                // Wait for all deletions to complete
+                const results = await Promise.all(deletePromises);
+                const failed = results.filter(r => !r.success);
+
+                if (failed.length > 0) {
+                    console.error(`[QuickEdit] Failed to delete ${failed.length}/${results.length} blocks:`, failed);
+                    showMessage(`部分块删除失败 (${failed.length}/${results.length})`, 5000, 'error');
+                } else {
+                    console.log(`[QuickEdit] ✅ Successfully deleted all ${results.length} blocks`);
                 }
             }
 

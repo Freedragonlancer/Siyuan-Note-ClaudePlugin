@@ -32,6 +32,13 @@ export class InlineEditRenderer {
         compareBlock.className = 'inline-edit-block';
         compareBlock.setAttribute('data-inline-edit-id', block.id);
         compareBlock.setAttribute('contenteditable', 'false');
+        compareBlock.setAttribute('unselectable', 'on'); // IE compatibility
+
+        // Prevent text selection using CSS
+        compareBlock.style.userSelect = 'none';
+        compareBlock.style.webkitUserSelect = 'none';
+        compareBlock.style.mozUserSelect = 'none';
+        compareBlock.style.msUserSelect = 'none';
 
         // Build HTML structure - 移除所有多余空白和缩进
         compareBlock.innerHTML = `<div class="inline-edit-block__container"><div class="inline-edit-block__loading" style="display: ${block.state === 'processing' ? 'flex' : 'none'};"><div class="loading-spinner"></div><span>AI 思考中...</span></div>${options.showProgress ? `<div class="inline-edit-block__progress" style="display: none;"><span class="progress-text">已接收 <span class="progress-count">0</span> 字符</span></div>` : ''}${!options.hideOriginal ? `<div class="inline-edit-block__original" style="display: none;"><div class="block-label">原文（删除）</div><div class="block-content" data-content-type="original">${this.escapeHtml(block.originalText)}</div></div>` : ''}<div class="inline-edit-block__suggestion" style="display: none;"><div class="block-label">AI 建议</div><div class="block-content" data-content-type="suggestion"></div></div><div class="inline-edit-block__error" style="display: none;"><svg class="error-icon"><use xlink:href="#iconClose"></use></svg><span class="error-message"></span></div><div class="inline-edit-block__toolbar" style="display: none;"><div class="toolbar-actions"><button class="b3-button b3-button--outline toolbar-btn" data-action="reject"><svg><use xlink:href="#iconClose"></use></svg><span>拒绝</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="retry"><svg><use xlink:href="#iconRefresh"></use></svg><span>重试</span><span class="shortcut">Ctrl+R</span></button><button class="b3-button b3-button--text toolbar-btn toolbar-btn--primary" data-action="accept"><svg><use xlink:href="#iconCheck"></use></svg><span>接受</span><span class="shortcut">Tab</span></button></div></div></div>`;
@@ -47,18 +54,37 @@ export class InlineEditRenderer {
             suggestionBlock.style.backgroundColor = options.colors.suggestion;
         }
 
-        // PHASE 4 FIX: Insert comparison block right after marked text
-        if (insertAfterElement && insertAfterElement.parentNode) {
-            // Insert as next sibling of the marked span
-            console.log('[InlineEditRenderer] Inserting comparison block after marked span');
-            console.log('[InlineEditRenderer] Marked span parent:', insertAfterElement.parentNode.nodeName);
-            console.log('[InlineEditRenderer] Next sibling:', insertAfterElement.nextSibling);
-            insertAfterElement.parentNode.insertBefore(compareBlock, insertAfterElement.nextSibling);
+        // FIX: Insert comparison block after the block's content
+        // Find the last content element in the block (usually the paragraph text)
+        const contentElement = containerElement.querySelector('[contenteditable="true"]') || containerElement;
+
+        // Insert after the content element, before any IAL or other metadata
+        if (contentElement.nextElementSibling) {
+            console.log('[InlineEditRenderer] Inserting comparison block before:', contentElement.nextElementSibling.nodeName);
+            containerElement.insertBefore(compareBlock, contentElement.nextElementSibling);
         } else {
-            // Fallback: append to container
-            console.log('[InlineEditRenderer] Fallback: appending to container');
+            console.log('[InlineEditRenderer] Appending comparison block to container');
             containerElement.appendChild(compareBlock);
         }
+
+        // Prevent text selection on the comparison block
+        compareBlock.addEventListener('selectstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        });
+
+        compareBlock.addEventListener('mousedown', (e) => {
+            // Allow button clicks, but prevent text selection
+            if ((e.target as HTMLElement).closest('button')) {
+                return; // Allow button clicks
+            }
+            // Don't prevent default for buttons, but do for text selection
+            const target = e.target as HTMLElement;
+            if (!target.matches('button, button *, svg, svg *')) {
+                e.preventDefault();
+            }
+        });
 
         return compareBlock;
     }

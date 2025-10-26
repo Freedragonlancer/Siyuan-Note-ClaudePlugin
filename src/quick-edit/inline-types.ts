@@ -32,8 +32,11 @@ export interface InlineEditBlock {
     /** Unique block ID */
     id: string;
 
-    /** SiYuan block ID where edit is happening */
+    /** SiYuan block ID where edit is happening (primary block, first of selected blocks) */
     blockId: string;
+
+    /** All selected block IDs (for multi-block selection) */
+    selectedBlockIds?: string[];
 
     /** Original text */
     originalText: string;

@@ -957,6 +957,27 @@
     }
 }
 
+/* Quick Edit: 标记原始选中块（红色背景） */
+.quick-edit-original-block {
+    background: linear-gradient(
+        to right,
+        rgba(239, 68, 68, 0.15) 0%,
+        rgba(239, 68, 68, 0.08) 100%
+    ) !important;
+    transition: background 0.3s ease;
+    position: relative;
+}
+
+.quick-edit-original-block::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: rgba(239, 68, 68, 0.6);
+}
+
 /* Inline Edit Block Styles (Cursor-like Inline Diff) */
 .inline-edit-block {
     display: block;
@@ -970,6 +991,14 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     animation: inlineBlockSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     clear: both;  // Ensure it appears on a new line
+
+    // 阻止预览框内容被SiYuan选中
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 
     &__container {
         display: flex;
@@ -1159,6 +1188,13 @@
             }
         }
     }
+}
+
+/* 确保所有预览框子元素都不可选中 */
+.inline-edit-block * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
 }
 
 /* Instruction Input Popup */

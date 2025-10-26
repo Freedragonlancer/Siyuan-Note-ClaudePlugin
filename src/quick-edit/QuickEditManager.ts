@@ -108,6 +108,32 @@ export class QuickEditManager {
     }
 
     /**
+     * Temporarily pause MutationObserver (e.g., during manual DOM operations)
+     */
+    private pauseObserver(): void {
+        if (this.mutationObserver) {
+            this.mutationObserver.disconnect();
+            console.log('[QuickEdit] MutationObserver paused');
+        }
+    }
+
+    /**
+     * Resume MutationObserver after manual operations
+     */
+    private resumeObserver(): void {
+        if (this.mutationObserver) {
+            // Re-observe all previously observed containers
+            this.observedContainers.forEach(container => {
+                this.mutationObserver!.observe(container, {
+                    childList: true,
+                    subtree: true
+                });
+            });
+            console.log('[QuickEdit] MutationObserver resumed');
+        }
+    }
+
+    /**
      * FIX 1.5: Start observing a container for DOM changes
      */
     private observeContainer(container: HTMLElement): void {
@@ -148,10 +174,8 @@ export class QuickEditManager {
 
         console.log('[QuickEdit] Cleaning up externally removed block:', blockId);
 
-        // PHASE 4: Also clean up marked text if it exists
-        if (block.markedSpan && block.markedSpan.parentNode) {
-            this.unmarkOriginalText(block.markedSpan);
-        }
+        // No marked span to clean up (we disabled marking to avoid DOM conflicts)
+        block.markedSpan = null;
 
         // Clean up event listeners and references
         this.cleanupBlock(blockId);
@@ -303,6 +327,7 @@ export class QuickEditManager {
         const inlineBlock: InlineEditBlock = {
             id: blockId,
             blockId: selection.blockId,
+            selectedBlockIds: selection.selectedBlockIds, // ✅ Pass all selected block IDs
             originalText: selection.text,
             suggestedText: '',
             instruction,
@@ -321,15 +346,10 @@ export class QuickEditManager {
 
         this.activeBlocks.set(blockId, inlineBlock);
 
-        // PHASE 4: Mark the original text in document
-        let markedSpan: HTMLSpanElement | null = null;
-        try {
-            markedSpan = this.markOriginalText(selection.range, blockId);
-            inlineBlock.markedSpan = markedSpan;
-        } catch (error) {
-            console.warn('[QuickEdit] Failed to mark original text:', error);
-            // Continue anyway, just without visual marking
-        }
+        // FIX: Don't mark original text to avoid triggering SiYuan's DOM listeners
+        // The comparison block is sufficient for visual feedback
+        const markedSpan: HTMLSpanElement | null = null;
+        inlineBlock.markedSpan = markedSpan;
 
         // Render comparison block in document
         const renderOptions: InlineBlockRenderOptions = {
@@ -343,13 +363,18 @@ export class QuickEditManager {
             }
         };
 
-        // PHASE 4 FIX: Insert comparison block right after marked text
-        const insertContainer = markedSpan ? markedSpan.parentElement : selection.blockElement;
+        // UNIFIED FIX: Insert comparison block after the LAST selected block
+        // This ensures the preview appears at the end of the selection, not at the beginning
+        const lastBlockId = selection.selectedBlockIds?.[selection.selectedBlockIds.length - 1] || selection.blockId;
+        const lastBlockElement = document.querySelector(`[data-node-id="${lastBlockId}"]`) as HTMLElement;
+
+        console.log(`[QuickEdit] Inserting comparison block after last selected block: ${lastBlockId}`);
+
         const blockElement = this.renderer.createComparisonBlock(
             inlineBlock,
-            insertContainer!,
+            lastBlockElement || selection.blockElement,  // Use last block, fallback to first
             renderOptions,
-            markedSpan  // Pass marked span to insert after it
+            null  // No marked span, insert normally
         );
 
         inlineBlock.element = blockElement;
@@ -364,6 +389,17 @@ export class QuickEditManager {
             inlineBlock.indentPrefix = indentInfo.prefix;
 
             console.log(`[QuickEdit] Applied ${indentInfo.indent}px indentation (prefix: "${indentInfo.prefix.replace(/\t/g, '\\t')}")`);
+        }
+
+        // Mark original selected blocks with red background for visual feedback
+        if (inlineBlock.selectedBlockIds && inlineBlock.selectedBlockIds.length > 0) {
+            inlineBlock.selectedBlockIds.forEach(blockId => {
+                const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
+                if (blockEl) {
+                    blockEl.classList.add('quick-edit-original-block');
+                }
+            });
+            console.log(`[QuickEdit] Marked ${inlineBlock.selectedBlockIds.length} blocks with red background`);
         }
 
         // FIX 1.5: Start observing the container for DOM changes
@@ -621,32 +657,125 @@ ${block.originalText}
 
         try {
             console.log('[QuickEdit] Applying changes to block:', block.blockId);
+            console.log('[QuickEdit] Selected block IDs:', block.selectedBlockIds);
+            console.log('[QuickEdit] Is multi-block selection:', block.selectedBlockIds && block.selectedBlockIds.length > 1);
 
-            // PHASE 4: If we have marked text, replace it directly (faster, more Cursor-like)
-            if (block.markedSpan && block.markedSpan.parentNode) {
-                this.replaceMarkedText(block.markedSpan, block.suggestedText);
-                block.markedSpan = null; // Clear reference
+            // IMPORTANT: Use SiYuan's transaction API for proper undo/redo support
+            // Do NOT modify DOM directly - let SiYuan handle all rendering
+
+            // UNIFIED APPROACH: Split AI-generated content into paragraphs
+            // In SiYuan, \n\n separates different blocks (paragraphs)
+            const paragraphs = block.suggestedText
+                .split(/\n\n+/)  // Split by one or more blank lines
+                .map(p => p.trim())
+                .filter(p => p.length > 0);  // Remove empty paragraphs
+
+            console.log(`[QuickEdit] Split content into ${paragraphs.length} paragraph(s)`);
+
+            // Step 1: Insert ALL paragraphs as new blocks after the last selected block
+            // This unified approach uses only insertBlock API for consistency
+            console.log(`[QuickEdit] Inserting ${paragraphs.length} paragraph(s) after last selected block...`);
+
+            const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
+            let previousID = lastOriginalBlockId;
+
+            for (let i = 0; i < paragraphs.length; i++) {
+                const paragraph = paragraphs[i];
+
+                try {
+                    const insertResponse = await fetch('/api/block/insertBlock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            dataType: 'markdown',
+                            data: paragraph,
+                            previousID: previousID  // Insert after previous block
+                        })
+                    });
+
+                    const insertResult = await insertResponse.json();
+                    if (insertResult.code === 0) {
+                        previousID = insertResult.data[0].doOperations[0].id;
+                        console.log(`[QuickEdit] Inserted paragraph ${i + 1}/${paragraphs.length} as block ${previousID}`);
+                    } else {
+                        console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
+                    }
+                } catch (error) {
+                    console.error(`[QuickEdit] Error inserting paragraph ${i + 1}:`, error);
+                }
             }
 
-            // Update SiYuan block via Kernel API
-            const response = await fetch('/api/block/updateBlock', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: block.blockId,
-                    data: block.suggestedText,
-                    dataType: 'markdown'
-                })
-            });
+            console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.msg || 'Failed to update block');
+            // Step 2: Wait for SiYuan to render all new content
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Step 3: Pause observer before UI cleanup
+            this.pauseObserver();
+
+            // Step 4: CRITICAL - Remove comparison block BEFORE deleting original blocks
+            // This prevents the "Nested comparison block was removed (parent removed)" error
+            // because the comparison block is inserted after the last original block
+            console.log('[QuickEdit] Removing comparison block before deleting original blocks...');
+            if (block.element && document.contains(block.element)) {
+                try {
+                    this.renderer.removeBlock(block.element);
+                    console.log('[QuickEdit] ✅ Removed comparison block');
+                } catch (error) {
+                    console.warn('[QuickEdit] Failed to remove comparison block:', error);
+                }
             }
 
-            console.log('[QuickEdit] Block updated successfully');
+            // Step 5: Remove red marking from original blocks
+            if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+                block.selectedBlockIds.forEach(blockId => {
+                    const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
+                    if (blockEl) {
+                        blockEl.classList.remove('quick-edit-original-block');
+                    }
+                });
+                console.log(`[QuickEdit] Removed red marking from ${block.selectedBlockIds.length} blocks`);
+            }
 
-            // Add to history
+            // Step 6: Delete ALL originally selected blocks (including the first one)
+            // This unified approach treats all blocks equally
+            if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+                console.log(`[QuickEdit] Deleting ${block.selectedBlockIds.length} original blocks...`);
+
+                // Delete all original blocks
+                for (let i = 0; i < block.selectedBlockIds.length; i++) {
+                    const blockIdToDelete = block.selectedBlockIds[i];
+                    try {
+                        const deleteResponse = await fetch('/api/block/deleteBlock', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                id: blockIdToDelete
+                            })
+                        });
+
+                        const deleteResult = await deleteResponse.json();
+                        if (deleteResult.code === 0) {
+                            console.log(`[QuickEdit] Deleted original block ${i + 1}/${block.selectedBlockIds.length}: ${blockIdToDelete}`);
+                        } else {
+                            console.warn(`[QuickEdit] Failed to delete block ${blockIdToDelete}:`, deleteResult);
+                        }
+                    } catch (error) {
+                        console.error(`[QuickEdit] Error deleting block ${blockIdToDelete}:`, error);
+                    }
+                }
+            }
+
+            // Step 7: Wait longer for SiYuan to complete all async operations
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // No marked span to clean up anymore (we disabled marking to avoid DOM conflicts)
+            block.markedSpan = null;
+
+            // Resume observer after cleanup
+            this.resumeObserver();
+
+            // Step 7: Add to plugin history (separate from SiYuan undo)
             this.history.addToHistory({
                 selection: {
                     id: block.id,
@@ -665,11 +794,10 @@ ${block.originalText}
                 applied: true
             });
 
-            // Clean up
-            this.renderer.removeBlock(block.element);
+            // Step 8: Final cleanup
             this.cleanupBlock(blockId);
 
-            showMessage('✅ 修改已应用', 2000);
+            showMessage('✅ 修改已应用（支持撤销）', 2000);
 
         } catch (error) {
             console.error('[QuickEdit] Failed to apply changes:', error);
@@ -691,11 +819,19 @@ ${block.originalText}
 
         console.log('[QuickEdit] Rejected');
 
-        // PHASE 4: Restore marked text to normal
-        if (block.markedSpan && block.markedSpan.parentNode) {
-            this.unmarkOriginalText(block.markedSpan);
-            block.markedSpan = null;
+        // Remove red marking from original blocks
+        if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+            block.selectedBlockIds.forEach(blockId => {
+                const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
+                if (blockEl) {
+                    blockEl.classList.remove('quick-edit-original-block');
+                }
+            });
+            console.log(`[QuickEdit] Removed red marking from ${block.selectedBlockIds.length} blocks`);
         }
+
+        // No marked span to restore (we disabled marking to avoid DOM conflicts)
+        block.markedSpan = null;
 
         // Remove block
         this.renderer.removeBlock(block.element);
@@ -1221,8 +1357,11 @@ ${block.originalText}
                     return null;
                 }
 
+                // ✅ Extract all block IDs for multi-block selection support
+                const selectedBlockIds = selectedBlocks.map(b => b.getAttribute('data-node-id')).filter(Boolean) as string[];
+
                 console.log(`[QuickEdit] Block selection text: ${text.length} chars from ${selectedBlocks.length} blocks`);
-                console.log(`[QuickEdit] Block IDs:`, selectedBlocks.map(b => b.getAttribute('data-node-id')));
+                console.log(`[QuickEdit] Block IDs:`, selectedBlockIds);
 
                 // 使用第一个块作为主块元素
                 const primaryBlock = selectedBlocks[0];
@@ -1237,6 +1376,7 @@ ${block.originalText}
                     text,
                     blockElement: primaryBlock,
                     blockId,
+                    selectedBlockIds, // ✅ Pass all block IDs
                     range,
                     startOffset: 0,
                     endOffset: text.length

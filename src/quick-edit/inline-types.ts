@@ -44,6 +44,9 @@ export interface InlineEditBlock {
     /** AI suggested text (may be partial during streaming) */
     suggestedText: string;
 
+    /** AI suggested text with indentation preserved (for final application) - FIX: Added to preserve indent */
+    suggestedTextWithIndent?: string;
+
     /** Editing instruction */
     instruction: string;
 
@@ -171,8 +174,11 @@ export interface InlineEditSelection {
     /** Block element containing the selection */
     blockElement: HTMLElement;
 
-    /** Block ID */
+    /** Block ID (primary block, first of selection) */
     blockId: string;
+
+    /** All selected block IDs (for multi-block selection) - FIX: Added for consistency with block selection mode */
+    selectedBlockIds?: string[];
 
     /** Selection range in the block */
     range: Range;

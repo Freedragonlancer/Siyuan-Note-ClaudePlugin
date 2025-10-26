@@ -569,6 +569,10 @@ ${block.originalText}
                         this.renderer.completeStreaming(block.element);
                     }
 
+                    // FIX: Save indented text for final application
+                    block.suggestedTextWithIndent = fullResponseWithIndent;
+                    console.log(`[QuickEdit] ✅ Saved suggestedTextWithIndent (${fullResponseWithIndent.length} chars) for final application`);
+
                     console.log(`[QuickEdit] ==========================================`);
                 }
             );
@@ -663,10 +667,15 @@ ${block.originalText}
             // IMPORTANT: Use SiYuan's transaction API for proper undo/redo support
             // Do NOT modify DOM directly - let SiYuan handle all rendering
 
+            // FIX: Use indented text if available (preserves indentation shown in preview)
+            const textToApply = block.suggestedTextWithIndent || block.suggestedText;
+            console.log(`[QuickEdit] Using ${block.suggestedTextWithIndent ? 'indented' : 'non-indented'} text for application`);
+
             // UNIFIED APPROACH: Split AI-generated content into paragraphs
             // In SiYuan, \n\n separates different blocks (paragraphs)
-            const paragraphs = block.suggestedText
-                .split(/\n\n+/)  // Split by one or more blank lines
+            // FIX: Support both Unix (\n\n) and Windows (\r\n\r\n) line endings
+            const paragraphs = textToApply
+                .split(/(?:\r?\n){2,}/)  // Split by 2+ line breaks (supports \n\n and \r\n\r\n)
                 .map(p => p.trim())
                 .filter(p => p.length > 0);  // Remove empty paragraphs
 
@@ -1396,6 +1405,7 @@ ${block.originalText}
 
             let text = '';
             let primaryRange: Range | null = null;
+            let extractedBlocks: HTMLElement[] | null = null; // FIX: Store extracted blocks for ID extraction
 
             if (selection.rangeCount === 1) {
                 primaryRange = selection.getRangeAt(0);
@@ -1405,6 +1415,7 @@ ${block.originalText}
 
                 if (multiBlockResult && multiBlockResult.text.trim()) {
                     text = multiBlockResult.text;
+                    extractedBlocks = multiBlockResult.blocks; // FIX: Store blocks for later ID extraction
                     console.log(`[QuickEdit] ✓ Multi-block extraction: ${multiBlockResult.blocks.length} blocks, ${text.length} chars`);
                 } else {
                     // Fallback：单块文本选择
@@ -1456,8 +1467,23 @@ ${block.originalText}
 
             const blockId = blockElement.getAttribute('data-node-id') || `fallback-${Date.now()}`;
 
+            // FIX: Extract block IDs from extracted blocks for multi-block selection support
+            let selectedBlockIds: string[] | undefined = undefined;
+            if (extractedBlocks && extractedBlocks.length > 0) {
+                // Multi-block text selection: extract all block IDs
+                selectedBlockIds = extractedBlocks
+                    .map(b => b.getAttribute('data-node-id'))
+                    .filter(Boolean) as string[];
+                console.log(`[QuickEdit] ✅ Extracted ${selectedBlockIds.length} block IDs from multi-block selection`);
+            } else {
+                // Single block selection: use the primary block ID
+                selectedBlockIds = [blockId];
+                console.log(`[QuickEdit] Single block selection, using block ID: ${blockId}`);
+            }
+
             console.log('[QuickEdit] Text selection result:', {
                 blockId,
+                selectedBlockIds,
                 tagName: blockElement.tagName,
                 textLength: text.length
             });
@@ -1466,6 +1492,7 @@ ${block.originalText}
                 text,
                 blockElement,
                 blockId,
+                selectedBlockIds, // FIX: Add selectedBlockIds to return object
                 range: primaryRange!,
                 startOffset: 0,
                 endOffset: text.length

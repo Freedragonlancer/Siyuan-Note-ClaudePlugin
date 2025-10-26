@@ -390,14 +390,29 @@ export class QuickEditManager {
         const lastBlockId = selection.selectedBlockIds?.[selection.selectedBlockIds.length - 1] || selection.blockId;
         const lastBlockElement = document.querySelector(`[data-node-id="${lastBlockId}"]`) as HTMLElement;
 
-        console.log(`[QuickEdit] Inserting comparison block after last selected block: ${lastBlockId}`);
+        // FIX High 2.1: Add null safety checks for DOM elements
+        if (!lastBlockElement && !selection.blockElement) {
+            console.error(`[QuickEdit] ❌ Cannot find block element for ${lastBlockId} or fallback, aborting`);
+            this.activeBlocks.delete(blockId);
+            return;
+        }
+
+        const targetElement = lastBlockElement || selection.blockElement;
+        console.log(`[QuickEdit] Inserting comparison block after ${lastBlockElement ? 'last' : 'first'} selected block: ${lastBlockId}`);
 
         const blockElement = this.renderer.createComparisonBlock(
             inlineBlock,
-            lastBlockElement || selection.blockElement,  // Use last block, fallback to first
+            targetElement,
             renderOptions,
             null  // No marked span, insert normally
         );
+
+        // FIX High 2.1: Verify comparison block was created successfully
+        if (!blockElement) {
+            console.error(`[QuickEdit] ❌ Failed to create comparison block, aborting`);
+            this.activeBlocks.delete(blockId);
+            return;
+        }
 
         inlineBlock.element = blockElement;
 
@@ -413,15 +428,13 @@ export class QuickEditManager {
             console.log(`[QuickEdit] Applied ${indentInfo.indent}px indentation (prefix: "${indentInfo.prefix.replace(/\t/g, '\\t')}")`);
         }
 
-        // Mark original selected blocks with red background for visual feedback
+        // FIX High 2.4: Mark original selected blocks with red background (optimized DOM query)
         if (inlineBlock.selectedBlockIds && inlineBlock.selectedBlockIds.length > 0) {
-            inlineBlock.selectedBlockIds.forEach(blockId => {
-                const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
-                if (blockEl) {
-                    blockEl.classList.add('quick-edit-original-block');
-                }
-            });
-            console.log(`[QuickEdit] Marked ${inlineBlock.selectedBlockIds.length} blocks with red background`);
+            // Use querySelectorAll once instead of N querySelector calls (O(1) vs O(N))
+            const selector = inlineBlock.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
+            const blockElements = document.querySelectorAll(selector);
+            blockElements.forEach(el => el.classList.add('quick-edit-original-block'));
+            console.log(`[QuickEdit] Marked ${blockElements.length}/${inlineBlock.selectedBlockIds.length} blocks with red background`);
         }
 
         // FIX 1.5: Start observing the container for DOM changes
@@ -777,6 +790,9 @@ ${block.originalText}
             const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
             let previousID = lastOriginalBlockId;
 
+            // FIX High 2.3: Track insertion results for better error handling
+            const insertionResults: Array<{ success: boolean; index: number; error?: any }> = [];
+
             for (let i = 0; i < paragraphs.length; i++) {
                 const paragraph = paragraphs[i];
 
@@ -791,19 +807,36 @@ ${block.originalText}
                         })
                     });
 
+                    // FIX High 2.3: Check response status before parsing JSON
+                    if (!insertResponse.ok) {
+                        throw new Error(`HTTP ${insertResponse.status}: ${insertResponse.statusText}`);
+                    }
+
                     const insertResult = await insertResponse.json();
                     if (insertResult.code === 0) {
                         previousID = insertResult.data[0].doOperations[0].id;
                         console.log(`[QuickEdit] Inserted paragraph ${i + 1}/${paragraphs.length} as block ${previousID}`);
+                        insertionResults.push({ success: true, index: i });
                     } else {
                         console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
+                        insertionResults.push({ success: false, index: i, error: insertResult });
                     }
                 } catch (error) {
                     console.error(`[QuickEdit] Error inserting paragraph ${i + 1}:`, error);
+                    insertionResults.push({ success: false, index: i, error });
                 }
             }
 
-            console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
+            // FIX High 2.3: Report results with detailed feedback
+            const successCount = insertionResults.filter(r => r.success).length;
+            const failureCount = insertionResults.filter(r => !r.success).length;
+
+            if (failureCount > 0) {
+                console.warn(`[QuickEdit] ⚠️ Partial success: ${successCount}/${paragraphs.length} paragraphs inserted`);
+                showMessage(`⚠️ 部分插入成功 (${successCount}/${paragraphs.length})`, 5000, 'error');
+            } else {
+                console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
+            }
 
             // Step 2: Wait for SiYuan to render all new content
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -825,14 +858,12 @@ ${block.originalText}
             }
 
             // Step 5: Remove red marking from original blocks
+            // FIX High 2.4: Use querySelectorAll once instead of N querySelector calls
             if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
-                block.selectedBlockIds.forEach(blockId => {
-                    const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
-                    if (blockEl) {
-                        blockEl.classList.remove('quick-edit-original-block');
-                    }
-                });
-                console.log(`[QuickEdit] Removed red marking from ${block.selectedBlockIds.length} blocks`);
+                const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
+                const blockElements = document.querySelectorAll(selector);
+                blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
+                console.log(`[QuickEdit] Removed red marking from ${blockElements.length}/${block.selectedBlockIds.length} blocks`);
             }
 
             // Step 6: Delete ALL originally selected blocks (including the first one)
@@ -931,15 +962,12 @@ ${block.originalText}
 
         console.log('[QuickEdit] Rejected');
 
-        // Remove red marking from original blocks
+        // FIX High 2.4: Remove red marking from original blocks (optimized DOM query)
         if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
-            block.selectedBlockIds.forEach(blockId => {
-                const blockEl = document.querySelector(`[data-node-id="${blockId}"]`);
-                if (blockEl) {
-                    blockEl.classList.remove('quick-edit-original-block');
-                }
-            });
-            console.log(`[QuickEdit] Removed red marking from ${block.selectedBlockIds.length} blocks`);
+            const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
+            const blockElements = document.querySelectorAll(selector);
+            blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
+            console.log(`[QuickEdit] Removed red marking from ${blockElements.length}/${block.selectedBlockIds.length} blocks`);
         }
 
         // No marked span to restore (we disabled marking to avoid DOM conflicts)
@@ -1011,9 +1039,14 @@ ${block.originalText}
             // 获取整个文本内容
             const textContent = startNode.textContent || '';
 
-            // 向前查找到行首（或文本开始）
+            // FIX High 2.2: 向前查找到行首，支持 Windows CRLF (\r\n) 和 Unix LF (\n)
             let lineStart = startOffset;
-            while (lineStart > 0 && textContent[lineStart - 1] !== '\n') {
+            while (lineStart > 0) {
+                const prevChar = textContent[lineStart - 1];
+                // Stop at both \n and \r to handle CRLF correctly
+                if (prevChar === '\n' || prevChar === '\r') {
+                    break;
+                }
                 lineStart--;
             }
 

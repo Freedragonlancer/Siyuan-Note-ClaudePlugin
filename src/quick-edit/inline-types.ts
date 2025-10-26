@@ -73,6 +73,9 @@ export interface InlineEditBlock {
 
     /** PHASE 4: Original selection range for restoration */
     originalRange?: Range | null;
+
+    /** 缩进前缀字符串（空格或tab），用于给AI返回的每一行添加缩进 */
+    indentPrefix?: string;
 }
 
 /**

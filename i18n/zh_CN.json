@@ -6,6 +6,7 @@
   "aiEditPresets": "AI 预设指令",
   "aiEditBlock": "编辑整个块",
   "undoAIEdit": "撤销上次 AI 编辑",
+  "quickEdit": "快速编辑",
   "aiEditWithPreset": "预设指令编辑...",
   "editMode": "编辑模式",
   "editModeInputPlaceholder": "请输入编辑指令，然后按发送...",

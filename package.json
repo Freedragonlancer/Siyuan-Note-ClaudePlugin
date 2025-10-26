@@ -28,6 +28,8 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "deploy": "npm run build && npm run copy-plugin",
+    "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\"",
     "make-link": "node scripts/make_dev_link.cjs",
     "make-link-win": "node scripts/make_dev_link.cjs"
   },

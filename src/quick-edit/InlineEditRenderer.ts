@@ -119,19 +119,46 @@ export class InlineEditRenderer {
             '[data-content-type="suggestion"]'
         ) as HTMLElement;
 
-        if (!suggestionContent) return;
+        if (!suggestionContent) {
+            console.error('[InlineEditRenderer] Suggestion content element not found - chunk may be lost!');
+            return;
+        }
 
-        // 修复空行问题：如果是第一次添加内容，trim开头的空白
+        // 智能处理第一个chunk：只移除开头的换行符，保留缩进（空格和制表符）
         const currentText = suggestionContent.textContent || '';
         const isFirstChunk = currentText.length === 0;
-        const processedChunk = isFirstChunk ? chunk.trimStart() : chunk;
 
-        if (enableTyping) {
-            // Typing animation
+        // 只移除开头的换行符 \n 和 \r，保留空格和tab缩进
+        let processedChunk = chunk;
+        if (isFirstChunk) {
+            processedChunk = chunk.replace(/^[\r\n]+/, '');
+        }
+
+        // Streaming完整性验证：记录每个chunk
+        const blockId = blockElement.getAttribute('data-inline-edit-id');
+        console.log(`[InlineEditRenderer] Chunk received for ${blockId}: ${chunk.length} chars, total: ${currentText.length} → ${currentText.length + processedChunk.length}`);
+
+        // CRITICAL FIX: 禁用打字动画以避免chunk丢失
+        // 打字动画在streaming场景下会导致chunk冲突，因为新chunk到达时
+        // 上一个chunk的动画可能还没完成，clearTimeout后剩余字符会丢失
+        // Streaming本身已经有渐进显示的视觉效果，不需要额外的打字动画
+        const useTypingAnimation = false; // 强制禁用，无论enableTyping设置如何
+
+        if (useTypingAnimation && enableTyping) {
+            // Typing animation (已禁用)
             this.typeText(suggestionContent, processedChunk, typingSpeed);
         } else {
-            // Direct append
-            suggestionContent.textContent = currentText + processedChunk;
+            // Direct append - 唯一安全的方式
+            const newText = currentText + processedChunk;
+            suggestionContent.textContent = newText;
+
+            // 验证文本确实被添加
+            const verifyText = suggestionContent.textContent || '';
+            if (verifyText.length !== newText.length) {
+                console.error(`[InlineEditRenderer] Text length mismatch! Expected: ${newText.length}, Actual: ${verifyText.length}`);
+                console.error(`[InlineEditRenderer] newText: "${newText}"`);
+                console.error(`[InlineEditRenderer] verifyText: "${verifyText}"`);
+            }
         }
 
         // Update progress

@@ -64,6 +64,31 @@ Build output goes to `dist/` directory containing:
 - `preview.png` - Preview screenshot
 - `i18n/*.json` files - Translations (must be copied manually or added to vite config)
 
+### Testing & Deployment
+
+**IMPORTANT**: After every build, copy the built files to the SiYuan plugin directory for testing:
+
+```bash
+# Windows - Copy to plugin directory
+cp "N:\AI_Code\Siyuan-note-plugin\dist\index.js" "N:\Siyuan-Note\data\plugins\siyuan-plugin-claude-assistant\index.js"
+cp "N:\AI_Code\Siyuan-note-plugin\dist\index.css" "N:\Siyuan-Note\data\plugins\siyuan-plugin-claude-assistant\index.css"
+
+# Or use the combined command:
+cp -v "N:\AI_Code\Siyuan-note-plugin\dist\index.js" "N:\Siyuan-Note\data\plugins\siyuan-plugin-claude-assistant\index.js" && cp -v "N:\AI_Code\Siyuan-note-plugin\dist\index.css" "N:\Siyuan-Note\data\plugins\siyuan-plugin-claude-assistant\index.css"
+```
+
+**Testing Workflow**:
+1. Make code changes
+2. Run `npm run build` (or `pnpm build`)
+3. Copy `dist/index.js` and `dist/index.css` to plugin directory (see commands above)
+4. **Restart SiYuan Note** to load the updated plugin
+5. Test the changes and check console logs (F12)
+6. Repeat as needed
+
+**Plugin Directory Locations**:
+- Development: `N:\AI_Code\Siyuan-note-plugin\dist\`
+- SiYuan Plugin: `N:\Siyuan-Note\data\plugins\siyuan-plugin-claude-assistant\`
+
 ## Architecture
 
 ### Dual-Dock Design

@@ -6,6 +6,7 @@
   "aiEditPresets": "AI Preset Instructions",
   "aiEditBlock": "Edit Entire Block",
   "undoAIEdit": "Undo Last AI Edit",
+  "quickEdit": "Quick Edit",
   "aiEditWithPreset": "Edit with Preset...",
   "editMode": "Edit Mode",
   "editModeInputPlaceholder": "Enter editing instruction, then press send...",

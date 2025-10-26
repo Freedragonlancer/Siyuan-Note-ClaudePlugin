@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"(Get-Item ''N:\\Siyuan-Note\\data\\plugins\\siyuan-plugin-claude-assistant\\index.js'').Length\")"
+      "Bash(git push)",
+      "Bash(npm run deploy:*)",
+      "Skill(siyuan-plugin)",
+      "Bash(cd:*)"
     ],
     "deny": [],
     "ask": []

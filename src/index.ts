@@ -855,10 +855,16 @@ export default class ClaudeAssistantPlugin extends Plugin {
      * Send entire block to AI edit (when text selection is not available)
      */
     private sendBlockToAIEdit(protyle: any, blockElement: HTMLElement): void {
+        console.log('[AIEdit] sendBlockToAIEdit called');
         const blockSelection = this.getBlockSelection(blockElement);
-        if (!blockSelection) return;
+        if (!blockSelection) {
+            console.log('[AIEdit] getBlockSelection returned null');
+            return;
+        }
 
+        console.log('[AIEdit] Block selection:', blockSelection);
         const textSelection = this.createTextSelection(blockSelection);
+        console.log('[AIEdit] Text selection created:', textSelection);
         this.requestAIEdit(textSelection);  // No instruction → edit mode
     }
 

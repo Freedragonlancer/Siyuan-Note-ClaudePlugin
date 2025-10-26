@@ -253,11 +253,21 @@ export class QuickEditManager {
             return;
         }
 
-        // Get selection
-        const selection = this.getSelection();
+        // 尝试获取文本选择
+        let selection = this.getSelection();
+
         if (!selection) {
-            showMessage('请先选中要编辑的文本', 3000);
-            return;
+            // 无文本选择 → 尝试块选择fallback
+            console.log('[QuickEdit] No text selection, trying block selection fallback');
+            selection = this.getBlockSelectionFallback();
+
+            if (!selection) {
+                // 既无文本选择也无块选择
+                showMessage('请先选中要编辑的文本或将光标放在要编辑的块中', 3000);
+                return;
+            }
+
+            console.log('[QuickEdit] Using block selection fallback');
         }
 
         // FIX 1.2: Store selection in instance property instead of window
@@ -344,6 +354,18 @@ export class QuickEditManager {
 
         inlineBlock.element = blockElement;
 
+        // 缩进对齐修复: 计算并应用原文所在行的缩进
+        const indentInfo = this.calculateLineIndentWithPrefix(selection.range);
+        if (indentInfo.indent > 0) {
+            // 对整个比较块应用左边距（视觉对齐）
+            blockElement.style.marginLeft = `${indentInfo.indent}px`;
+
+            // 存储缩进前缀字符串，用于后续给AI返回的每一行添加缩进
+            inlineBlock.indentPrefix = indentInfo.prefix;
+
+            console.log(`[QuickEdit] Applied ${indentInfo.indent}px indentation (prefix: "${indentInfo.prefix.replace(/\t/g, '\\t')}")`);
+        }
+
         // FIX 1.5: Start observing the container for DOM changes
         this.observeContainer(selection.blockElement);
 
@@ -387,17 +409,56 @@ export class QuickEditManager {
 
             // Use streaming API
             let fullResponse = '';
+            let fullResponseWithIndent = ''; // 包含缩进的完整响应（用于验证DOM）
+            let chunkCount = 0;
+            let totalChars = 0;
+            let receivedChunks: string[] = []; // 记录所有原始chunk
+
+            console.log(`[QuickEdit] Starting AI request for block ${block.id}`);
+            console.log(`[QuickEdit] Original text length: ${block.originalText.length} chars`);
+
+            // 构建请求：明确要求只返回修改后的文本，不要任何解释
+            const userPrompt = `${block.instruction}
+
+原文：
+${block.originalText}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+
             await this.claudeClient.sendMessage(
-                [{ role: 'user', content: block.instruction + '\n\n' + block.originalText }],
+                [{ role: 'user', content: userPrompt }],
                 // onMessage callback
                 (chunk) => {
+                    chunkCount++;
+                    totalChars += chunk.length;
+                    receivedChunks.push(chunk); // 记录原始chunk
                     fullResponse += chunk;
+
+                    // 验证fullResponse长度
+                    const expectedLength = receivedChunks.join('').length;
+                    if (fullResponse.length !== expectedLength) {
+                        console.error(`[QuickEdit] ⚠️ CRITICAL: fullResponse length mismatch at chunk ${chunkCount}!`);
+                        console.error(`[QuickEdit] Expected: ${expectedLength}, Got: ${fullResponse.length}`);
+                        console.error(`[QuickEdit] Current chunk: "${chunk}"`);
+                    }
+
+                    // 如果有缩进前缀，给每一行（除了第一行）添加缩进
+                    let processedChunk = chunk;
+                    if (block.indentPrefix && block.indentPrefix.length > 0) {
+                        // 将换行符后的内容添加缩进
+                        processedChunk = chunk.replace(/\n(?!$)/g, '\n' + block.indentPrefix);
+                        console.log(`[QuickEdit] Chunk #${chunkCount}: ${chunk.length} chars → ${processedChunk.length} chars (added indent)`);
+                    } else {
+                        console.log(`[QuickEdit] Chunk #${chunkCount}: ${chunk.length} chars, content: "${chunk.substring(0, 50).replace(/\n/g, '\\n')}..."`);
+                    }
+
+                    fullResponseWithIndent += processedChunk;
                     block.suggestedText = fullResponse;
 
                     if (block.element) {
                         this.renderer.appendStreamingChunk(
                             block.element,
-                            chunk,
+                            processedChunk, // 使用处理后的chunk
                             this.settings.quickEditEnableTypingAnimation !== false,
                             20
                         );
@@ -419,11 +480,60 @@ export class QuickEditManager {
                     block.state = 'reviewing' as InlineEditState;
                     block.updatedAt = Date.now();
 
+                    // 验证完整性 - 多层验证
+                    console.log(`[QuickEdit] ========== Streaming Complete ==========`);
+                    console.log(`[QuickEdit] Total chunks received: ${chunkCount}`);
+                    console.log(`[QuickEdit] Total chars (sum): ${totalChars}`);
+                    console.log(`[QuickEdit] fullResponse length: ${fullResponse.length}`);
+                    console.log(`[QuickEdit] fullResponseWithIndent length: ${fullResponseWithIndent.length}`);
+
+                    // 验证1: fullResponse长度是否等于totalChars
+                    if (fullResponse.length !== totalChars) {
+                        console.error(`[QuickEdit] ⚠️ WARNING: Response length mismatch!`);
+                        console.error(`[QuickEdit] Expected: ${totalChars}, Got: ${fullResponse.length}, Missing: ${totalChars - fullResponse.length} chars`);
+                    } else {
+                        console.log(`[QuickEdit] ✓ fullResponse length matches totalChars`);
+                    }
+
+                    // 验证2: receivedChunks合并后是否等于fullResponse
+                    const joinedChunks = receivedChunks.join('');
+                    if (joinedChunks.length !== fullResponse.length) {
+                        console.error(`[QuickEdit] ⚠️ CRITICAL: Chunk join mismatch!`);
+                        console.error(`[QuickEdit] Joined: ${joinedChunks.length}, fullResponse: ${fullResponse.length}`);
+                    } else {
+                        console.log(`[QuickEdit] ✓ All chunks properly concatenated`);
+                    }
+
+                    // 验证3: DOM中的文本
                     if (block.element) {
+                        const suggestionContent = block.element.querySelector('[data-content-type="suggestion"]') as HTMLElement;
+                        const domText = suggestionContent?.textContent || '';
+                        const domTextLength = domText.length;
+
+                        console.log(`[QuickEdit] DOM text length: ${domTextLength}`);
+
+                        if (domTextLength === 0) {
+                            console.error('[QuickEdit] ⚠️ CRITICAL: DOM text is empty!');
+                        } else {
+                            // 比较DOM文本和fullResponseWithIndent
+                            const expectedLength = fullResponseWithIndent.length;
+                            const diff = Math.abs(domTextLength - expectedLength);
+
+                            if (diff === 0) {
+                                console.log(`[QuickEdit] ✓ Perfect match: DOM text = fullResponseWithIndent`);
+                            } else if (diff <= 2) {
+                                console.log(`[QuickEdit] ✓ Close match: DOM=${domTextLength}, Expected=${expectedLength}, Diff=${diff} (acceptable)`);
+                            } else {
+                                console.error(`[QuickEdit] ⚠️ DOM text mismatch: DOM=${domTextLength}, Expected=${expectedLength}, Diff=${diff}`);
+                                console.error(`[QuickEdit] DOM text preview: "${domText.substring(0, 100).replace(/\n/g, '\\n')}..."`);
+                                console.error(`[QuickEdit] Expected preview: "${fullResponseWithIndent.substring(0, 100).replace(/\n/g, '\\n')}..."`);
+                            }
+                        }
+
                         this.renderer.completeStreaming(block.element);
                     }
 
-                    console.log('[QuickEdit] Streaming complete');
+                    console.log(`[QuickEdit] ==========================================`);
                 }
             );
 
@@ -618,43 +728,605 @@ export class QuickEditManager {
     }
 
     /**
-     * Get current selection
+     * 计算选择所在行的前导空白缩进（返回像素值和前缀字符串）
+     */
+    private calculateLineIndentWithPrefix(range: Range): { indent: number; prefix: string } {
+        try {
+            // 获取选择开始位置所在的文本节点
+            let startNode = range.startContainer;
+            let startOffset = range.startOffset;
+
+            // 如果是元素节点，找到对应的文本节点
+            if (startNode.nodeType === Node.ELEMENT_NODE) {
+                const childNode = startNode.childNodes[startOffset];
+                if (childNode && childNode.nodeType === Node.TEXT_NODE) {
+                    startNode = childNode;
+                    startOffset = 0;
+                } else {
+                    // 尝试使用第一个文本子节点
+                    const textNodes = Array.from(startNode.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+                    if (textNodes.length > 0) {
+                        startNode = textNodes[0];
+                        startOffset = 0;
+                    } else {
+                        console.log('[QuickEdit] No text node found for indent calculation');
+                        return { indent: 0, prefix: '' };
+                    }
+                }
+            }
+
+            if (startNode.nodeType !== Node.TEXT_NODE) {
+                console.log('[QuickEdit] Start node is not text node');
+                return { indent: 0, prefix: '' };
+            }
+
+            // 获取整个文本内容
+            const textContent = startNode.textContent || '';
+
+            // 向前查找到行首（或文本开始）
+            let lineStart = startOffset;
+            while (lineStart > 0 && textContent[lineStart - 1] !== '\n') {
+                lineStart--;
+            }
+
+            // 提取行首到选择起点之间的文本
+            const linePrefix = textContent.substring(lineStart, startOffset);
+
+            // 计算前导空白
+            const match = linePrefix.match(/^[ \t]*/);
+            if (!match || match[0].length === 0) {
+                console.log('[QuickEdit] No leading whitespace found');
+                return { indent: 0, prefix: '' };
+            }
+
+            const prefix = match[0]; // 缩进前缀字符串（空格或tab）
+            let indent = 0;
+            for (const char of prefix) {
+                if (char === '\t') {
+                    indent += 32; // 1 tab = 32px
+                } else if (char === ' ') {
+                    indent += 8;  // 1 space = 8px
+                }
+            }
+
+            console.log(`[QuickEdit] Calculated line indent: ${indent}px from "${prefix.replace(/\t/g, '\\t')}" (linePrefix: "${linePrefix.substring(0, 20)}...")`);
+            return { indent, prefix };
+
+        } catch (error) {
+            console.error('[QuickEdit] Error calculating line indent:', error);
+            return { indent: 0, prefix: '' };
+        }
+    }
+
+    /**
+     * Fallback: Get block selection when no text is selected
+     */
+    private getBlockSelectionFallback(): InlineEditSelection | null {
+        try {
+            // 获取当前光标位置
+            const selection = window.getSelection();
+            if (!selection || !selection.anchorNode) {
+                console.log('[QuickEdit] No anchor node in fallback');
+                return null;
+            }
+
+            // 从光标位置向上查找块元素
+            let blockElement = selection.anchorNode as Node;
+            let depth = 0;
+            const maxDepth = 20;
+
+            while (blockElement && depth < maxDepth) {
+                if (blockElement.nodeType === Node.ELEMENT_NODE) {
+                    const elem = blockElement as HTMLElement;
+
+                    // 查找SiYuan块
+                    if (elem.hasAttribute('data-node-id') ||
+                        elem.hasAttribute('data-type') ||
+                        elem.classList?.contains('p') ||
+                        elem.classList?.contains('li') ||
+                        elem.classList?.contains('protyle-wysiwyg')) {
+
+                        // 找到块了，获取整个块的文本
+                        const blockId = elem.getAttribute('data-node-id') ||
+                                       elem.getAttribute('data-id') ||
+                                       `fallback-${Date.now()}`;
+
+                        const text = elem.textContent || '';
+                        if (!text.trim()) {
+                            console.log('[QuickEdit] Block has no text content in fallback');
+                            return null;
+                        }
+
+                        // 创建Range覆盖整个块
+                        const range = document.createRange();
+                        range.selectNodeContents(elem);
+
+                        console.log('[QuickEdit] Found block selection via fallback:', {
+                            blockId,
+                            tagName: elem.tagName,
+                            textLength: text.length
+                        });
+
+                        return {
+                            text,
+                            blockElement: elem,
+                            blockId,
+                            range,
+                            startOffset: 0,
+                            endOffset: text.length
+                        };
+                    }
+                }
+
+                if (!blockElement.parentNode) {
+                    break;
+                }
+                blockElement = blockElement.parentNode;
+                depth++;
+            }
+
+            console.log('[QuickEdit] No block found in fallback at depth', depth);
+            return null;
+
+        } catch (error) {
+            console.error('[QuickEdit] Error in getBlockSelectionFallback:', error);
+            return null;
+        }
+    }
+
+    /**
+     * 从Range中提取所有被选中的块元素
+     * 使用cloneContents()获取实际选中的DOM片段，然后根据data-node-id在真实DOM中查找对应块
+     */
+    private extractBlocksFromRange(range: Range): HTMLElement[] {
+        const blockIds: string[] = [];
+
+        try {
+            // 克隆选区内容
+            const fragment = range.cloneContents();
+
+            // 在片段中查找所有块元素的ID
+            const traverse = (node: Node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const elem = node as HTMLElement;
+
+                    // 找到块元素，记录其ID
+                    if (elem.hasAttribute('data-node-id')) {
+                        const blockId = elem.getAttribute('data-node-id');
+                        if (blockId && !blockIds.includes(blockId)) {
+                            blockIds.push(blockId);
+                        }
+                        return; // 不继续深入，避免嵌套块
+                    }
+                }
+
+                // 继续遍历子节点
+                node.childNodes.forEach(child => traverse(child));
+            };
+
+            traverse(fragment);
+
+            console.log(`[QuickEdit] extractBlocksFromRange found ${blockIds.length} block IDs in cloned fragment:`, blockIds);
+
+            // 根据ID在真实DOM中查找对应的块元素
+            const blocks: HTMLElement[] = [];
+            for (const blockId of blockIds) {
+                const blockElement = document.querySelector(`[data-node-id="${blockId}"]`) as HTMLElement;
+                if (blockElement) {
+                    blocks.push(blockElement);
+                } else {
+                    console.warn(`[QuickEdit] Block with ID ${blockId} not found in document`);
+                }
+            }
+
+            return blocks;
+
+        } catch (error) {
+            console.error('[QuickEdit] Error in extractBlocksFromRange:', error);
+            return [];
+        }
+    }
+
+    /**
+     * 查找两个块之间的所有兄弟块（包括起止块）
+     * 用于处理Range API无法正确检测跨块选择的情况
+     */
+    private findBlocksBetween(startBlock: HTMLElement, endBlock: HTMLElement): HTMLElement[] {
+        const blocks: HTMLElement[] = [];
+
+        // 如果是同一个块，直接返回
+        if (startBlock === endBlock) {
+            return [startBlock];
+        }
+
+        // 检查两个块是否有共同的父容器
+        const startParent = startBlock.parentElement;
+        const endParent = endBlock.parentElement;
+
+        if (!startParent || !endParent) {
+            console.warn('[QuickEdit] Start or end block has no parent');
+            return [startBlock];
+        }
+
+        // 如果不是同一个父容器，无法用兄弟遍历
+        if (startParent !== endParent) {
+            console.warn('[QuickEdit] Blocks have different parents, using commonAncestor method');
+            return [];
+        }
+
+        // 遍历兄弟节点，收集startBlock到endBlock之间的所有块
+        let collecting = false;
+        const children = Array.from(startParent.children);
+
+        for (const child of children) {
+            const elem = child as HTMLElement;
+
+            // 开始收集
+            if (elem === startBlock) {
+                collecting = true;
+            }
+
+            // 如果正在收集且是块元素，添加到结果
+            if (collecting && elem.hasAttribute('data-node-id')) {
+                blocks.push(elem);
+            }
+
+            // 结束收集
+            if (elem === endBlock) {
+                break;
+            }
+        }
+
+        console.log(`[QuickEdit] findBlocksBetween found ${blocks.length} blocks between siblings`);
+
+        return blocks;
+    }
+
+    /**
+     * 提取Range跨越的所有块的完整文本
+     * 用于处理用户拖动选择跨多个段落的情况
+     */
+    private extractMultiBlockText(range: Range): { text: string; blocks: HTMLElement[] } | null {
+        try {
+            console.log('[QuickEdit] === Starting multi-block extraction ===');
+            console.log('[QuickEdit] Range details:', {
+                startContainer: range.startContainer.nodeName,
+                startContainerText: range.startContainer.textContent?.substring(0, 50),
+                startOffset: range.startOffset,
+                endContainer: range.endContainer.nodeName,
+                endContainerText: range.endContainer.textContent?.substring(0, 50),
+                endOffset: range.endOffset,
+                collapsed: range.collapsed
+            });
+
+            // 策略1: 尝试从Range的cloneContents中提取块
+            console.log('[QuickEdit] Strategy 1: Trying extractBlocksFromRange (cloneContents)...');
+            let selectedBlocks = this.extractBlocksFromRange(range);
+
+            // 如果cloneContents方法没找到块，或只找到1个块，尝试其他方法
+            if (selectedBlocks.length === 0) {
+                console.log('[QuickEdit] Strategy 1 failed - no blocks found in cloned fragment');
+
+                // 策略2: 找到起始和结束块，用兄弟遍历
+                console.log('[QuickEdit] Strategy 2: Trying sibling traversal...');
+                const startBlock = this.findBlockElement(range.startContainer);
+                const endBlock = this.findBlockElement(range.endContainer);
+
+                if (!startBlock || !endBlock) {
+                    console.log('[QuickEdit] Could not find start or end block');
+                    return null;
+                }
+
+                console.log('[QuickEdit] Found blocks:', {
+                    startBlock: startBlock.getAttribute('data-node-id'),
+                    endBlock: endBlock.getAttribute('data-node-id'),
+                    sameBlock: startBlock === endBlock
+                });
+
+                // 如果是同一个块，直接返回
+                if (startBlock === endBlock) {
+                    const text = (startBlock.textContent || '').trim();
+                    console.log('[QuickEdit] Same block detected, returning single block');
+                    return {
+                        text,
+                        blocks: [startBlock]
+                    };
+                }
+
+                // 尝试兄弟遍历
+                selectedBlocks = this.findBlocksBetween(startBlock, endBlock);
+
+                // 如果兄弟遍历也失败，使用commonAncestor方法
+                if (selectedBlocks.length === 0) {
+                    console.log('[QuickEdit] Strategy 2 failed - trying commonAncestor method...');
+
+                    const commonAncestor = range.commonAncestorContainer;
+                    console.log('[QuickEdit] Common ancestor:', {
+                        nodeType: commonAncestor.nodeName,
+                        hasDataNodeId: (commonAncestor as HTMLElement).hasAttribute?.('data-node-id')
+                    });
+
+                    const allBlocks = this.findAllBlocksInContainer(commonAncestor);
+                    console.log(`[QuickEdit] Found ${allBlocks.length} blocks in common ancestor`);
+
+                    if (allBlocks.length === 0) {
+                        console.warn('[QuickEdit] No blocks found in common ancestor');
+                        return null;
+                    }
+
+                    const startIndex = allBlocks.indexOf(startBlock);
+                    const endIndex = allBlocks.indexOf(endBlock);
+
+                    if (startIndex === -1 || endIndex === -1) {
+                        console.warn('[QuickEdit] Blocks not found in ancestor list');
+                        return null;
+                    }
+
+                    selectedBlocks = allBlocks.slice(startIndex, endIndex + 1);
+                    console.log(`[QuickEdit] CommonAncestor method found ${selectedBlocks.length} blocks`);
+                }
+            } else if (selectedBlocks.length === 1) {
+                console.log('[QuickEdit] Strategy 1 found only 1 block, verifying if this is correct...');
+
+                // 验证是否真的只选了一个块
+                const startBlock = this.findBlockElement(range.startContainer);
+                const endBlock = this.findBlockElement(range.endContainer);
+
+                if (startBlock && endBlock && startBlock !== endBlock) {
+                    console.log('[QuickEdit] Actually spans multiple blocks, trying strategy 2...');
+                    const siblingBlocks = this.findBlocksBetween(startBlock, endBlock);
+                    if (siblingBlocks.length > 1) {
+                        selectedBlocks = siblingBlocks;
+                    }
+                }
+            }
+
+            console.log('[QuickEdit] Final selected blocks:', selectedBlocks.map(b => ({
+                id: b.getAttribute('data-node-id'),
+                type: b.getAttribute('data-type'),
+                textLength: (b.textContent || '').length
+            })));
+
+            // 提取所有块的完整文本内容
+            const texts = selectedBlocks
+                .map(block => (block.textContent || '').trim())
+                .filter(t => t.length > 0);
+
+            const finalText = texts.join('\n\n');
+
+            console.log(`[QuickEdit] ✓ Extracted ${selectedBlocks.length} blocks, total ${finalText.length} chars`);
+
+            return {
+                text: finalText,
+                blocks: selectedBlocks
+            };
+
+        } catch (error) {
+            console.error('[QuickEdit] Error in extractMultiBlockText:', error);
+            return null;
+        }
+    }
+
+    /**
+     * 在容器内查找所有SiYuan块元素
+     */
+    private findAllBlocksInContainer(container: Node): HTMLElement[] {
+        const blocks: HTMLElement[] = [];
+
+        const traverse = (node: Node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const elem = node as HTMLElement;
+
+                // 找到块元素：有data-node-id属性
+                if (elem.hasAttribute('data-node-id')) {
+                    blocks.push(elem);
+                    // 不继续深入遍历，避免嵌套块重复添加
+                    return;
+                }
+            }
+
+            // 继续遍历子节点
+            node.childNodes.forEach(child => traverse(child));
+        };
+
+        // 开始遍历
+        traverse(container);
+
+        console.log(`[QuickEdit] findAllBlocksInContainer found ${blocks.length} blocks`);
+
+        return blocks;
+    }
+
+    /**
+     * 从任意节点向上查找所属的SiYuan块元素
+     */
+    private findBlockElement(node: Node): HTMLElement | null {
+        let current: Node | null = node;
+        let depth = 0;
+        const maxDepth = 20;
+        const path: string[] = [];
+
+        while (current && depth < maxDepth) {
+            if (current.nodeType === Node.ELEMENT_NODE) {
+                const elem = current as HTMLElement;
+                path.push(`${elem.tagName}${elem.getAttribute('data-node-id') ? '[' + elem.getAttribute('data-node-id') + ']' : ''}`);
+
+                if (elem.hasAttribute('data-node-id')) {
+                    console.log(`[QuickEdit] Found block at depth ${depth}:`, {
+                        id: elem.getAttribute('data-node-id'),
+                        type: elem.getAttribute('data-type'),
+                        tag: elem.tagName,
+                        path: path.join(' > ')
+                    });
+                    return elem;
+                }
+            } else {
+                path.push(`${current.nodeName}`);
+            }
+            current = current.parentNode;
+            depth++;
+        }
+
+        console.warn('[QuickEdit] No block found, traversal path:', path.join(' > '));
+        return null;
+    }
+
+    /**
+     * 获取思源笔记中被选中的块元素
+     * 思源在用户选中块时会添加 .protyle-wysiwyg--select 类
+     * @returns 所有被选中的块元素数组
+     */
+    private getSelectedBlocks(): HTMLElement[] {
+        try {
+            // 查询所有带 .protyle-wysiwyg--select 类的块元素
+            const selectedElements = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
+            const blocks = Array.from(selectedElements) as HTMLElement[];
+
+            console.log(`[QuickEdit] getSelectedBlocks found ${blocks.length} selected blocks`);
+            if (blocks.length > 0) {
+                console.log('[QuickEdit] Selected block IDs:', blocks.map(b => b.getAttribute('data-node-id')));
+            }
+
+            return blocks;
+        } catch (error) {
+            console.error('[QuickEdit] Error in getSelectedBlocks:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get current selection - 支持两种模式：
+     * 模式1（优先）：块选择模式 - 用户通过块图标或块级操作选中的块
+     * 模式2（后备）：文本选择模式 - 用户通过鼠标拖选的文本
      */
     private getSelection(): InlineEditSelection | null {
         try {
+            console.log('[QuickEdit] === Getting selection ===');
+
+            // 模式1: 块选择模式 - 检查思源的块选择（.protyle-wysiwyg--select）
+            const selectedBlocks = this.getSelectedBlocks();
+
+            if (selectedBlocks.length > 0) {
+                console.log(`[QuickEdit] ✓ BLOCK SELECTION MODE: Found ${selectedBlocks.length} selected blocks`);
+
+                // 提取所有选中块的文本内容
+                const texts = selectedBlocks
+                    .map(block => (block.textContent || '').trim())
+                    .filter(t => t.length > 0);
+
+                const text = texts.join('\n\n');
+
+                if (!text || !text.trim()) {
+                    console.log('[QuickEdit] Selected blocks have no text content');
+                    return null;
+                }
+
+                console.log(`[QuickEdit] Block selection text: ${text.length} chars from ${selectedBlocks.length} blocks`);
+                console.log(`[QuickEdit] Block IDs:`, selectedBlocks.map(b => b.getAttribute('data-node-id')));
+
+                // 使用第一个块作为主块元素
+                const primaryBlock = selectedBlocks[0];
+                const blockId = primaryBlock.getAttribute('data-node-id') || `fallback-${Date.now()}`;
+
+                // 创建一个Range覆盖所有选中的块
+                const range = document.createRange();
+                range.setStartBefore(selectedBlocks[0]);
+                range.setEndAfter(selectedBlocks[selectedBlocks.length - 1]);
+
+                return {
+                    text,
+                    blockElement: primaryBlock,
+                    blockId,
+                    range,
+                    startOffset: 0,
+                    endOffset: text.length
+                };
+            }
+
+            // 模式2: 文本选择模式 - 使用 Range API
+            console.log('[QuickEdit] Block selection mode found no blocks, trying text selection mode...');
+
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) {
+                console.log('[QuickEdit] No window selection or empty rangeCount');
                 return null;
             }
 
-            const text = selection.toString().trim();
-            if (!text) {
+            console.log(`[QuickEdit] ✓ TEXT SELECTION MODE: Selection has ${selection.rangeCount} range(s)`);
+
+            let text = '';
+            let primaryRange: Range | null = null;
+
+            if (selection.rangeCount === 1) {
+                primaryRange = selection.getRangeAt(0);
+
+                // 尝试多块提取（用于跨块文本选择）
+                const multiBlockResult = this.extractMultiBlockText(primaryRange);
+
+                if (multiBlockResult && multiBlockResult.text.trim()) {
+                    text = multiBlockResult.text;
+                    console.log(`[QuickEdit] ✓ Multi-block extraction: ${multiBlockResult.blocks.length} blocks, ${text.length} chars`);
+                } else {
+                    // Fallback：单块文本选择
+                    text = primaryRange.toString();
+                    if (!text || !text.trim()) {
+                        const clonedContents = primaryRange.cloneContents();
+                        text = clonedContents.textContent || '';
+                    }
+                    console.log(`[QuickEdit] Single block text extraction: ${text.length} chars`);
+                }
+            } else {
+                // 多个Range - 合并
+                console.log('[QuickEdit] Multiple ranges detected, merging...');
+                const allTexts: string[] = [];
+
+                for (let i = 0; i < selection.rangeCount; i++) {
+                    const range = selection.getRangeAt(i);
+                    let rangeText = range.toString();
+
+                    if (!rangeText || !rangeText.trim()) {
+                        const clonedContents = range.cloneContents();
+                        rangeText = clonedContents.textContent || '';
+                    }
+
+                    if (rangeText) {
+                        allTexts.push(rangeText);
+                    }
+                }
+
+                text = allTexts.join('\n\n');
+                primaryRange = selection.getRangeAt(0);
+                console.log(`[QuickEdit] Merged ${allTexts.length} ranges into ${text.length} chars`);
+            }
+
+            if (!text || !text.trim()) {
+                console.log('[QuickEdit] Selection text is empty');
                 return null;
             }
 
-            const range = selection.getRangeAt(0);
+            console.log(`[QuickEdit] Text selection final: ${text.length} chars`);
 
-            // Find containing block element
-            let blockElement = range.commonAncestorContainer as Node;
-            while (blockElement && blockElement.nodeType !== Node.ELEMENT_NODE) {
-                blockElement = blockElement.parentNode!;
-            }
-
-            while (blockElement && !(blockElement as HTMLElement).hasAttribute('data-node-id')) {
-                blockElement = (blockElement as HTMLElement).parentElement!;
-            }
+            // 查找包含选区的块元素
+            const blockElement = this.findBlockElement(primaryRange!.commonAncestorContainer);
 
             if (!blockElement) {
+                console.log('[QuickEdit] Could not find block element for text selection');
                 return null;
             }
 
-            const blockId = (blockElement as HTMLElement).getAttribute('data-node-id') || '';
+            const blockId = blockElement.getAttribute('data-node-id') || `fallback-${Date.now()}`;
+
+            console.log('[QuickEdit] Text selection result:', {
+                blockId,
+                tagName: blockElement.tagName,
+                textLength: text.length
+            });
 
             return {
                 text,
-                blockElement: blockElement as HTMLElement,
+                blockElement,
                 blockId,
-                range,
+                range: primaryRange!,
                 startOffset: 0,
                 endOffset: text.length
             };

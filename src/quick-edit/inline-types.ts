@@ -119,6 +119,15 @@ export interface PopupPosition {
     y: number;
     /** Whether to show above or below the trigger point */
     placement: 'above' | 'below';
+    /** Optional: anchor element rect for smart positioning */
+    anchorRect?: {
+        top: number;
+        bottom: number;
+        left: number;
+        right: number;
+        width: number;
+        height: number;
+    };
 }
 
 /**

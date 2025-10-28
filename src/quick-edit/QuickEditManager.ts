@@ -318,8 +318,19 @@ export class QuickEditManager {
         const position = {
             x: rect.left,
             y: rect.bottom + 10,
-            placement: 'below' as const
+            placement: 'below' as const,
+            anchorRect: {
+                top: rect.top,
+                bottom: rect.bottom,
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+                height: rect.height
+            }
         };
+
+        console.log(`[QuickEdit] Showing popup at position: x=${position.x}, y=${position.y}`);
+        console.log(`[QuickEdit] Selection rect: top=${rect.top}, bottom=${rect.bottom}, height=${rect.height}`);
 
         this.inputPopup.show(position, this.settings.quickEditDefaultInstruction);
     }

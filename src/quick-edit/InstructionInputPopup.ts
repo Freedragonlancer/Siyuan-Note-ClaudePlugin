@@ -26,6 +26,8 @@ export class InstructionInputPopup {
      * Show popup at position
      */
     public show(position: PopupPosition, defaultInstruction: string = ''): void {
+        console.log(`[InstructionInputPopup] show() called with position: x=${position.x}, y=${position.y}`);
+
         if (this.element) {
             this.close();
         }
@@ -48,11 +50,34 @@ export class InstructionInputPopup {
         }
 
         this.element = this.createPopup(instructionToUse, presetIdToUse);
-        document.body.appendChild(this.element);
 
-        // Position
+        // Set initial position first (before adding to DOM to avoid flash)
         this.element.style.left = `${position.x}px`;
         this.element.style.top = `${position.y}px`;
+        console.log(`[InstructionInputPopup] Initial position set: left=${position.x}px, top=${position.y}px`);
+
+        document.body.appendChild(this.element);
+
+        // Force browser to calculate dimensions by accessing offsetHeight
+        // This ensures getBoundingClientRect() returns accurate values
+        void this.element.offsetHeight;
+
+        // Get popup dimensions for debugging
+        const popupRect = this.element.getBoundingClientRect();
+        console.log(`[InstructionInputPopup] Popup dimensions: width=${popupRect.width}px, height=${popupRect.height}px`);
+        console.log(`[InstructionInputPopup] Viewport: width=${window.innerWidth}px, height=${window.innerHeight}px`);
+
+        // Calculate safe position with boundary detection
+        const safePosition = this.calculateSafePosition(position, this.element);
+
+        // Update position if adjusted
+        if (safePosition.x !== position.x || safePosition.y !== position.y) {
+            this.element.style.left = `${safePosition.x}px`;
+            this.element.style.top = `${safePosition.y}px`;
+            console.log(`[InstructionInputPopup] Position adjusted from (${position.x}, ${position.y}) to (${safePosition.x}, ${safePosition.y})`);
+        } else {
+            console.log(`[InstructionInputPopup] Position not adjusted, using original position`);
+        }
 
         // Focus input
         const input = this.element.querySelector('#instruction-input') as HTMLInputElement;
@@ -92,6 +117,114 @@ export class InstructionInputPopup {
         const currentSettings = this.configManager.getActiveProfile().settings;
         return preset.systemPrompt === currentSettings.systemPrompt &&
                preset.appendedPrompt === currentSettings.appendedPrompt;
+    }
+
+    /**
+     * Calculate safe position with smart boundary protection
+     * - Auto-flips to show above selection if insufficient space below
+     * - Considers HiDPI scaling (uses CSS pixels)
+     * - Prevents cutoff by screen edges
+     *
+     * @param position - Requested position with anchor rect
+     * @param element - Popup element (must be in DOM to get dimensions)
+     * @returns Adjusted position
+     */
+    private calculateSafePosition(position: PopupPosition, element: HTMLElement): { x: number; y: number } {
+        const BOTTOM_MARGIN = 50;  // Reasonable margin for taskbar
+        const TOP_MARGIN = 20;      // Margin from top
+        const LEFT_MARGIN = 20;     // Margin from left
+        const RIGHT_MARGIN = 20;    // Margin from right
+        const SPACING = 10;         // Space between selection and popup
+
+        // Get popup dimensions (CSS pixels, HiDPI compatible)
+        const popupRect = element.getBoundingClientRect();
+        const popupHeight = popupRect.height;
+        const popupWidth = popupRect.width;
+
+        // Get viewport dimensions (CSS pixels, HiDPI compatible)
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth;
+
+        console.log(`[InstructionInputPopup] Calculating position:`);
+        console.log(`  - Viewport: ${viewportWidth}x${viewportHeight}px`);
+        console.log(`  - Popup: ${popupWidth}x${popupHeight}px`);
+        console.log(`  - Device pixel ratio: ${window.devicePixelRatio} (HiDPI: ${window.devicePixelRatio > 1})`);
+
+        let safeX = position.x;
+        let safeY = position.y;
+        let placement = position.placement;
+
+        // Smart vertical positioning with auto-flip
+        if (position.anchorRect) {
+            const anchorTop = position.anchorRect.top;
+            const anchorBottom = position.anchorRect.bottom;
+            const anchorHeight = position.anchorRect.height;
+
+            // Calculate available space above and below selection
+            const spaceBelow = viewportHeight - anchorBottom - BOTTOM_MARGIN;
+            const spaceAbove = anchorTop - TOP_MARGIN;
+
+            console.log(`  - Anchor: top=${anchorTop}, bottom=${anchorBottom}, height=${anchorHeight}`);
+            console.log(`  - Space: above=${spaceAbove}px, below=${spaceBelow}px`);
+            console.log(`  - Need: ${popupHeight}px + ${SPACING}px spacing`);
+
+            // Check if we should flip to above
+            if (placement === 'below' && spaceBelow < popupHeight + SPACING) {
+                // Not enough space below
+                if (spaceAbove > popupHeight + SPACING) {
+                    // Enough space above, flip to above
+                    safeY = anchorTop - popupHeight - SPACING;
+                    placement = 'above';
+                    console.log(`  - ✓ Flipped to above: new Y = ${safeY}`);
+                } else {
+                    // Not enough space above either, use the larger space
+                    if (spaceAbove > spaceBelow) {
+                        // Show above, but may be clipped
+                        safeY = Math.max(TOP_MARGIN, anchorTop - popupHeight - SPACING);
+                        placement = 'above';
+                        console.log(`  - ⚠ Limited space, showing above at Y = ${safeY}`);
+                    } else {
+                        // Show below, but may be clipped
+                        safeY = anchorBottom + SPACING;
+                        console.log(`  - ⚠ Limited space, showing below at Y = ${safeY}`);
+                    }
+                }
+            } else {
+                console.log(`  - ✓ Using original position (${placement})`);
+            }
+        }
+
+        // Ensure we don't go below viewport bottom
+        const bottomEdge = safeY + popupHeight;
+        const maxBottomY = viewportHeight - BOTTOM_MARGIN;
+        if (bottomEdge > maxBottomY) {
+            safeY = Math.max(TOP_MARGIN, maxBottomY - popupHeight);
+            console.log(`  - Adjusted Y to ${safeY} to prevent bottom overflow`);
+        }
+
+        // Ensure we don't go above viewport top
+        if (safeY < TOP_MARGIN) {
+            safeY = TOP_MARGIN;
+            console.log(`  - Adjusted Y to ${safeY} to prevent top overflow`);
+        }
+
+        // Horizontal positioning
+        const rightEdge = safeX + popupWidth;
+        const maxRightX = viewportWidth - RIGHT_MARGIN;
+
+        if (rightEdge > maxRightX) {
+            safeX = Math.max(LEFT_MARGIN, maxRightX - popupWidth);
+            console.log(`  - Adjusted X from ${position.x} to ${safeX} to prevent right overflow`);
+        }
+
+        if (safeX < LEFT_MARGIN) {
+            safeX = LEFT_MARGIN;
+            console.log(`  - Adjusted X to ${safeX} to prevent left overflow`);
+        }
+
+        console.log(`  - Final position: (${safeX}, ${safeY}), placement: ${placement}`);
+
+        return { x: safeX, y: safeY };
     }
 
     /**

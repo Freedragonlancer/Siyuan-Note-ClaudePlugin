@@ -28,6 +28,8 @@ export class ConfigManager {
     private profiles: Map<string, ConfigProfile> = new Map();
     private activeProfileId: string = "";
     private promptTemplates: Map<string, PromptTemplate> = new Map();
+    private templatesLoaded: boolean = false;
+    private templatesLoadPromise: Promise<void> | null = null;
 
     constructor(plugin?: any) {
         this.plugin = plugin;
@@ -37,11 +39,32 @@ export class ConfigManager {
             this.promptTemplates.set(template.id, template);
         });
 
-        // Load custom templates from storage
-        this.loadTemplates();
+        // Load custom templates from storage (async, but don't block constructor)
+        this.loadTemplates().catch(error => {
+            console.error('[ConfigManager] Failed to load templates in constructor:', error);
+        });
 
         // Load profiles from storage
         this.loadProfiles();
+    }
+
+    /**
+     * Wait for async initialization to complete (if needed)
+     */
+    async waitForInit(): Promise<void> {
+        // If templates are already loaded, return immediately
+        if (this.templatesLoaded) {
+            return;
+        }
+
+        // If loading is in progress, wait for it
+        if (this.templatesLoadPromise) {
+            await this.templatesLoadPromise;
+            return;
+        }
+
+        // Otherwise, start loading
+        await this.loadTemplates();
     }
 
     //#region Profile CRUD Operations
@@ -463,39 +486,113 @@ export class ConfigManager {
             const customTemplates = this.getCustomTemplates();
             const serialized = JSON.stringify(customTemplates, null, 2);
 
+            console.log(`[ConfigManager] Saving ${customTemplates.length} custom template(s)`,
+                customTemplates.map(t => ({ id: t.id, name: t.name })));
+
             localStorage.setItem('claude-assistant-custom-templates', serialized);
+            console.log('[ConfigManager] ✅ Saved to localStorage');
 
             // Also save via plugin API if available
             if (this.plugin && typeof this.plugin.saveData === 'function') {
-                this.plugin.saveData('custom-templates.json', serialized).catch((error: Error) => {
-                    console.error('[ConfigManager] Failed to save custom templates to file:', error);
-                });
+                this.plugin.saveData('custom-templates.json', serialized)
+                    .then(() => {
+                        console.log('[ConfigManager] ✅ Saved to file system');
+                    })
+                    .catch((error: Error) => {
+                        console.error('[ConfigManager] ❌ Failed to save custom templates to file:', error);
+                    });
+            } else {
+                console.warn('[ConfigManager] ⚠️ Plugin saveData not available, only saved to localStorage');
             }
 
-            console.log(`[ConfigManager] Saved ${customTemplates.length} custom template(s)`);
+            console.log(`[ConfigManager] ✅ Saved ${customTemplates.length} custom template(s) total`);
         } catch (error) {
-            console.error('[ConfigManager] Failed to save custom templates:', error);
+            console.error('[ConfigManager] ❌ Failed to save custom templates:', error);
+            throw error; // Re-throw to alert caller
         }
     }
 
     /**
-     * Load custom templates from storage
+     * Load custom templates from storage (async)
      */
-    private loadTemplates(): void {
+    private async loadTemplates(): Promise<void> {
+        // Prevent concurrent loading
+        if (this.templatesLoaded) {
+            console.log('[ConfigManager] Templates already loaded, skipping');
+            return;
+        }
+
+        if (this.templatesLoadPromise) {
+            console.log('[ConfigManager] Templates loading in progress, waiting...');
+            await this.templatesLoadPromise;
+            return;
+        }
+
+        this.templatesLoadPromise = this._loadTemplatesImpl();
+        await this.templatesLoadPromise;
+        this.templatesLoadPromise = null;
+    }
+
+    private async _loadTemplatesImpl(): Promise<void> {
         try {
-            const stored = localStorage.getItem('claude-assistant-custom-templates');
+            console.log('[ConfigManager] Loading custom templates...');
+
+            // Try localStorage first
+            let stored = localStorage.getItem('claude-assistant-custom-templates');
+
+            // If not in localStorage, try loading from file system
+            if (!stored && this.plugin && typeof this.plugin.loadData === 'function') {
+                console.log('[ConfigManager] localStorage empty, trying file system...');
+                try {
+                    const fileData = await this.plugin.loadData('custom-templates.json');
+                    if (fileData) {
+                        console.log(`[ConfigManager] Found templates in file system, type: ${typeof fileData}`);
+
+                        // Check if fileData is already an object or a string
+                        if (typeof fileData === 'string') {
+                            stored = fileData;
+                        } else if (typeof fileData === 'object') {
+                            // Already parsed, convert back to string for consistency
+                            stored = JSON.stringify(fileData);
+                            console.log('[ConfigManager] fileData was already an object, converted to string');
+                        }
+
+                        // Cache to localStorage for faster access next time
+                        if (stored) {
+                            localStorage.setItem('claude-assistant-custom-templates', stored);
+                            console.log('[ConfigManager] ✅ Cached to localStorage');
+                        }
+                    }
+                } catch (fileError) {
+                    console.log('[ConfigManager] No templates file found, starting fresh');
+                }
+            }
 
             if (stored) {
+                console.log(`[ConfigManager] Found stored templates (${stored.length} chars)`);
                 const customTemplates: PromptTemplate[] = JSON.parse(stored);
+                console.log(`[ConfigManager] Parsed ${customTemplates.length} template(s)`,
+                    customTemplates.map(t => ({ id: t.id, name: t.name, hasEditInstruction: !!t.editInstruction })));
+
+                let loadedCount = 0;
                 customTemplates.forEach(template => {
                     if (!template.isBuiltIn) {
                         this.promptTemplates.set(template.id, template);
+                        loadedCount++;
+                    } else {
+                        console.warn(`[ConfigManager] Skipping built-in template: ${template.id}`);
                     }
                 });
-                console.log(`[ConfigManager] Loaded ${customTemplates.length} custom template(s)`);
+                console.log(`[ConfigManager] ✅ Loaded ${loadedCount} custom template(s) into Map`);
+                console.log(`[ConfigManager] Total templates in Map: ${this.promptTemplates.size}`);
+            } else {
+                console.log('[ConfigManager] No stored templates found');
             }
+
+            this.templatesLoaded = true;
         } catch (error) {
-            console.error('[ConfigManager] Failed to load custom templates:', error);
+            console.error('[ConfigManager] ❌ Failed to load custom templates:', error);
+            throw error;
         }
     }
 

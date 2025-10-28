@@ -377,8 +377,12 @@ export default class ClaudeAssistantPlugin extends Plugin {
     /**
      * Open Prompt Editor Panel
      */
-    private openPromptEditor(): void {
+    private async openPromptEditor(): Promise<void> {
         console.log("[ClaudePlugin] Opening Prompt Editor Panel");
+
+        // Ensure templates are loaded before opening editor
+        await this.configManager.waitForInit();
+        console.log("[ClaudePlugin] ConfigManager initialization complete");
 
         const activeProfile = this.configManager.getActiveProfile();
         const promptEditor = new PromptEditorPanel(
@@ -447,7 +451,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
             this,
             this.claudeClient,
             this.editHistory,
-            editSettings
+            editSettings,
+            this.configManager
         );
 
         console.log("[AIEdit] ✅ AI text editing feature initialized");
@@ -713,6 +718,16 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add separator
         menu.addSeparator();
 
+        // Add "Quick Edit" menu item
+        menu.addItem({
+            icon: "iconFlash",
+            label: this.i18n.quickEdit || "AI 快速编辑",
+            click: () => {
+                console.log("[QuickEdit] 'Quick Edit' clicked from block menu");
+                this.triggerQuickEdit();
+            }
+        });
+
         // Add AI Edit menu item
         menu.addItem({
             icon: "iconEdit",
@@ -771,6 +786,16 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         // Add separator
         menu.addSeparator();
+
+        // Add "Quick Edit" menu item
+        menu.addItem({
+            icon: "iconFlash",
+            label: this.i18n.quickEdit || "AI 快速编辑",
+            click: () => {
+                console.log("[QuickEdit] 'Quick Edit' clicked from context menu");
+                this.triggerQuickEdit();
+            }
+        });
 
         // Add "Send to AI Edit" menu item
         menu.addItem({

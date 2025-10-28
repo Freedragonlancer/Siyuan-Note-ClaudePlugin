@@ -1249,6 +1249,152 @@
             width: 100%;
         }
 
+        .preset-shortcuts {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 10px 0;
+            padding: 10px;
+            background: var(--b3-theme-surface);
+            border: 1px solid var(--b3-border-color);
+            border-radius: 4px;
+
+            &__label {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--b3-theme-on-surface);
+                margin-bottom: 2px;
+            }
+
+            &__buttons {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+        }
+
+        .preset-empty-hint {
+            font-size: 12px;
+            color: var(--b3-theme-on-surface-light);
+            font-style: italic;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .preset-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            background: var(--b3-theme-background);
+            border: 1px solid var(--b3-border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+
+            &:hover {
+                background: var(--b3-list-hover);
+                border-color: var(--b3-theme-primary);
+            }
+
+            &--diff {
+                border-color: var(--b3-theme-primary-light);
+            }
+
+            &--active {
+                border: 2px solid var(--b3-theme-primary);
+                background: linear-gradient(135deg, var(--b3-theme-primary-lightest) 0%, var(--b3-theme-background) 50%);
+                position: relative;
+            }
+
+            &__number {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 16px;
+                height: 16px;
+                padding: 0 3px;
+                background: var(--b3-theme-primary-lighter);
+                color: var(--b3-theme-primary);
+                border-radius: 3px;
+                font-size: 10px;
+                font-weight: 600;
+                line-height: 1;
+            }
+
+            &__text {
+                color: var(--b3-theme-on-surface);
+                white-space: nowrap;
+            }
+
+            &__diff-indicator {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 14px;
+                height: 14px;
+                font-size: 10px;
+                color: var(--b3-theme-primary);
+                background: var(--b3-theme-primary-lighter);
+                border-radius: 50%;
+                margin-left: 2px;
+            }
+
+            &__badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 16px;
+                height: 16px;
+                padding: 0 4px;
+                margin-left: 4px;
+                background: var(--b3-theme-success-light);
+                color: var(--b3-theme-success);
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1;
+            }
+        }
+
+        .popup-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--b3-border-color);
+
+            .popup-cancel,
+            .popup-confirm {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 4px 10px;
+                font-size: 13px;
+                transition: opacity 0.15s ease;
+
+                svg {
+                    width: 13px;
+                    height: 13px;
+                    opacity: 0.7;
+                }
+
+                &:hover {
+                    opacity: 0.8;
+                }
+            }
+
+            .popup-cancel {
+                // Uses default b3-button--outline style
+            }
+
+            .popup-confirm {
+                // Uses default b3-button--text style (no extra styling needed)
+            }
+        }
+
         .popup-hint {
             font-size: 11px;
             color: var(--b3-theme-on-surface-light);

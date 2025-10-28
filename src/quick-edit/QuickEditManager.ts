@@ -17,12 +17,14 @@ import { InstructionInputPopup } from './InstructionInputPopup';
 import { AIEditProcessor } from '@/editor/AIEditProcessor';
 import { EditHistory } from '@/editor/EditHistory';
 import { ClaudeClient } from '@/claude';
+import type { ConfigManager } from '@/settings/ConfigManager';
 
 export class QuickEditManager {
     private plugin: Plugin;
     private claudeClient: ClaudeClient;
     private history: EditHistory;
     private settings: EditSettings;
+    private configManager: ConfigManager;
 
     // Inline edit components
     private renderer: InlineEditRenderer;
@@ -46,16 +48,20 @@ export class QuickEditManager {
         plugin: Plugin,
         claudeClient: ClaudeClient,
         history: EditHistory,
-        editSettings: EditSettings
+        editSettings: EditSettings,
+        configManager: ConfigManager
     ) {
         this.plugin = plugin;
         this.claudeClient = claudeClient;
         this.history = history;
         this.settings = editSettings;
+        this.configManager = configManager;
 
         // Initialize components
         this.renderer = new InlineEditRenderer();
-        this.inputPopup = new InstructionInputPopup(editSettings.customInstructions);
+        // Use unified presets from ConfigManager (Tab 1)
+        const presets = this.configManager.getAllTemplates();
+        this.inputPopup = new InstructionInputPopup(presets, this.configManager);
         this.processor = new AIEditProcessor(claudeClient);
 
         // Setup popup callbacks
@@ -65,7 +71,8 @@ export class QuickEditManager {
                 console.log('[QuickEdit] Instruction input cancelled');
                 // FIX 1.2: Clear pending selection on cancel
                 this.pendingSelection = null;
-            }
+            },
+            onPresetSwitch: (presetId) => this.handlePresetSwitch(presetId)
         });
 
         // FIX 1.5: Setup MutationObserver to detect DOM changes
@@ -1641,11 +1648,43 @@ ${block.originalText}
     }
 
     /**
+     * Handle preset switch (global configuration change)
+     */
+    private handlePresetSwitch(presetId: string): void {
+        console.log(`[QuickEdit] Switching to preset: ${presetId}`);
+
+        const preset = this.configManager.getAllTemplates().find(t => t.id === presetId);
+        if (!preset) {
+            console.error(`[QuickEdit] Preset ${presetId} not found`);
+            showMessage('❌ 预设不存在', 2000, 'error');
+            return;
+        }
+
+        // Apply preset to current configuration (global switch)
+        const activeProfile = this.configManager.getActiveProfile();
+        this.configManager.updateProfile(activeProfile.id, {
+            settings: {
+                ...activeProfile.settings,
+                systemPrompt: preset.systemPrompt,
+                appendedPrompt: preset.appendedPrompt
+            }
+        });
+
+        // Update Claude client with new settings
+        this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
+
+        showMessage(`✅ 已切换到预设: ${preset.name}`, 2000, 'info');
+        console.log(`[QuickEdit] Preset switched successfully: ${preset.name}`);
+    }
+
+    /**
      * Update settings
      */
     public updateSettings(settings: EditSettings): void {
         this.settings = settings;
-        this.inputPopup = new InstructionInputPopup(settings.customInstructions);
+        // Use unified presets from ConfigManager (Tab 1)
+        const presets = this.configManager.getAllTemplates();
+        this.inputPopup = new InstructionInputPopup(presets, this.configManager);
     }
 
     /**

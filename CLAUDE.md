@@ -31,6 +31,33 @@ cp dist/index.css "N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/in
 
 **Build Output**: `dist/` → `index.js`, `index.css`, `plugin.json`, `icon.png`, i18n files
 
+### ⚡ 快速测试部署流程 (每次代码开发完必做)
+
+**一键部署**:
+```bash
+npm run deploy
+```
+这个命令会自动执行：
+1. `npm run build` - 构建生产版本
+2. `npm run copy-plugin` - 复制文件到 SiYuan 插件目录
+3. 完成后**重启 SiYuan** 即可测试新功能
+
+**分步执行** (调试用):
+```bash
+# 步骤 1: 构建
+npm run build
+
+# 步骤 2: 复制到插件目录
+npm run copy-plugin
+
+# 步骤 3: 手动重启 SiYuan
+```
+
+**验证部署**:
+- 检查控制台是否有构建错误
+- 确认文件已复制: `N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/`
+- 重启 SiYuan 后打开插件检查功能是否正常
+
 ## Architecture Overview
 
 ### Dual-Dock Design

@@ -60,10 +60,8 @@ export class InlineEditRenderer {
 
         // Insert after the content element, before any IAL or other metadata
         if (contentElement.nextElementSibling) {
-            console.log('[InlineEditRenderer] Inserting comparison block before:', contentElement.nextElementSibling.nodeName);
             containerElement.insertBefore(compareBlock, contentElement.nextElementSibling);
         } else {
-            console.log('[InlineEditRenderer] Appending comparison block to container');
             containerElement.appendChild(compareBlock);
         }
 
@@ -165,7 +163,6 @@ export class InlineEditRenderer {
 
         // Streaming完整性验证：记录每个chunk
         const blockId = blockElement.getAttribute('data-inline-edit-id');
-        console.log(`[InlineEditRenderer] Chunk received for ${blockId}: ${chunk.length} chars, total: ${currentText.length} → ${currentText.length + processedChunk.length}`);
 
         // CRITICAL FIX: 禁用打字动画以避免chunk丢失
         // 打字动画在streaming场景下会导致chunk冲突，因为新chunk到达时
@@ -217,7 +214,6 @@ export class InlineEditRenderer {
         suggestionContent.textContent = newContent;
         
         const blockId = blockElement.getAttribute('data-inline-edit-id');
-        console.log(`[InlineEditRenderer] Content replaced for ${blockId}: ${oldLength} → ${newContent.length} chars (filtered)`);
     }
 
     /**

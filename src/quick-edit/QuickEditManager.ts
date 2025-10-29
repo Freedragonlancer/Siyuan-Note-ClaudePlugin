@@ -100,8 +100,6 @@ export class QuickEditManager {
         this.inputPopup.setCallbacks({
             onSubmit: (instruction, actionMode) => this.handleInstructionSubmit(instruction, actionMode),
             onCancel: () => {
-                console.log('[QuickEdit] Instruction input cancelled');
-                // FIX 1.2: Clear pending selection on cancel
                 this.pendingSelection = null;
             },
             onPresetSwitch: (presetId) => this.handlePresetSwitch(presetId)
@@ -142,8 +140,6 @@ export class QuickEditManager {
                 });
             });
         });
-
-        console.log('[QuickEdit] MutationObserver initialized');
     }
 
     /**
@@ -152,10 +148,8 @@ export class QuickEditManager {
     private pauseObserver(): void {
         if (this.mutationObserver) {
             this.mutationObserver.disconnect();
-            // FIX Critical 1.1: Clear observed containers to prevent memory leak
-            // Without this, stale container references accumulate indefinitely
+            // Clear observed containers to prevent memory leak
             this.observedContainers.clear();
-            console.log('[QuickEdit] MutationObserver paused and containers cleared');
         }
     }
 
@@ -171,7 +165,6 @@ export class QuickEditManager {
                     subtree: true
                 });
             });
-            console.log('[QuickEdit] MutationObserver resumed');
         }
     }
 
@@ -209,7 +202,6 @@ export class QuickEditManager {
             });
 
             this.observedContainers.add(observeTarget);
-            console.log('[QuickEdit] Started observing container for DOM changes');
         }
     }
 
@@ -219,8 +211,6 @@ export class QuickEditManager {
     private handleBlockRemovedByExternal(blockId: string): void {
         const block = this.activeBlocks.get(blockId);
         if (!block) return;
-
-        console.log('[QuickEdit] Cleaning up externally removed block:', blockId);
 
         // No marked span to clean up (we disabled marking to avoid DOM conflicts)
         block.markedSpan = null;
@@ -246,7 +236,6 @@ export class QuickEditManager {
             // Surround the selection with the span
             range.surroundContents(span);
 
-            console.log('[QuickEdit] Marked original text with span');
             return span;
         } catch (error) {
             // surroundContents can fail if the range partially selects a non-Text node
@@ -290,8 +279,6 @@ export class QuickEditManager {
             if (parent.normalize) {
                 parent.normalize();
             }
-
-            console.log('[QuickEdit] Unmarked original text and normalized DOM');
         } catch (error) {
             console.error('[QuickEdit] Failed to unmark text:', error);
         }
@@ -309,8 +296,6 @@ export class QuickEditManager {
 
             // Replace span with new text
             span.parentNode.replaceChild(textNode, span);
-
-            console.log('[QuickEdit] Replaced marked text with AI suggestion');
         } catch (error) {
             console.error('[QuickEdit] Failed to replace marked text:', error);
         }
@@ -337,7 +322,6 @@ export class QuickEditManager {
 
         if (!selection) {
             // 无文本选择 → 尝试块选择fallback
-            console.log('[QuickEdit] No text selection, trying block selection fallback');
             selection = this.getBlockSelectionFallback();
 
             if (!selection) {
@@ -345,8 +329,6 @@ export class QuickEditManager {
                 showMessage('请先选中要编辑的文本或将光标放在要编辑的块中', 3000);
                 return;
             }
-
-            console.log('[QuickEdit] Using block selection fallback');
         }
 
         // FIX 1.2: Store selection in instance property instead of window
@@ -368,9 +350,6 @@ export class QuickEditManager {
             }
         };
 
-        console.log(`[QuickEdit] Showing popup at position: x=${position.x}, y=${position.y}`);
-        console.log(`[QuickEdit] Selection rect: top=${rect.top}, bottom=${rect.bottom}, height=${rect.height}`);
-
         this.inputPopup.show(position, this.settings.quickEditDefaultInstruction);
     }
 
@@ -379,14 +358,11 @@ export class QuickEditManager {
      */
     public cancelActiveRequest(): void {
         if (!this.activeRequestBlockId) {
-            console.log('[QuickEdit] No active request to cancel');
             return;
         }
 
         const blockId = this.activeRequestBlockId;
         const block = this.activeBlocks.get(blockId);
-        
-        console.log(`[QuickEdit] Cancelling active request: ${blockId}`);
 
         // 取消 ClaudeClient 的网络请求
         this.claudeClient.cancelActiveRequest();
@@ -409,9 +385,8 @@ export class QuickEditManager {
     private async handleInstructionSubmit(instruction: string, actionMode: 'insert' | 'replace' = 'replace'): Promise<void> {
         // 设置处理中标志，防止并发
         this.isProcessing = true;
-        console.log('[QuickEdit] Starting Quick Edit processing, isProcessing = true');
 
-        // FIX 1.2: Use instance property instead of window
+        // Use instance property instead of window
         const selection = this.pendingSelection;
         if (!selection) {
             console.error('[QuickEdit] No selection found');
@@ -427,25 +402,15 @@ export class QuickEditManager {
         const windowSelection = window.getSelection();
         if (windowSelection) {
             windowSelection.removeAllRanges();
-            console.log('[QuickEdit] Text selection cleared to prevent gray overlay');
         }
 
         // 清除块选中状态
         const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select');
         selectedBlocks.forEach(el => el.classList.remove('protyle-wysiwyg--select'));
-        if (selectedBlocks.length > 0) {
-            console.log(`[QuickEdit] Cleared block selection from ${selectedBlocks.length} blocks`);
-        }
 
         // FIX Issue #1: Read original block type and subtype to preserve formatting
         const originalBlockType = selection.blockElement.getAttribute('data-type') || undefined;
         const originalBlockSubtype = selection.blockElement.getAttribute('data-subtype') || undefined;
-
-        console.log('[QuickEdit] Original block type info:', {
-            type: originalBlockType,
-            subtype: originalBlockSubtype,
-            blockId: selection.blockId
-        });
 
         // Create inline edit block
         const blockId = `inline-edit-${Date.now()}`;
@@ -475,12 +440,11 @@ export class QuickEditManager {
         };
 
         this.activeBlocks.set(blockId, inlineBlock);
-        
+
         // 设置活动请求ID，用于取消功能
         this.activeRequestBlockId = blockId;
-        console.log(`[QuickEdit] Active request ID set to: ${blockId}`);
 
-        // FIX: Don't mark original text to avoid triggering SiYuan's DOM listeners
+        // Don't mark original text to avoid triggering SiYuan's DOM listeners
         // The comparison block is sufficient for visual feedback
         const markedSpan: HTMLSpanElement | null = null;
         inlineBlock.markedSpan = markedSpan;
@@ -510,7 +474,6 @@ export class QuickEditManager {
         }
 
         const targetElement = lastBlockElement || selection.blockElement;
-        console.log(`[QuickEdit] Inserting comparison block after ${lastBlockElement ? 'last' : 'first'} selected block: ${lastBlockId}`);
 
         const blockElement = this.renderer.createComparisonBlock(
             inlineBlock,
@@ -536,8 +499,6 @@ export class QuickEditManager {
 
             // 存储缩进前缀字符串，用于后续给AI返回的每一行添加缩进
             inlineBlock.indentPrefix = indentInfo.prefix;
-
-            console.log(`[QuickEdit] Applied ${indentInfo.indent}px indentation (prefix: "${indentInfo.prefix.replace(/\t/g, '\\t')}")`);
         }
 
         // FIX High 2.4: Mark original selected blocks with red background (optimized DOM query)
@@ -546,7 +507,6 @@ export class QuickEditManager {
             const selector = inlineBlock.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
             const blockElements = document.querySelectorAll(selector);
             blockElements.forEach(el => el.classList.add('quick-edit-original-block'));
-            console.log(`[QuickEdit] Marked ${blockElements.length}/${inlineBlock.selectedBlockIds.length} blocks with red background`);
         }
 
         // FIX 1.5: Start observing the container for DOM changes
@@ -597,9 +557,6 @@ export class QuickEditManager {
             let chunkCount = 0;
             let totalChars = 0;
 
-            console.log(`[QuickEdit] Starting AI request for block ${block.id}`);
-            console.log(`[QuickEdit] Original text length: ${block.originalText.length} chars`);
-
             // 构建请求：使用可配置的提示词模板（从 ClaudeClient 获取）
             const claudeSettings = this.claudeClient.getSettings();
             const template = claudeSettings.quickEditPromptTemplate || `{instruction}
@@ -609,29 +566,14 @@ export class QuickEditManager {
 
 重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
 
-            console.log(`[QuickEdit] Using prompt template from ClaudeSettings (length: ${template.length} chars)`);
-
-            // ✨ 新增：处理上下文占位符 {above=x}, {below=x}, {above_blocks=x}, {below_blocks=x}
+            // ✨ 处理上下文占位符 {above=x}, {below=x}, {above_blocks=x}, {below_blocks=x}
             let processedTemplate = template;
             try {
                 if (this.contextExtractor.hasPlaceholders(template)) {
-                    console.log(`[QuickEdit] ✅ Detected context placeholders in template, processing...`);
-                    // 🐛 FIX: 修正字段名 selectedBlocks → selectedBlockIds
                     processedTemplate = await this.contextExtractor.processTemplate(template, block.selectedBlockIds || []);
-
-                    // 从处理后的模板中提取上下文信息用于日志
-                    const placeholders = this.contextExtractor.parsePlaceholders(template);
-                    if (placeholders.length > 0) {
-                        // 🐛 FIX: 修正字段名 selectedBlocks → selectedBlockIds
-                        const context = await this.contextExtractor.extractContext(block.selectedBlockIds || [], placeholders);
-                        console.log(`[QuickEdit] Context extracted: ${this.contextExtractor.formatContextInfo(context)}`);
-                    }
-                } else {
-                    console.log(`[QuickEdit] No context placeholders found in template`);
                 }
             } catch (error) {
                 console.error(`[QuickEdit] Error processing context placeholders:`, error);
-                // 出错时使用原始模板继续
                 processedTemplate = template;
             }
 
@@ -640,30 +582,10 @@ export class QuickEditManager {
                 .replace('{instruction}', block.instruction)
                 .replace('{original}', block.originalText);
 
-            // ✨ 统一提示词管线：自动附加 appendedPrompt
+            // 统一提示词管线：自动附加 appendedPrompt
             const appendedPrompt = this.claudeClient.getAppendedPrompt();
             if (appendedPrompt && appendedPrompt.trim()) {
                 userPrompt += '\n\n' + appendedPrompt;
-                console.log(`[QuickEdit] ✅ Appended prompt added (${appendedPrompt.length} chars)`);
-            } else {
-                console.log(`[QuickEdit] No appended prompt to add`);
-            }
-
-            console.log(`[QuickEdit] Final user prompt length: ${userPrompt.length} chars`);
-
-            // 获取当前预设的过滤规则
-            const activeProfile = this.configManager.getActiveProfile();
-            const allTemplates = this.configManager.getAllTemplates();
-            const activePreset = allTemplates.find(t => 
-                t.systemPrompt === activeProfile.settings.systemPrompt &&
-                t.appendedPrompt === activeProfile.settings.appendedPrompt
-            );
-            const filterRules = activePreset?.filterRules;
-            if (filterRules && filterRules.length > 0) {
-                const enabledCount = filterRules.filter(r => r.enabled).length;
-                console.log(`[QuickEdit] Using ${enabledCount}/${filterRules.length} filter rules from preset "${activePreset?.name || 'unknown'}"`);
-            } else {
-                console.log(`[QuickEdit] No filter rules configured for current preset`);
             }
 
             await this.claudeClient.sendMessage(
@@ -675,9 +597,7 @@ export class QuickEditManager {
                     if (chunk.startsWith(FILTER_MARKER)) {
                         // 这是过滤后的完整内容，需要替换之前的所有内容
                         const filteredContent = chunk.substring(FILTER_MARKER.length);
-                        
-                        console.log(`[QuickEdit] Received filtered content, replacing ${fullResponseChunks.length} chunks with filtered text (${filteredContent.length} chars)`);
-                        
+
                         // 重置计数器以匹配过滤后的内容
                         totalChars = filteredContent.length;
                         chunkCount = 1; // 现在只有1个chunk（过滤后的完整内容）
@@ -713,20 +633,14 @@ export class QuickEditManager {
                     // 如果有缩进前缀，给每一行（除了第一行）添加缩进
                     let processedChunk = chunk;
                     if (block.indentPrefix && block.indentPrefix.length > 0) {
-                        // 将换行符后的内容添加缩进
                         processedChunk = chunk.replace(/\n(?!$)/g, '\n' + block.indentPrefix);
-                        console.log(`[QuickEdit] Chunk #${chunkCount}: ${chunk.length} chars → ${processedChunk.length} chars (added indent)`);
-                    } else {
-                        console.log(`[QuickEdit] Chunk #${chunkCount}: ${chunk.length} chars, content: "${chunk.substring(0, 50).replace(/\n/g, '\\n')}..."`);
                     }
 
                     fullResponseWithIndentChunks.push(processedChunk);
 
-                    // Update block.suggestedText periodically (every 10 chunks) instead of every chunk
-                    // This reduces O(n) join operations from every chunk to every 10 chunks
+                    // Update block.suggestedText periodically (every 10 chunks)
                     if (chunkCount % 10 === 0) {
                         block.suggestedText = fullResponseChunks.join('');
-                        console.log(`[QuickEdit] Updated suggestedText at chunk ${chunkCount}, length: ${block.suggestedText.length}`);
                     }
 
                     if (block.element) {
@@ -746,14 +660,12 @@ export class QuickEditManager {
                     // 清理处理状态
                     this.isProcessing = false;
                     this.activeRequestBlockId = null;
-                    console.log('[QuickEdit] Error occurred, cleared processing flags');
 
-                    // FIX Phase 4: Remove red marking from original blocks on error
+                    // Remove red marking from original blocks on error
                     if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
                         const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
                         const blockElements = document.querySelectorAll(selector);
                         blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
-                        console.log(`[QuickEdit] Error cleanup: Removed red marking from ${blockElements.length} blocks`);
                     }
 
                     if (block.element) {
@@ -770,65 +682,39 @@ export class QuickEditManager {
                     block.state = 'reviewing' as InlineEditState;
                     block.updatedAt = Date.now();
 
-                    // FIX Critical 1.3: Join all chunks once at the end (O(n) instead of O(n²))
+                    // Join all chunks once at the end (O(n) instead of O(n²))
                     const fullResponse = fullResponseChunks.join('');
                     const fullResponseWithIndent = fullResponseWithIndentChunks.join('');
 
-                    // 验证完整性 - 多层验证
-                    console.log(`[QuickEdit] ========== Streaming Complete ==========`);
-                    console.log(`[QuickEdit] Total chunks received: ${chunkCount}`);
-                    console.log(`[QuickEdit] Total chars (sum): ${totalChars}`);
-                    console.log(`[QuickEdit] fullResponse length: ${fullResponse.length}`);
-                    console.log(`[QuickEdit] fullResponseWithIndent length: ${fullResponseWithIndent.length}`);
-
-                    // 验证: fullResponse长度是否等于totalChars
+                    // Validate response length
                     if (fullResponse.length !== totalChars) {
-                        console.error(`[QuickEdit] ⚠️ WARNING: Response length mismatch!`);
-                        console.error(`[QuickEdit] Expected: ${totalChars}, Got: ${fullResponse.length}, Missing: ${totalChars - fullResponse.length} chars`);
-                    } else {
-                        console.log(`[QuickEdit] ✓ fullResponse length matches totalChars`);
+                        console.error(`[QuickEdit] Response length mismatch: expected ${totalChars}, got ${fullResponse.length}`);
                     }
 
-                    // 验证3: DOM中的文本
+                    // Validate DOM text
                     if (block.element) {
                         const suggestionContent = block.element.querySelector('[data-content-type="suggestion"]') as HTMLElement;
                         const domText = suggestionContent?.textContent || '';
-                        const domTextLength = domText.length;
 
-                        console.log(`[QuickEdit] DOM text length: ${domTextLength}`);
-
-                        if (domTextLength === 0) {
-                            console.error('[QuickEdit] ⚠️ CRITICAL: DOM text is empty!');
+                        if (domText.length === 0) {
+                            console.error('[QuickEdit] CRITICAL: DOM text is empty!');
                         } else {
-                            // 比较DOM文本和fullResponseWithIndent
-                            const expectedLength = fullResponseWithIndent.length;
-                            const diff = Math.abs(domTextLength - expectedLength);
-
-                            if (diff === 0) {
-                                console.log(`[QuickEdit] ✓ Perfect match: DOM text = fullResponseWithIndent`);
-                            } else if (diff <= 2) {
-                                console.log(`[QuickEdit] ✓ Close match: DOM=${domTextLength}, Expected=${expectedLength}, Diff=${diff} (acceptable)`);
-                            } else {
-                                console.error(`[QuickEdit] ⚠️ DOM text mismatch: DOM=${domTextLength}, Expected=${expectedLength}, Diff=${diff}`);
-                                console.error(`[QuickEdit] DOM text preview: "${domText.substring(0, 100).replace(/\n/g, '\\n')}..."`);
-                                console.error(`[QuickEdit] Expected preview: "${fullResponseWithIndent.substring(0, 100).replace(/\n/g, '\\n')}..."`);
+                            const diff = Math.abs(domText.length - fullResponseWithIndent.length);
+                            if (diff > 2) {
+                                console.error(`[QuickEdit] DOM text mismatch: DOM=${domText.length}, Expected=${fullResponseWithIndent.length}, Diff=${diff}`);
                             }
                         }
 
                         this.renderer.completeStreaming(block.element);
                     }
 
-                    // FIX Critical 1.3: Save final joined responses to block
+                    // Save final joined responses
                     block.suggestedText = fullResponse;
                     block.suggestedTextWithIndent = fullResponseWithIndent;
-                    console.log(`[QuickEdit] ✅ Saved final responses: plain=${fullResponse.length} chars, indented=${fullResponseWithIndent.length} chars`);
 
                     // 清理处理状态
                     this.isProcessing = false;
                     this.activeRequestBlockId = null;
-                    console.log('[QuickEdit] Processing completed, cleared processing flags');
-
-                    console.log(`[QuickEdit] ==========================================`);
                 },
                 "QuickEdit",  // feature
                 filterRules    // filterRules
@@ -838,8 +724,7 @@ export class QuickEditManager {
             // 清理处理状态
             this.isProcessing = false;
             this.activeRequestBlockId = null;
-            console.log('[QuickEdit] Exception caught, cleared processing flags');
-            
+
             block.state = 'error' as InlineEditState;
             block.error = error instanceof Error ? error.message : String(error);
 
@@ -936,8 +821,6 @@ export class QuickEditManager {
             return text; // No type info, return as-is
         }
 
-        console.log(`[QuickEdit] Applying Markdown formatting: type=${blockType}, subtype=${blockSubtype}`);
-
         // Handle headings (h1-h6)
         if (blockType === 'h' && blockSubtype) {
             const headingLevel = blockSubtype; // "h1", "h2", etc.
@@ -992,32 +875,20 @@ export class QuickEditManager {
         if (!block || !block.element) return;
 
         try {
-            console.log('[QuickEdit] Applying changes to block:', block.blockId);
-            console.log('[QuickEdit] Selected block IDs:', block.selectedBlockIds);
-            console.log('[QuickEdit] Is multi-block selection:', block.selectedBlockIds && block.selectedBlockIds.length > 1);
-
             // IMPORTANT: Use SiYuan's transaction API for proper undo/redo support
             // Do NOT modify DOM directly - let SiYuan handle all rendering
 
             // FIX: Use indented text if available (preserves indentation shown in preview)
             let textToApply = block.suggestedTextWithIndent || block.suggestedText;
-            console.log(`[QuickEdit] Using ${block.suggestedTextWithIndent ? 'indented' : 'non-indented'} text for application`);
 
             // FIX Issue #1: Apply Markdown formatting for single-block selections
             const isSingleBlock = !block.selectedBlockIds || block.selectedBlockIds.length === 1;
             if (isSingleBlock && block.originalBlockType) {
-                console.log(`[QuickEdit] Single block selection detected, applying Markdown formatting`);
-                console.log(`[QuickEdit] Original block type: ${block.originalBlockType}, subtype: ${block.originalBlockSubtype}`);
-
                 textToApply = this.applyMarkdownFormatting(
                     textToApply,
                     block.originalBlockType,
                     block.originalBlockSubtype
                 );
-
-                console.log(`[QuickEdit] Formatted text preview: "${textToApply.substring(0, 100)}..."`);
-            } else {
-                console.log(`[QuickEdit] Multi-block selection or no type info, skipping format preservation`);
             }
 
             // UNIFIED APPROACH: Split AI-generated content into paragraphs
@@ -1028,12 +899,8 @@ export class QuickEditManager {
                 .map(p => p.trim())
                 .filter(p => p.length > 0);  // Remove empty paragraphs
 
-            console.log(`[QuickEdit] Split content into ${paragraphs.length} paragraph(s)`);
-
             // Step 1: Insert ALL paragraphs as new blocks after the last selected block
             // This unified approach uses only insertBlock API for consistency
-            console.log(`[QuickEdit] Inserting ${paragraphs.length} paragraph(s) after last selected block...`);
-
             const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
             let previousID = lastOriginalBlockId;
 
@@ -1062,7 +929,6 @@ export class QuickEditManager {
                     const insertResult = await insertResponse.json();
                     if (insertResult.code === 0) {
                         previousID = insertResult.data[0].doOperations[0].id;
-                        console.log(`[QuickEdit] Inserted paragraph ${i + 1}/${paragraphs.length} as block ${previousID}`);
                         insertionResults.push({ success: true, index: i });
                     } else {
                         console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
@@ -1081,8 +947,6 @@ export class QuickEditManager {
             if (failureCount > 0) {
                 console.warn(`[QuickEdit] ⚠️ Partial success: ${successCount}/${paragraphs.length} paragraphs inserted`);
                 showMessage(`⚠️ 部分插入成功 (${successCount}/${paragraphs.length})`, 5000, 'error');
-            } else {
-                console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
             }
 
             // Step 2: Wait for SiYuan to render all new content
@@ -1094,11 +958,9 @@ export class QuickEditManager {
             // Step 4: CRITICAL - Remove comparison block BEFORE deleting original blocks
             // This prevents the "Nested comparison block was removed (parent removed)" error
             // because the comparison block is inserted after the last original block
-            console.log('[QuickEdit] Removing comparison block before deleting original blocks...');
             if (block.element && document.contains(block.element)) {
                 try {
                     this.renderer.removeBlock(block.element);
-                    console.log('[QuickEdit] ✅ Removed comparison block');
                 } catch (error) {
                     console.warn('[QuickEdit] Failed to remove comparison block:', error);
                 }
@@ -1110,15 +972,12 @@ export class QuickEditManager {
                 const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
                 const blockElements = document.querySelectorAll(selector);
                 blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
-                console.log(`[QuickEdit] Removed red marking from ${blockElements.length}/${block.selectedBlockIds.length} blocks`);
             }
 
             // Step 6: Delete ALL originally selected blocks (including the first one)
             // This unified approach treats all blocks equally
             // FIX Critical 1.2: Use Promise.all for safer concurrent deletion with error handling
             if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
-                console.log(`[QuickEdit] Deleting ${block.selectedBlockIds.length} original blocks...`);
-
                 // Delete all blocks concurrently with individual error handling
                 const deletePromises = block.selectedBlockIds.map(async (blockIdToDelete, i) => {
                     try {
@@ -1132,7 +991,6 @@ export class QuickEditManager {
 
                         const deleteResult = await deleteResponse.json();
                         if (deleteResult.code === 0) {
-                            console.log(`[QuickEdit] Deleted block ${i + 1}/${block.selectedBlockIds.length}: ${blockIdToDelete}`);
                             return { success: true, blockId: blockIdToDelete };
                         } else {
                             console.warn(`[QuickEdit] Failed to delete block ${blockIdToDelete}:`, deleteResult);
@@ -1151,8 +1009,6 @@ export class QuickEditManager {
                 if (failed.length > 0) {
                     console.error(`[QuickEdit] Failed to delete ${failed.length}/${results.length} blocks:`, failed);
                     showMessage(`部分块删除失败 (${failed.length}/${results.length})`, 5000, 'error');
-                } else {
-                    console.log(`[QuickEdit] ✅ Successfully deleted all ${results.length} blocks`);
                 }
             }
 
@@ -1208,17 +1064,12 @@ export class QuickEditManager {
         if (!block || !block.element) return;
 
         try {
-            console.log('[QuickEdit] Inserting AI content below original text (INSERT mode)');
-            console.log('[QuickEdit] Selected block IDs:', block.selectedBlockIds);
-
             // Use indented text if available
             let textToApply = block.suggestedTextWithIndent || block.suggestedText;
-            console.log(`[QuickEdit] Using ${block.suggestedTextWithIndent ? 'indented' : 'non-indented'} text for insertion`);
 
             // Apply Markdown formatting for single-block selections
             const isSingleBlock = !block.selectedBlockIds || block.selectedBlockIds.length === 1;
             if (isSingleBlock && block.originalBlockType) {
-                console.log(`[QuickEdit] Single block selection, applying Markdown formatting`);
                 textToApply = this.applyMarkdownFormatting(
                     textToApply,
                     block.originalBlockType,
@@ -1231,8 +1082,6 @@ export class QuickEditManager {
                 .split(/(?:\r?\n){2,}/)
                 .map(p => p.trim())
                 .filter(p => p.length > 0);
-
-            console.log(`[QuickEdit] Split content into ${paragraphs.length} paragraph(s) for insertion`);
 
             // Insert all paragraphs after the last selected block
             const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
@@ -1261,7 +1110,6 @@ export class QuickEditManager {
                     const insertResult = await insertResponse.json();
                     if (insertResult.code === 0) {
                         previousID = insertResult.data[0].doOperations[0].id;
-                        console.log(`[QuickEdit] Inserted paragraph ${i + 1}/${paragraphs.length} as block ${previousID}`);
                         insertionResults.push({ success: true, index: i });
                     } else {
                         console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
@@ -1280,8 +1128,6 @@ export class QuickEditManager {
             if (failureCount > 0) {
                 console.warn(`[QuickEdit] ⚠️ Partial success: ${successCount}/${paragraphs.length} paragraphs inserted`);
                 showMessage(`⚠️ 部分插入成功 (${successCount}/${paragraphs.length})`, 5000, 'error');
-            } else {
-                console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
             }
 
             // Wait for SiYuan to render
@@ -1291,11 +1137,9 @@ export class QuickEditManager {
             this.pauseObserver();
 
             // Remove comparison block
-            console.log('[QuickEdit] Removing comparison block (INSERT mode - keeping original)');
             if (block.element && document.contains(block.element)) {
                 try {
                     this.renderer.removeBlock(block.element);
-                    console.log('[QuickEdit] ✅ Removed comparison block');
                 } catch (error) {
                     console.warn('[QuickEdit] Failed to remove comparison block:', error);
                 }
@@ -1306,11 +1150,9 @@ export class QuickEditManager {
                 const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
                 const blockElements = document.querySelectorAll(selector);
                 blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
-                console.log(`[QuickEdit] Removed red marking from ${blockElements.length} blocks`);
             }
 
             // ✨ KEY DIFFERENCE: Do NOT delete original blocks in INSERT mode
-            console.log('[QuickEdit] ✅ INSERT mode: Keeping original blocks (not deleted)');
 
             // Wait for SiYuan to complete operations
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -1362,14 +1204,11 @@ export class QuickEditManager {
         const block = this.activeBlocks.get(blockId);
         if (!block || !block.element) return;
 
-        console.log('[QuickEdit] Rejected');
-
         // FIX High 2.4: Remove red marking from original blocks (optimized DOM query)
         if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
             const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
             const blockElements = document.querySelectorAll(selector);
             blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
-            console.log(`[QuickEdit] Removed red marking from ${blockElements.length}/${block.selectedBlockIds.length} blocks`);
         }
 
         // No marked span to restore (we disabled marking to avoid DOM conflicts)
@@ -1388,8 +1227,6 @@ export class QuickEditManager {
     private async handleRetry(blockId: string): Promise<void> {
         const block = this.activeBlocks.get(blockId);
         if (!block || !block.element) return;
-
-        console.log('[QuickEdit] Retrying...');
 
         // Reset block state
         block.suggestedText = '';
@@ -1427,14 +1264,12 @@ export class QuickEditManager {
                         startNode = textNodes[0];
                         startOffset = 0;
                     } else {
-                        console.log('[QuickEdit] No text node found for indent calculation');
                         return { indent: 0, prefix: '' };
                     }
                 }
             }
 
             if (startNode.nodeType !== Node.TEXT_NODE) {
-                console.log('[QuickEdit] Start node is not text node');
                 return { indent: 0, prefix: '' };
             }
 
@@ -1458,7 +1293,6 @@ export class QuickEditManager {
             // 计算前导空白
             const match = linePrefix.match(/^[ \t]*/);
             if (!match || match[0].length === 0) {
-                console.log('[QuickEdit] No leading whitespace found');
                 return { indent: 0, prefix: '' };
             }
 
@@ -1472,7 +1306,6 @@ export class QuickEditManager {
                 }
             }
 
-            console.log(`[QuickEdit] Calculated line indent: ${indent}px from "${prefix.replace(/\t/g, '\\t')}" (linePrefix: "${linePrefix.substring(0, 20)}...")`);
             return { indent, prefix };
 
         } catch (error) {
@@ -1489,8 +1322,7 @@ export class QuickEditManager {
             // 获取当前光标位置
             const selection = window.getSelection();
             if (!selection || !selection.anchorNode) {
-                console.log('[QuickEdit] No anchor node in fallback');
-                return null;
+                    return null;
             }
 
             // 从光标位置向上查找块元素
@@ -1516,19 +1348,12 @@ export class QuickEditManager {
 
                         const text = elem.textContent || '';
                         if (!text.trim()) {
-                            console.log('[QuickEdit] Block has no text content in fallback');
                             return null;
                         }
 
                         // 创建Range覆盖整个块
                         const range = document.createRange();
                         range.selectNodeContents(elem);
-
-                        console.log('[QuickEdit] Found block selection via fallback:', {
-                            blockId,
-                            tagName: elem.tagName,
-                            textLength: text.length
-                        });
 
                         return {
                             text,
@@ -1548,7 +1373,6 @@ export class QuickEditManager {
                 depth++;
             }
 
-            console.log('[QuickEdit] No block found in fallback at depth', depth);
             return null;
 
         } catch (error) {
@@ -1589,7 +1413,6 @@ export class QuickEditManager {
 
             traverse(fragment);
 
-            console.log(`[QuickEdit] extractBlocksFromRange found ${blockIds.length} block IDs in cloned fragment:`, blockIds);
 
             // 根据ID在真实DOM中查找对应的块元素
             const blocks: HTMLElement[] = [];
@@ -1660,7 +1483,6 @@ export class QuickEditManager {
             }
         }
 
-        console.log(`[QuickEdit] findBlocksBetween found ${blocks.length} blocks between siblings`);
 
         return blocks;
     }
@@ -1671,45 +1493,23 @@ export class QuickEditManager {
      */
     private extractMultiBlockText(range: Range): { text: string; blocks: HTMLElement[] } | null {
         try {
-            console.log('[QuickEdit] === Starting multi-block extraction ===');
-            console.log('[QuickEdit] Range details:', {
-                startContainer: range.startContainer.nodeName,
-                startContainerText: range.startContainer.textContent?.substring(0, 50),
-                startOffset: range.startOffset,
-                endContainer: range.endContainer.nodeName,
-                endContainerText: range.endContainer.textContent?.substring(0, 50),
-                endOffset: range.endOffset,
-                collapsed: range.collapsed
-            });
-
             // 策略1: 尝试从Range的cloneContents中提取块
-            console.log('[QuickEdit] Strategy 1: Trying extractBlocksFromRange (cloneContents)...');
             let selectedBlocks = this.extractBlocksFromRange(range);
 
             // 如果cloneContents方法没找到块，或只找到1个块，尝试其他方法
             if (selectedBlocks.length === 0) {
-                console.log('[QuickEdit] Strategy 1 failed - no blocks found in cloned fragment');
 
                 // 策略2: 找到起始和结束块，用兄弟遍历
-                console.log('[QuickEdit] Strategy 2: Trying sibling traversal...');
                 const startBlock = this.findBlockElement(range.startContainer);
                 const endBlock = this.findBlockElement(range.endContainer);
 
                 if (!startBlock || !endBlock) {
-                    console.log('[QuickEdit] Could not find start or end block');
                     return null;
                 }
-
-                console.log('[QuickEdit] Found blocks:', {
-                    startBlock: startBlock.getAttribute('data-node-id'),
-                    endBlock: endBlock.getAttribute('data-node-id'),
-                    sameBlock: startBlock === endBlock
-                });
 
                 // 如果是同一个块，直接返回
                 if (startBlock === endBlock) {
                     const text = (startBlock.textContent || '').trim();
-                    console.log('[QuickEdit] Same block detected, returning single block');
                     return {
                         text,
                         blocks: [startBlock]
@@ -1721,16 +1521,10 @@ export class QuickEditManager {
 
                 // 如果兄弟遍历也失败，使用commonAncestor方法
                 if (selectedBlocks.length === 0) {
-                    console.log('[QuickEdit] Strategy 2 failed - trying commonAncestor method...');
 
                     const commonAncestor = range.commonAncestorContainer;
-                    console.log('[QuickEdit] Common ancestor:', {
-                        nodeType: commonAncestor.nodeName,
-                        hasDataNodeId: (commonAncestor as HTMLElement).hasAttribute?.('data-node-id')
-                    });
 
                     const allBlocks = this.findAllBlocksInContainer(commonAncestor);
-                    console.log(`[QuickEdit] Found ${allBlocks.length} blocks in common ancestor`);
 
                     if (allBlocks.length === 0) {
                         console.warn('[QuickEdit] No blocks found in common ancestor');
@@ -1746,29 +1540,20 @@ export class QuickEditManager {
                     }
 
                     selectedBlocks = allBlocks.slice(startIndex, endIndex + 1);
-                    console.log(`[QuickEdit] CommonAncestor method found ${selectedBlocks.length} blocks`);
                 }
             } else if (selectedBlocks.length === 1) {
-                console.log('[QuickEdit] Strategy 1 found only 1 block, verifying if this is correct...');
 
                 // 验证是否真的只选了一个块
                 const startBlock = this.findBlockElement(range.startContainer);
                 const endBlock = this.findBlockElement(range.endContainer);
 
                 if (startBlock && endBlock && startBlock !== endBlock) {
-                    console.log('[QuickEdit] Actually spans multiple blocks, trying strategy 2...');
                     const siblingBlocks = this.findBlocksBetween(startBlock, endBlock);
                     if (siblingBlocks.length > 1) {
                         selectedBlocks = siblingBlocks;
                     }
                 }
             }
-
-            console.log('[QuickEdit] Final selected blocks:', selectedBlocks.map(b => ({
-                id: b.getAttribute('data-node-id'),
-                type: b.getAttribute('data-type'),
-                textLength: (b.textContent || '').length
-            })));
 
             // 提取所有块的完整文本内容
             const texts = selectedBlocks
@@ -1777,7 +1562,6 @@ export class QuickEditManager {
 
             const finalText = texts.join('\n\n');
 
-            console.log(`[QuickEdit] ✓ Extracted ${selectedBlocks.length} blocks, total ${finalText.length} chars`);
 
             return {
                 text: finalText,
@@ -1815,7 +1599,6 @@ export class QuickEditManager {
         // 开始遍历
         traverse(container);
 
-        console.log(`[QuickEdit] findAllBlocksInContainer found ${blocks.length} blocks`);
 
         return blocks;
     }
@@ -1835,12 +1618,6 @@ export class QuickEditManager {
                 path.push(`${elem.tagName}${elem.getAttribute('data-node-id') ? '[' + elem.getAttribute('data-node-id') + ']' : ''}`);
 
                 if (elem.hasAttribute('data-node-id')) {
-                    console.log(`[QuickEdit] Found block at depth ${depth}:`, {
-                        id: elem.getAttribute('data-node-id'),
-                        type: elem.getAttribute('data-type'),
-                        tag: elem.tagName,
-                        path: path.join(' > ')
-                    });
                     return elem;
                 }
             } else {
@@ -1865,9 +1642,7 @@ export class QuickEditManager {
             const selectedElements = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
             const blocks = Array.from(selectedElements) as HTMLElement[];
 
-            console.log(`[QuickEdit] getSelectedBlocks found ${blocks.length} selected blocks`);
             if (blocks.length > 0) {
-                console.log('[QuickEdit] Selected block IDs:', blocks.map(b => b.getAttribute('data-node-id')));
             }
 
             return blocks;
@@ -1884,13 +1659,11 @@ export class QuickEditManager {
      */
     private getSelection(): InlineEditSelection | null {
         try {
-            console.log('[QuickEdit] === Getting selection ===');
-
+    
             // 模式1: 块选择模式 - 检查思源的块选择（.protyle-wysiwyg--select）
             const selectedBlocks = this.getSelectedBlocks();
 
             if (selectedBlocks.length > 0) {
-                console.log(`[QuickEdit] ✓ BLOCK SELECTION MODE: Found ${selectedBlocks.length} selected blocks`);
 
                 // 提取所有选中块的文本内容
                 const texts = selectedBlocks
@@ -1900,15 +1673,12 @@ export class QuickEditManager {
                 const text = texts.join('\n\n');
 
                 if (!text || !text.trim()) {
-                    console.log('[QuickEdit] Selected blocks have no text content');
-                    return null;
+                        return null;
                 }
 
                 // ✅ Extract all block IDs for multi-block selection support
                 const selectedBlockIds = selectedBlocks.map(b => b.getAttribute('data-node-id')).filter(Boolean) as string[];
 
-                console.log(`[QuickEdit] Block selection text: ${text.length} chars from ${selectedBlocks.length} blocks`);
-                console.log(`[QuickEdit] Block IDs:`, selectedBlockIds);
 
                 // 使用第一个块作为主块元素
                 const primaryBlock = selectedBlocks[0];
@@ -1931,15 +1701,12 @@ export class QuickEditManager {
             }
 
             // 模式2: 文本选择模式 - 使用 Range API
-            console.log('[QuickEdit] Block selection mode found no blocks, trying text selection mode...');
 
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) {
-                console.log('[QuickEdit] No window selection or empty rangeCount');
                 return null;
             }
 
-            console.log(`[QuickEdit] ✓ TEXT SELECTION MODE: Selection has ${selection.rangeCount} range(s)`);
 
             let text = '';
             let primaryRange: Range | null = null;
@@ -1954,7 +1721,6 @@ export class QuickEditManager {
                 if (multiBlockResult && multiBlockResult.text.trim()) {
                     text = multiBlockResult.text;
                     extractedBlocks = multiBlockResult.blocks; // FIX: Store blocks for later ID extraction
-                    console.log(`[QuickEdit] ✓ Multi-block extraction: ${multiBlockResult.blocks.length} blocks, ${text.length} chars`);
                 } else {
                     // Fallback：单块文本选择
                     text = primaryRange.toString();
@@ -1962,11 +1728,9 @@ export class QuickEditManager {
                         const clonedContents = primaryRange.cloneContents();
                         text = clonedContents.textContent || '';
                     }
-                    console.log(`[QuickEdit] Single block text extraction: ${text.length} chars`);
                 }
             } else {
                 // 多个Range - 合并
-                console.log('[QuickEdit] Multiple ranges detected, merging...');
                 const allTexts: string[] = [];
 
                 for (let i = 0; i < selection.rangeCount; i++) {
@@ -1985,21 +1749,17 @@ export class QuickEditManager {
 
                 text = allTexts.join('\n\n');
                 primaryRange = selection.getRangeAt(0);
-                console.log(`[QuickEdit] Merged ${allTexts.length} ranges into ${text.length} chars`);
             }
 
             if (!text || !text.trim()) {
-                console.log('[QuickEdit] Selection text is empty');
                 return null;
             }
 
-            console.log(`[QuickEdit] Text selection final: ${text.length} chars`);
 
             // 查找包含选区的块元素
             const blockElement = this.findBlockElement(primaryRange!.commonAncestorContainer);
 
             if (!blockElement) {
-                console.log('[QuickEdit] Could not find block element for text selection');
                 return null;
             }
 
@@ -2012,19 +1772,10 @@ export class QuickEditManager {
                 selectedBlockIds = extractedBlocks
                     .map(b => b.getAttribute('data-node-id'))
                     .filter(Boolean) as string[];
-                console.log(`[QuickEdit] ✅ Extracted ${selectedBlockIds.length} block IDs from multi-block selection`);
             } else {
                 // Single block selection: use the primary block ID
                 selectedBlockIds = [blockId];
-                console.log(`[QuickEdit] Single block selection, using block ID: ${blockId}`);
             }
-
-            console.log('[QuickEdit] Text selection result:', {
-                blockId,
-                selectedBlockIds,
-                tagName: blockElement.tagName,
-                textLength: text.length
-            });
 
             return {
                 text,
@@ -2046,7 +1797,6 @@ export class QuickEditManager {
      * Handle preset switch (global configuration change)
      */
     private handlePresetSwitch(presetId: string): void {
-        console.log(`[QuickEdit] Switching to preset: ${presetId}`);
 
         const preset = this.configManager.getAllTemplates().find(t => t.id === presetId);
         if (!preset) {
@@ -2069,7 +1819,6 @@ export class QuickEditManager {
         this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
         showMessage(`✅ 已切换到预设: ${preset.name}`, 2000, 'info');
-        console.log(`[QuickEdit] Preset switched successfully: ${preset.name}`);
     }
 
     /**
@@ -2086,7 +1835,6 @@ export class QuickEditManager {
      * Cleanup - FIX: Proper cleanup of all resources
      */
     public destroy(): void {
-        console.log('[QuickEdit] Destroying QuickEditManager');
 
         // Clear all typing animations
         this.renderer.cleanup();
@@ -2118,6 +1866,5 @@ export class QuickEditManager {
         }
         this.observedContainers.clear();
 
-        console.log('[QuickEdit] Cleanup complete');
     }
 }

@@ -29,7 +29,6 @@ export class InstructionInputPopup {
      * Show popup at position
      */
     public show(position: PopupPosition, defaultInstruction: string = ''): void {
-        console.log(`[InstructionInputPopup] show() called with position: x=${position.x}, y=${position.y}`);
 
         // FIX Phase 6: Prevent duplicate opens
         if (this.isVisible) {
@@ -54,7 +53,6 @@ export class InstructionInputPopup {
             if (preset && preset.editInstruction) {
                 instructionToUse = preset.editInstruction;
                 presetIdToUse = lastPresetId;
-                console.log(`[InstructionInputPopup] Using last selected preset ${preset.name}: ${instructionToUse.substring(0, 30)}...`);
             } else {
                 console.warn(`[InstructionInputPopup] Last preset ID ${lastPresetId} not found or has no editInstruction`);
             }
@@ -65,7 +63,6 @@ export class InstructionInputPopup {
         // Set initial position first (before adding to DOM to avoid flash)
         this.element.style.left = `${position.x}px`;
         this.element.style.top = `${position.y}px`;
-        console.log(`[InstructionInputPopup] Initial position set: left=${position.x}px, top=${position.y}px`);
 
         document.body.appendChild(this.element);
 
@@ -75,8 +72,6 @@ export class InstructionInputPopup {
 
         // Get popup dimensions for debugging
         const popupRect = this.element.getBoundingClientRect();
-        console.log(`[InstructionInputPopup] Popup dimensions: width=${popupRect.width}px, height=${popupRect.height}px`);
-        console.log(`[InstructionInputPopup] Viewport: width=${window.innerWidth}px, height=${window.innerHeight}px`);
 
         // Calculate safe position with boundary detection
         const safePosition = this.calculateSafePosition(position, this.element);
@@ -85,9 +80,7 @@ export class InstructionInputPopup {
         if (safePosition.x !== position.x || safePosition.y !== position.y) {
             this.element.style.left = `${safePosition.x}px`;
             this.element.style.top = `${safePosition.y}px`;
-            console.log(`[InstructionInputPopup] Position adjusted from (${position.x}, ${position.y}) to (${safePosition.x}, ${safePosition.y})`);
         } else {
-            console.log(`[InstructionInputPopup] Position not adjusted, using original position`);
         }
 
         // Focus input
@@ -157,10 +150,6 @@ export class InstructionInputPopup {
         const viewportHeight = window.innerHeight;
         const viewportWidth = window.innerWidth;
 
-        console.log(`[InstructionInputPopup] Calculating position:`);
-        console.log(`  - Viewport: ${viewportWidth}x${viewportHeight}px`);
-        console.log(`  - Popup: ${popupWidth}x${popupHeight}px`);
-        console.log(`  - Device pixel ratio: ${window.devicePixelRatio} (HiDPI: ${window.devicePixelRatio > 1})`);
 
         let safeX = position.x;
         let safeY = position.y;
@@ -176,9 +165,6 @@ export class InstructionInputPopup {
             const spaceBelow = viewportHeight - anchorBottom - BOTTOM_MARGIN;
             const spaceAbove = anchorTop - TOP_MARGIN;
 
-            console.log(`  - Anchor: top=${anchorTop}, bottom=${anchorBottom}, height=${anchorHeight}`);
-            console.log(`  - Space: above=${spaceAbove}px, below=${spaceBelow}px`);
-            console.log(`  - Need: ${popupHeight}px + ${SPACING}px spacing`);
 
             // Check if we should flip to above
             if (placement === 'below' && spaceBelow < popupHeight + SPACING) {
@@ -187,22 +173,18 @@ export class InstructionInputPopup {
                     // Enough space above, flip to above
                     safeY = anchorTop - popupHeight - SPACING;
                     placement = 'above';
-                    console.log(`  - ✓ Flipped to above: new Y = ${safeY}`);
                 } else {
                     // Not enough space above either, use the larger space
                     if (spaceAbove > spaceBelow) {
                         // Show above, but may be clipped
                         safeY = Math.max(TOP_MARGIN, anchorTop - popupHeight - SPACING);
                         placement = 'above';
-                        console.log(`  - ⚠ Limited space, showing above at Y = ${safeY}`);
                     } else {
                         // Show below, but may be clipped
                         safeY = anchorBottom + SPACING;
-                        console.log(`  - ⚠ Limited space, showing below at Y = ${safeY}`);
                     }
                 }
             } else {
-                console.log(`  - ✓ Using original position (${placement})`);
             }
         }
 
@@ -211,13 +193,11 @@ export class InstructionInputPopup {
         const maxBottomY = viewportHeight - BOTTOM_MARGIN;
         if (bottomEdge > maxBottomY) {
             safeY = Math.max(TOP_MARGIN, maxBottomY - popupHeight);
-            console.log(`  - Adjusted Y to ${safeY} to prevent bottom overflow`);
         }
 
         // Ensure we don't go above viewport top
         if (safeY < TOP_MARGIN) {
             safeY = TOP_MARGIN;
-            console.log(`  - Adjusted Y to ${safeY} to prevent top overflow`);
         }
 
         // Horizontal positioning
@@ -226,15 +206,12 @@ export class InstructionInputPopup {
 
         if (rightEdge > maxRightX) {
             safeX = Math.max(LEFT_MARGIN, maxRightX - popupWidth);
-            console.log(`  - Adjusted X from ${position.x} to ${safeX} to prevent right overflow`);
         }
 
         if (safeX < LEFT_MARGIN) {
             safeX = LEFT_MARGIN;
-            console.log(`  - Adjusted X to ${safeX} to prevent left overflow`);
         }
 
-        console.log(`  - Final position: (${safeX}, ${safeY}), placement: ${placement}`);
 
         return { x: safeX, y: safeY };
     }
@@ -517,7 +494,6 @@ export class InstructionInputPopup {
     private savePresetIndex(index: string): void {
         try {
             localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, index);
-            console.log(`[InstructionInputPopup] Saved last preset index: ${index}`);
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to save last preset to localStorage:', error);
         }
@@ -541,7 +517,6 @@ export class InstructionInputPopup {
     private saveMode(mode: 'insert' | 'replace'): void {
         try {
             localStorage.setItem(InstructionInputPopup.LAST_MODE_KEY, mode);
-            console.log(`[InstructionInputPopup] Saved last mode: ${mode}`);
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to save last mode to localStorage:', error);
         }

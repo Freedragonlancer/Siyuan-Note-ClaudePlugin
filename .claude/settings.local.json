@@ -1,10 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git push)",
+      "Bash(Select-Object FullName)",
+      "Bash(git commit:*)",
+      "Bash(git restore:*)",
+      "mcp__serena__find_symbol",
+      "mcp__serena__read_file",
+      "mcp__serena__list_dir",
+      "Bash(pnpm run deploy)",
       "Bash(npm run deploy:*)",
-      "Skill(siyuan-plugin)",
-      "Bash(cd:*)"
+      "mcp__serena__replace_regex",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__get_symbols_overview",
+      "Read(//n/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/**)",
+      "Bash(pnpm build:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run copy-plugin:*)",
+      "mcp__serena__insert_after_symbol",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "mcp__serena__insert_before_symbol",
+      "Read(//n/**)"
     ],
     "deny": [],
     "ask": []

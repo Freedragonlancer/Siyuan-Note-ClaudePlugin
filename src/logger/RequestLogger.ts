@@ -53,6 +53,13 @@ export interface LogEntry {
         apiKey: string;  // 已脱敏
         baseURL: string;
     };
+    /** 过滤信息 (可选) */
+    filtering?: {
+        applied: boolean;
+        rulesCount: number;
+        originalLength: number;
+        filteredLength: number;
+    };
 }
 
 /**

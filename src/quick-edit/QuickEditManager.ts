@@ -18,6 +18,8 @@ import { AIEditProcessor } from '@/editor/AIEditProcessor';
 import { EditHistory } from '@/editor/EditHistory';
 import { ClaudeClient } from '@/claude';
 import type { ConfigManager } from '@/settings/ConfigManager';
+import { ContextExtractor } from './ContextExtractor';
+import { EditorHelper } from '@/editor/EditorHelper';
 
 /**
  * FIX Phase 5: Fetch with timeout protection
@@ -54,6 +56,7 @@ export class QuickEditManager {
     private renderer: InlineEditRenderer;
     private inputPopup: InstructionInputPopup;
     private processor: AIEditProcessor;
+    private contextExtractor: ContextExtractor;
 
     // Active inline edits
     private activeBlocks: Map<string, InlineEditBlock> = new Map();
@@ -91,6 +94,7 @@ export class QuickEditManager {
         const presets = this.configManager.getAllTemplates();
         this.inputPopup = new InstructionInputPopup(presets, this.configManager);
         this.processor = new AIEditProcessor(claudeClient);
+        this.contextExtractor = new ContextExtractor(new EditorHelper());
 
         // Setup popup callbacks
         this.inputPopup.setCallbacks({
@@ -418,6 +422,21 @@ export class QuickEditManager {
         // Clear immediately to prevent reuse
         this.pendingSelection = null;
 
+        // ✨ Phase 2.1: 清除选中状态，移除灰色遮罩
+        // 清除文本选中
+        const windowSelection = window.getSelection();
+        if (windowSelection) {
+            windowSelection.removeAllRanges();
+            console.log('[QuickEdit] Text selection cleared to prevent gray overlay');
+        }
+
+        // 清除块选中状态
+        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select');
+        selectedBlocks.forEach(el => el.classList.remove('protyle-wysiwyg--select'));
+        if (selectedBlocks.length > 0) {
+            console.log(`[QuickEdit] Cleared block selection from ${selectedBlocks.length} blocks`);
+        }
+
         // FIX Issue #1: Read original block type and subtype to preserve formatting
         const originalBlockType = selection.blockElement.getAttribute('data-type') || undefined;
         const originalBlockSubtype = selection.blockElement.getAttribute('data-subtype') || undefined;
@@ -592,8 +611,32 @@ export class QuickEditManager {
 
             console.log(`[QuickEdit] Using prompt template from ClaudeSettings (length: ${template.length} chars)`);
 
+            // ✨ 新增：处理上下文占位符 {above=x}, {below=x}, {above_blocks=x}, {below_blocks=x}
+            let processedTemplate = template;
+            try {
+                if (this.contextExtractor.hasPlaceholders(template)) {
+                    console.log(`[QuickEdit] ✅ Detected context placeholders in template, processing...`);
+                    // 🐛 FIX: 修正字段名 selectedBlocks → selectedBlockIds
+                    processedTemplate = await this.contextExtractor.processTemplate(template, block.selectedBlockIds || []);
+
+                    // 从处理后的模板中提取上下文信息用于日志
+                    const placeholders = this.contextExtractor.parsePlaceholders(template);
+                    if (placeholders.length > 0) {
+                        // 🐛 FIX: 修正字段名 selectedBlocks → selectedBlockIds
+                        const context = await this.contextExtractor.extractContext(block.selectedBlockIds || [], placeholders);
+                        console.log(`[QuickEdit] Context extracted: ${this.contextExtractor.formatContextInfo(context)}`);
+                    }
+                } else {
+                    console.log(`[QuickEdit] No context placeholders found in template`);
+                }
+            } catch (error) {
+                console.error(`[QuickEdit] Error processing context placeholders:`, error);
+                // 出错时使用原始模板继续
+                processedTemplate = template;
+            }
+
             // 替换占位符构建用户消息
-            let userPrompt = template
+            let userPrompt = processedTemplate
                 .replace('{instruction}', block.instruction)
                 .replace('{original}', block.originalText);
 

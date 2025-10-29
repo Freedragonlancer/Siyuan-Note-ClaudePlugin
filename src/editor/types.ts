@@ -2,6 +2,8 @@
  * TypeScript interfaces for AI-powered text editing feature
  */
 
+import type { FilterRule } from "../filter";
+
 /**
  * Custom instruction with optional diff display
  */
@@ -10,6 +12,8 @@ export interface CustomInstruction {
     text: string;
     /** Whether to show diff comparison */
     showDiff: boolean;
+    /** Optional filter rules for AI responses */
+    filterRules?: FilterRule[];
 }
 
 /**

@@ -446,9 +446,17 @@ export class PromptEditorPanel {
                 <div style="margin-bottom: 20px;">
                     <h4 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 500;">⚡ AI 快速编辑提示词模板</h4>
                     <div class="ft__smaller ft__secondary" style="line-height: 1.6;">
-                        自定义快速编辑功能的提示词结构。使用占位符控制输入格式：<br>
+                        自定义快速编辑功能的提示词结构。支持以下占位符：<br>
+                        <strong>基础占位符：</strong><br>
                         • <code>{instruction}</code> - 用户输入的编辑指令<br>
-                        • <code>{original}</code> - 选中的原始文本
+                        • <code>{original}</code> - 选中的原始文本<br>
+                        <br>
+                        <strong>✨ 上下文占位符（新功能）：</strong><br>
+                        • <code>{above=5}</code> - 选中内容之前的5行文本<br>
+                        • <code>{below=3}</code> - 选中内容之后的3行文本<br>
+                        • <code>{above_blocks=2}</code> - 选中块之前的2个SiYuan块<br>
+                        • <code>{below_blocks=4}</code> - 选中块之后的4个块<br>
+                        <span style="color: var(--b3-theme-primary); font-weight: 500;">💡 使用上下文可以让AI更准确地理解文档结构和内容</span>
                     </div>
                 </div>
 
@@ -472,17 +480,28 @@ export class PromptEditorPanel {
                     <div class="ft__smaller" style="padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px; margin-bottom: 12px;">
                         <div style="font-weight: 500; margin-bottom: 8px;">💡 使用示例</div>
                         <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-bottom: 8px;">
-                            <div style="color: var(--b3-theme-on-surface-light);">// 最简洁版本</div>
+                            <div style="color: var(--b3-theme-on-surface-light);">// 1. 最简洁版本</div>
                             <div>{instruction}</div>
                             <div style="margin-top: 4px;">{original}</div>
                         </div>
-                        <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px;">
-                            <div style="color: var(--b3-theme-on-surface-light);">// 自定义格式</div>
+                        <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-bottom: 8px;">
+                            <div style="color: var(--b3-theme-on-surface-light);">// 2. 自定义格式</div>
                             <div>请执行以下操作：{instruction}</div>
                             <div style="margin-top: 4px;">--- 原文内容 ---</div>
                             <div>{original}</div>
                             <div>--- 原文结束 ---</div>
                             <div style="margin-top: 4px;">请直接输出结果，无需解释。</div>
+                        </div>
+                        <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; border: 2px solid var(--b3-theme-primary-light);">
+                            <div style="color: var(--b3-theme-primary); font-weight: 500;">// 3. ✨ 带上下文的编辑（推荐）</div>
+                            <div style="margin-top: 4px;">请根据以下上下文改进选中的文本：</div>
+                            <div style="margin-top: 4px; color: var(--b3-theme-primary);">{above=3}</div>
+                            <div style="margin-top: 4px; color: var(--b3-theme-success);">{original}</div>
+                            <div style="margin-top: 4px; color: var(--b3-theme-primary);">{below=3}</div>
+                            <div style="margin-top: 4px;">编辑指令：{instruction}</div>
+                            <div style="margin-top: 8px; padding: 8px; background: var(--b3-theme-info-lighter); border-radius: 4px; font-size: 11px; line-height: 1.5;">
+                                💡 AI会看到选中内容前后各3行，有助于保持内容连贯性和风格一致性
+                            </div>
                         </div>
                     </div>
                 </div>

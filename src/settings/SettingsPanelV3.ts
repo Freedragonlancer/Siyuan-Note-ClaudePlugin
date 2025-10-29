@@ -64,6 +64,7 @@ export class SettingsPanelV3 {
         const connectionSection = this.createConnectionSection();
         const modelSection = this.createModelSection();
         const promptEditorSection = this.createPromptEditorSection();
+        const loggingSection = this.createLoggingSection();
         const actionsSection = this.createActionsSection();
 
         console.log("[SettingsPanelV3] Sections created, profile section length:", profileSection.length);
@@ -77,6 +78,8 @@ export class SettingsPanelV3 {
                 ${modelSection}
                 <div class="fn__hr" style="margin: 20px 0;"></div>
                 ${promptEditorSection}
+                <div class="fn__hr" style="margin: 20px 0;"></div>
+                ${loggingSection}
                 <div class="fn__hr" style="margin: 20px 0;"></div>
                 ${actionsSection}
             </div>
@@ -353,6 +356,79 @@ export class SettingsPanelV3 {
         `;
     }
 
+    private createLoggingSection(): string {
+        const settings = this.currentProfile.settings;
+        const enabled = settings.enableRequestLogging ?? false;
+        const logPath = settings.requestLogPath || '';
+        const includeResponse = settings.requestLogIncludeResponse ?? true;
+
+        return `
+            <div class="settings-section">
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                        🗂️ 日志配置
+                    </h3>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                        记录AI请求和响应到本地文件，方便调试和分析
+                    </div>
+                </div>
+
+                <!-- Enable Logging -->
+                <div class="setting-item" style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="enable-request-logging" ${enabled ? 'checked' : ''} style="margin-right: 8px;">
+                        <span style="font-weight: 500;">启用AI请求日志</span>
+                    </label>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px; margin-left: 24px;">
+                        记录所有AI请求和响应到指定目录，方便调试prompt
+                    </div>
+                </div>
+
+                <!-- Log Path -->
+                <div class="setting-item" style="margin-bottom: 16px; ${enabled ? '' : 'opacity: 0.5; pointer-events: none;'}" id="log-path-container">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">日志保存路径</span>
+                    </div>
+                    <input
+                        class="b3-text-field"
+                        type="text"
+                        id="request-log-path"
+                        placeholder="例如: C:\\Logs\\SiYuan-AI 或 /home/user/logs/siyuan-ai"
+                        value="${this.escapeHtml(logPath)}"
+                        style="width: 100%;"
+                        ${enabled ? '' : 'disabled'}
+                    >
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        💡 日志将按日期保存为 ai-requests-YYYY-MM-DD.log，每次请求独立记录
+                    </div>
+                </div>
+
+                <!-- Include Response -->
+                <div class="setting-item" style="${enabled ? '' : 'opacity: 0.5; pointer-events: none;'}" id="log-response-container">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="log-include-response" ${includeResponse ? 'checked' : ''} style="margin-right: 8px;" ${enabled ? '' : 'disabled'}>
+                        <span style="font-weight: 500;">记录AI响应内容</span>
+                    </label>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px; margin-left: 24px;">
+                        关闭后仅记录请求，不记录响应（减小日志体积）
+                    </div>
+                </div>
+
+                <!-- Info Box -->
+                <div style="margin-top: 16px; padding: 12px; background: var(--b3-theme-surface); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
+                    <div class="ft__smaller" style="line-height: 1.6;">
+                        <strong>📋 日志内容包括：</strong><br>
+                        • 完整的请求参数（model、temperature、system、messages）<br>
+                        • AI返回的响应文本和metadata<br>
+                        • 性能数据（请求时长、token用量）<br>
+                        • API Key自动脱敏（显示前7后4位）<br>
+                        • 功能来源标记（Chat/QuickEdit等）
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     private createActionsSection(): string {
         return `
             <div class="settings-actions" style="display: flex; justify-content: space-between; align-items: center; padding-top: 16px;">
@@ -438,6 +514,33 @@ export class SettingsPanelV3 {
         const openPromptEditorBtn = container.querySelector("#open-prompt-editor-btn");
         openPromptEditorBtn?.addEventListener("click", () => {
             this.onOpenPromptEditor();
+        });
+
+        // Logging configuration
+        const enableLoggingCheckbox = container.querySelector("#enable-request-logging") as HTMLInputElement;
+        const logPathContainer = container.querySelector("#log-path-container") as HTMLElement;
+        const logPathInput = container.querySelector("#request-log-path") as HTMLInputElement;
+        const logResponseContainer = container.querySelector("#log-response-container") as HTMLElement;
+        const logResponseCheckbox = container.querySelector("#log-include-response") as HTMLInputElement;
+
+        enableLoggingCheckbox?.addEventListener("change", (e) => {
+            const enabled = (e.target as HTMLInputElement).checked;
+
+            // Toggle visibility and disabled state
+            if (logPathContainer) {
+                logPathContainer.style.opacity = enabled ? "1" : "0.5";
+                logPathContainer.style.pointerEvents = enabled ? "auto" : "none";
+            }
+            if (logResponseContainer) {
+                logResponseContainer.style.opacity = enabled ? "1" : "0.5";
+                logResponseContainer.style.pointerEvents = enabled ? "auto" : "none";
+            }
+            if (logPathInput) {
+                logPathInput.disabled = !enabled;
+            }
+            if (logResponseCheckbox) {
+                logResponseCheckbox.disabled = !enabled;
+            }
         });
 
         // Action buttons
@@ -760,6 +863,9 @@ export class SettingsPanelV3 {
             model: (container.querySelector("#claude-model") as HTMLSelectElement)?.value || this.currentProfile.settings.model,
             maxTokens: parseInt((container.querySelector("#claude-max-tokens") as HTMLInputElement)?.value) || this.currentProfile.settings.maxTokens,
             temperature: parseFloat((container.querySelector("#claude-temperature") as HTMLInputElement)?.value) || this.currentProfile.settings.temperature,
+            enableRequestLogging: (container.querySelector("#enable-request-logging") as HTMLInputElement)?.checked ?? false,
+            requestLogPath: (container.querySelector("#request-log-path") as HTMLInputElement)?.value || "",
+            requestLogIncludeResponse: (container.querySelector("#log-include-response") as HTMLInputElement)?.checked ?? true,
         };
 
         // Update current profile

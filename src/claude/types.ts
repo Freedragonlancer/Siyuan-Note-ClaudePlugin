@@ -13,6 +13,15 @@ export interface ClaudeSettings {
     systemPrompt: string;
     appendedPrompt: string; // Prompt appended to end of each request
 
+    // Quick Edit prompt template
+    // Placeholders: {instruction} - user instruction, {original} - original text
+    quickEditPromptTemplate?: string;
+
+    // AI Request Logging
+    enableRequestLogging?: boolean;        // 是否启用AI请求日志 (默认false)
+    requestLogPath?: string;                // 日志保存路径 (用户自定义)
+    requestLogIncludeResponse?: boolean;    // 是否记录响应内容 (默认true)
+
     // AI Text Editing settings
     editSettings?: EditSettings;
 }

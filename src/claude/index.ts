@@ -9,6 +9,15 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
     temperature: 0.7,
     systemPrompt: "You are a helpful AI assistant integrated into SiYuan Note. Help users with their writing, editing, and note-taking tasks. Be concise and clear in your responses.",
     appendedPrompt: "请用清晰的 Markdown 格式回复，确保回答准确、简洁、易于理解。",
+    quickEditPromptTemplate: `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`,
+    enableRequestLogging: false,
+    requestLogPath: '',
+    requestLogIncludeResponse: true,
     editSettings: DEFAULT_EDIT_SETTINGS,
 };
 

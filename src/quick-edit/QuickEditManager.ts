@@ -66,7 +66,7 @@ export class QuickEditManager {
 
         // Setup popup callbacks
         this.inputPopup.setCallbacks({
-            onSubmit: (instruction) => this.handleInstructionSubmit(instruction),
+            onSubmit: (instruction, actionMode) => this.handleInstructionSubmit(instruction, actionMode),
             onCancel: () => {
                 console.log('[QuickEdit] Instruction input cancelled');
                 // FIX 1.2: Clear pending selection on cancel
@@ -338,7 +338,7 @@ export class QuickEditManager {
     /**
      * Handle instruction submit
      */
-    private async handleInstructionSubmit(instruction: string): Promise<void> {
+    private async handleInstructionSubmit(instruction: string, actionMode: 'insert' | 'replace' = 'replace'): Promise<void> {
         // FIX 1.2: Use instance property instead of window
         const selection = this.pendingSelection;
         if (!selection) {
@@ -381,7 +381,9 @@ export class QuickEditManager {
             originalRange: selection.range.cloneRange(),
             // FIX Issue #1: Store block type for format preservation
             originalBlockType,
-            originalBlockSubtype
+            originalBlockSubtype,
+            // Store user's action mode selection
+            actionMode
         };
 
         this.activeBlocks.set(blockId, inlineBlock);
@@ -506,13 +508,32 @@ export class QuickEditManager {
             console.log(`[QuickEdit] Starting AI request for block ${block.id}`);
             console.log(`[QuickEdit] Original text length: ${block.originalText.length} chars`);
 
-            // 构建请求：明确要求只返回修改后的文本，不要任何解释
-            const userPrompt = `${block.instruction}
+            // 构建请求：使用可配置的提示词模板（从 ClaudeClient 获取）
+            const claudeSettings = this.claudeClient.getSettings();
+            const template = claudeSettings.quickEditPromptTemplate || `{instruction}
 
 原文：
-${block.originalText}
+{original}
 
 重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+
+            console.log(`[QuickEdit] Using prompt template from ClaudeSettings (length: ${template.length} chars)`);
+
+            // 替换占位符构建用户消息
+            let userPrompt = template
+                .replace('{instruction}', block.instruction)
+                .replace('{original}', block.originalText);
+
+            // ✨ 统一提示词管线：自动附加 appendedPrompt
+            const appendedPrompt = this.claudeClient.getAppendedPrompt();
+            if (appendedPrompt && appendedPrompt.trim()) {
+                userPrompt += '\n\n' + appendedPrompt;
+                console.log(`[QuickEdit] ✅ Appended prompt added (${appendedPrompt.length} chars)`);
+            } else {
+                console.log(`[QuickEdit] No appended prompt to add`);
+            }
+
+            console.log(`[QuickEdit] Final user prompt length: ${userPrompt.length} chars`);
 
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
@@ -648,6 +669,8 @@ ${block.originalText}
                 const action = (e.currentTarget as HTMLElement).getAttribute('data-action');
                 if (action === 'accept') {
                     this.handleAccept(blockId);
+                } else if (action === 'insert') {
+                    this.handleInsert(blockId);
                 } else if (action === 'reject') {
                     this.handleReject(blockId);
                 } else if (action === 'retry') {
@@ -670,6 +693,9 @@ ${block.originalText}
             if (e.key === 'Tab' && !e.shiftKey) {
                 e.preventDefault();
                 this.handleAccept(blockId);
+            } else if (e.key === 'i' && e.ctrlKey) {
+                e.preventDefault();
+                this.handleInsert(blockId);
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 this.handleReject(blockId);
@@ -964,6 +990,161 @@ ${block.originalText}
             console.error('[QuickEdit] Failed to apply changes:', error);
             showMessage(
                 `应用修改失败: ${error instanceof Error ? error.message : String(error)}`,
+                5000,
+                'error'
+            );
+        }
+    }
+
+    /**
+     * Handle insert - Insert AI content below original text WITHOUT deleting original
+     * Similar to handleAccept but skips the deletion step
+     */
+    private async handleInsert(blockId: string): Promise<void> {
+        const block = this.activeBlocks.get(blockId);
+        if (!block || !block.element) return;
+
+        try {
+            console.log('[QuickEdit] Inserting AI content below original text (INSERT mode)');
+            console.log('[QuickEdit] Selected block IDs:', block.selectedBlockIds);
+
+            // Use indented text if available
+            let textToApply = block.suggestedTextWithIndent || block.suggestedText;
+            console.log(`[QuickEdit] Using ${block.suggestedTextWithIndent ? 'indented' : 'non-indented'} text for insertion`);
+
+            // Apply Markdown formatting for single-block selections
+            const isSingleBlock = !block.selectedBlockIds || block.selectedBlockIds.length === 1;
+            if (isSingleBlock && block.originalBlockType) {
+                console.log(`[QuickEdit] Single block selection, applying Markdown formatting`);
+                textToApply = this.applyMarkdownFormatting(
+                    textToApply,
+                    block.originalBlockType,
+                    block.originalBlockSubtype
+                );
+            }
+
+            // Split content into paragraphs
+            const paragraphs = textToApply
+                .split(/(?:\r?\n){2,}/)
+                .map(p => p.trim())
+                .filter(p => p.length > 0);
+
+            console.log(`[QuickEdit] Split content into ${paragraphs.length} paragraph(s) for insertion`);
+
+            // Insert all paragraphs after the last selected block
+            const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
+            let previousID = lastOriginalBlockId;
+
+            const insertionResults: Array<{ success: boolean; index: number; error?: any }> = [];
+
+            for (let i = 0; i < paragraphs.length; i++) {
+                const paragraph = paragraphs[i];
+
+                try {
+                    const insertResponse = await fetch('/api/block/insertBlock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            dataType: 'markdown',
+                            data: paragraph,
+                            previousID: previousID
+                        })
+                    });
+
+                    if (!insertResponse.ok) {
+                        throw new Error(`HTTP ${insertResponse.status}: ${insertResponse.statusText}`);
+                    }
+
+                    const insertResult = await insertResponse.json();
+                    if (insertResult.code === 0) {
+                        previousID = insertResult.data[0].doOperations[0].id;
+                        console.log(`[QuickEdit] Inserted paragraph ${i + 1}/${paragraphs.length} as block ${previousID}`);
+                        insertionResults.push({ success: true, index: i });
+                    } else {
+                        console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
+                        insertionResults.push({ success: false, index: i, error: insertResult });
+                    }
+                } catch (error) {
+                    console.error(`[QuickEdit] Error inserting paragraph ${i + 1}:`, error);
+                    insertionResults.push({ success: false, index: i, error });
+                }
+            }
+
+            // Report results
+            const successCount = insertionResults.filter(r => r.success).length;
+            const failureCount = insertionResults.filter(r => !r.success).length;
+
+            if (failureCount > 0) {
+                console.warn(`[QuickEdit] ⚠️ Partial success: ${successCount}/${paragraphs.length} paragraphs inserted`);
+                showMessage(`⚠️ 部分插入成功 (${successCount}/${paragraphs.length})`, 5000, 'error');
+            } else {
+                console.log('[QuickEdit] ✅ All paragraphs inserted successfully');
+            }
+
+            // Wait for SiYuan to render
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Pause observer before UI cleanup
+            this.pauseObserver();
+
+            // Remove comparison block
+            console.log('[QuickEdit] Removing comparison block (INSERT mode - keeping original)');
+            if (block.element && document.contains(block.element)) {
+                try {
+                    this.renderer.removeBlock(block.element);
+                    console.log('[QuickEdit] ✅ Removed comparison block');
+                } catch (error) {
+                    console.warn('[QuickEdit] Failed to remove comparison block:', error);
+                }
+            }
+
+            // Remove red marking from original blocks
+            if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+                const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
+                const blockElements = document.querySelectorAll(selector);
+                blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
+                console.log(`[QuickEdit] Removed red marking from ${blockElements.length} blocks`);
+            }
+
+            // ✨ KEY DIFFERENCE: Do NOT delete original blocks in INSERT mode
+            console.log('[QuickEdit] ✅ INSERT mode: Keeping original blocks (not deleted)');
+
+            // Wait for SiYuan to complete operations
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            block.markedSpan = null;
+
+            // Resume observer
+            this.resumeObserver();
+
+            // Add to history
+            this.history.addToHistory({
+                selection: {
+                    id: block.id,
+                    blockId: block.blockId,
+                    startLine: 0,
+                    endLine: 0,
+                    selectedText: block.originalText,
+                    contextBefore: '',
+                    contextAfter: '',
+                    timestamp: block.createdAt,
+                    status: 'completed'
+                },
+                originalContent: block.originalText,
+                modifiedContent: block.suggestedText,
+                blockId: block.blockId,
+                applied: true
+            });
+
+            // Final cleanup
+            this.cleanupBlock(blockId);
+
+            showMessage('✅ AI 内容已插入到下方（原文保留）', 2000);
+
+        } catch (error) {
+            console.error('[QuickEdit] Failed to insert content:', error);
+            showMessage(
+                `插入失败: ${error instanceof Error ? error.message : String(error)}`,
                 5000,
                 'error'
             );

@@ -35,5 +35,9 @@
   "presetManagement": "Manage system and appended prompts for all AI conversations",
   "showDiffComparison": "Show Diff Comparison",
   "showDiffEnabled": "Diff comparison enabled",
-  "showDiffDisabled": "Diff comparison disabled"
+  "showDiffDisabled": "Diff comparison disabled",
+  "quickEditInsert": "Insert Below",
+  "quickEditAcceptReplace": "Accept & Replace",
+  "quickEditInsertSuccess": "AI content inserted below (original kept)",
+  "quickEditReplaceSuccess": "Changes applied (undo supported)"
 }

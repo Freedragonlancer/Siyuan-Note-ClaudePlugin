@@ -35,5 +35,9 @@
   "presetManagement": "管理所有AI对话的系统提示词和追加提示词预设",
   "showDiffComparison": "显示差异对比",
   "showDiffEnabled": "启用差异对比",
-  "showDiffDisabled": "禁用差异对比"
+  "showDiffDisabled": "禁用差异对比",
+  "quickEditInsert": "插入到下方",
+  "quickEditAcceptReplace": "接受替换",
+  "quickEditInsertSuccess": "AI 内容已插入到下方（原文保留）",
+  "quickEditReplaceSuccess": "修改已应用（支持撤销）"
 }

@@ -10,12 +10,14 @@ export class InstructionInputPopup {
     private element: HTMLElement | null = null;
     private presets: PromptTemplate[];
     private configManager: ConfigManager;
-    private onSubmitCallback?: (instruction: string) => void;
+    private onSubmitCallback?: (instruction: string, actionMode: 'insert' | 'replace') => void;
     private onCancelCallback?: () => void;
     private onPresetSwitchCallback?: (presetId: string) => void;
 
     // localStorage key for remembering last selected preset
     private static readonly LAST_PRESET_KEY = 'claude-quick-edit-last-preset-index';
+    // localStorage key for remembering last selected action mode
+    private static readonly LAST_MODE_KEY = 'claude-quick-edit-last-action-mode';
 
     constructor(presets: PromptTemplate[], configManager: ConfigManager) {
         this.presets = presets;
@@ -101,7 +103,7 @@ export class InstructionInputPopup {
      * Set callbacks
      */
     public setCallbacks(callbacks: {
-        onSubmit?: (instruction: string) => void;
+        onSubmit?: (instruction: string, actionMode: 'insert' | 'replace') => void;
         onCancel?: () => void;
         onPresetSwitch?: (presetId: string) => void;
     }): void {
@@ -283,6 +285,9 @@ export class InstructionInputPopup {
             </div>
         `;
 
+        // Load last selected mode (default: replace for backward compatibility)
+        const lastMode = this.getLastMode() || 'replace';
+
         popup.innerHTML = `
             <div class="popup-header">
                 <span>编辑指令</span>
@@ -303,6 +308,19 @@ export class InstructionInputPopup {
                     placeholder="输入编辑指令..."
                     value="${defaultInstruction}"
                 />
+                <div class="action-mode-selector">
+                    <span class="mode-selector-label">操作模式:</span>
+                    <div class="mode-selector-options">
+                        <label class="mode-option">
+                            <input type="radio" name="action-mode" value="insert" ${lastMode === 'insert' ? 'checked' : ''}>
+                            <span class="mode-option-text">插入到下方</span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="action-mode" value="replace" ${lastMode === 'replace' ? 'checked' : ''}>
+                            <span class="mode-option-text">替换原文</span>
+                        </label>
+                    </div>
+                </div>
                 <div class="popup-actions">
                     <button class="b3-button b3-button--outline popup-cancel" title="取消 (Esc)">
                         <svg><use xlink:href="#iconClose"></use></svg>
@@ -431,6 +449,13 @@ export class InstructionInputPopup {
      */
     private handleSubmit(instruction: string): void {
         if (instruction.trim() && this.onSubmitCallback) {
+            // Read selected mode from radio buttons
+            const selectedMode = this.element?.querySelector('input[name="action-mode"]:checked') as HTMLInputElement;
+            const actionMode = (selectedMode?.value as 'insert' | 'replace') || 'replace';
+
+            // Save mode preference
+            this.saveMode(actionMode);
+
             // Save the currently selected preset index before closing
             if (this.element) {
                 const presetSelect = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
@@ -438,7 +463,9 @@ export class InstructionInputPopup {
                     this.savePresetIndex(presetSelect.value);
                 }
             }
-            this.onSubmitCallback(instruction.trim());
+
+            // Call callback with instruction and mode
+            this.onSubmitCallback(instruction.trim(), actionMode);
         }
         this.close();
     }
@@ -483,6 +510,30 @@ export class InstructionInputPopup {
             console.log(`[InstructionInputPopup] Saved last preset index: ${index}`);
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to save last preset to localStorage:', error);
+        }
+    }
+
+    /**
+     * Get last selected action mode from localStorage
+     */
+    private getLastMode(): 'insert' | 'replace' | null {
+        try {
+            return localStorage.getItem(InstructionInputPopup.LAST_MODE_KEY) as 'insert' | 'replace' | null;
+        } catch (error) {
+            console.warn('[InstructionInputPopup] Failed to read last mode from localStorage:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Save selected action mode to localStorage
+     */
+    private saveMode(mode: 'insert' | 'replace'): void {
+        try {
+            localStorage.setItem(InstructionInputPopup.LAST_MODE_KEY, mode);
+            console.log(`[InstructionInputPopup] Saved last mode: ${mode}`);
+        } catch (error) {
+            console.warn('[InstructionInputPopup] Failed to save last mode to localStorage:', error);
         }
     }
 }

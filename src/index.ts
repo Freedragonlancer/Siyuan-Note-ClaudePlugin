@@ -102,6 +102,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
             // Use the loaded settings for initialization
             settings = loadedSettings.apiKey ? loadedSettings : activeProfile.settings;
+
+            // Migrate quickEditPromptTemplate from EditSettings to ClaudeSettings
+            settings = this.migrateQuickEditPromptTemplate(settings);
         } catch (error) {
             console.error("[Plugin] Error during settings load, using defaults:", error);
             // Fallback to defaults if anything fails
@@ -400,10 +403,10 @@ export default class ClaudeAssistantPlugin extends Plugin {
                     // Sync to SettingsManager for backward compatibility
                     await this.settingsManager.saveSettings({ ...activeProfile.settings, ...newSettings });
 
-                    // Update Claude client
+                    // Update Claude client (QuickEditManager will automatically get new settings from ClaudeClient)
                     this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
-                    console.log("[ClaudePlugin] Prompt settings updated successfully");
+                    console.log("[ClaudePlugin] ✅ Prompt settings updated successfully (QuickEditManager will use ClaudeClient settings)");
                 } catch (error) {
                     console.error("[ClaudePlugin] Failed to save prompt settings:", error);
                     showMessage("❌ 保存提示词失败", 3000, "error");
@@ -977,6 +980,43 @@ export default class ClaudeAssistantPlugin extends Plugin {
         } catch (error) {
             console.error('[Migration] Error during migration:', error);
             // Don't block plugin loading on migration failure
+        }
+    }
+
+    /**
+     * Migrate quickEditPromptTemplate from EditSettings to ClaudeSettings
+     * This ensures backward compatibility after moving the field
+     */
+    private migrateQuickEditPromptTemplate(settings: ClaudeSettings): ClaudeSettings {
+        try {
+            // Check if ClaudeSettings already has quickEditPromptTemplate
+            if (settings.quickEditPromptTemplate) {
+                console.log('[Migration] quickEditPromptTemplate already exists in ClaudeSettings, no migration needed');
+                return settings;
+            }
+
+            // Check if EditSettings has quickEditPromptTemplate
+            if (settings.editSettings?.quickEditPromptTemplate) {
+                console.log('[Migration] ✅ Migrating quickEditPromptTemplate from EditSettings to ClaudeSettings');
+                settings.quickEditPromptTemplate = settings.editSettings.quickEditPromptTemplate;
+
+                // Clean up old field (optional, but keeps data clean)
+                delete settings.editSettings.quickEditPromptTemplate;
+
+                // Save migrated settings
+                this.settingsManager.saveSettings(settings).catch(err => {
+                    console.error('[Migration] Failed to save migrated settings:', err);
+                });
+
+                console.log('[Migration] ✅ quickEditPromptTemplate migration completed');
+            } else {
+                console.log('[Migration] No quickEditPromptTemplate to migrate');
+            }
+
+            return settings;
+        } catch (error) {
+            console.error('[Migration] Error during quickEditPromptTemplate migration:', error);
+            return settings; // Return original settings on error
         }
     }
 }

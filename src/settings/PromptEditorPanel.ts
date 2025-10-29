@@ -91,6 +91,7 @@ export class PromptEditorPanel {
             { id: "presets", label: "🎨 提示词预设", icon: "🎨" },
             { id: "system", label: "🤖 系统提示词", icon: "🤖" },
             { id: "appended", label: "📌 追加提示词", icon: "📌" },
+            { id: "quickEditPrompt", label: "⚡ 快速编辑模板", icon: "⚡" },
             { id: "editInstructions", label: "✏️ AI编辑指令", icon: "✏️" }
         ];
 
@@ -128,6 +129,8 @@ export class PromptEditorPanel {
                 return this.createSystemPromptTab();
             case "appended":
                 return this.createAppendedPromptTab();
+            case "quickEditPrompt":
+                return this.createQuickEditPromptTab();
             case "editInstructions":
                 return this.createEditInstructionsTab();
             default:
@@ -427,7 +430,82 @@ export class PromptEditorPanel {
 
     //#endregion
 
-    //#region Tab 4: Edit Instructions
+    //#region Tab 4: Quick Edit Prompt Template
+
+    private createQuickEditPromptTab(): string {
+        const defaultTemplate = `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+
+        return `
+            <div class="tab-content-inner" style="max-width: 900px; margin: 0 auto;">
+                <div style="margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 500;">⚡ AI 快速编辑提示词模板</h4>
+                    <div class="ft__smaller ft__secondary" style="line-height: 1.6;">
+                        自定义快速编辑功能的提示词结构。使用占位符控制输入格式：<br>
+                        • <code>{instruction}</code> - 用户输入的编辑指令<br>
+                        • <code>{original}</code> - 选中的原始文本
+                    </div>
+                </div>
+
+                <textarea
+                    id="quick-edit-prompt-editor"
+                    class="b3-text-field"
+                    rows="12"
+                    style="
+                        width: 100%;
+                        padding: 12px;
+                        border: 1px solid var(--b3-border-color);
+                        border-radius: 4px;
+                        font-family: 'Consolas', 'Monaco', monospace;
+                        font-size: 13px;
+                        resize: vertical;
+                    "
+                    placeholder="${defaultTemplate}"
+                >${this.currentSettings.quickEditPromptTemplate || defaultTemplate}</textarea>
+
+                <div style="margin-top: 12px;">
+                    <div class="ft__smaller" style="padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px; margin-bottom: 12px;">
+                        <div style="font-weight: 500; margin-bottom: 8px;">💡 使用示例</div>
+                        <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-bottom: 8px;">
+                            <div style="color: var(--b3-theme-on-surface-light);">// 最简洁版本</div>
+                            <div>{instruction}</div>
+                            <div style="margin-top: 4px;">{original}</div>
+                        </div>
+                        <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                            <div style="color: var(--b3-theme-on-surface-light);">// 自定义格式</div>
+                            <div>请执行以下操作：{instruction}</div>
+                            <div style="margin-top: 4px;">--- 原文内容 ---</div>
+                            <div>{original}</div>
+                            <div>--- 原文结束 ---</div>
+                            <div style="margin-top: 4px;">请直接输出结果，无需解释。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="ft__smaller ft__secondary">
+                        字符数: <span id="quick-edit-prompt-length">${(this.currentSettings.quickEditPromptTemplate || defaultTemplate).length}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="b3-button b3-button--cancel" id="reset-quick-edit-prompt">
+                            <svg><use xlink:href="#iconUndo"></use></svg>
+                            <span style="margin-left: 4px;">恢复默认</span>
+                        </button>
+                        <button class="b3-button b3-button--cancel" id="cancel-quick-edit-prompt">取消</button>
+                        <button class="b3-button b3-button--text" id="save-quick-edit-prompt">💾 保存</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    //#endregion
+
+    //#region Tab 5: Edit Instructions
 
     private createEditInstructionsTab(): string {
         // Get all presets from ConfigManager and filter those with editInstruction
@@ -520,6 +598,9 @@ export class PromptEditorPanel {
 
         // Appended prompt tab
         this.attachAppendedPromptListeners(container);
+
+        // Quick edit prompt tab
+        this.attachQuickEditPromptListeners(container);
 
         // Edit instructions tab
         this.attachEditInstructionsListeners(container);
@@ -675,6 +756,56 @@ export class PromptEditorPanel {
         const loadTemplateBtn = container.querySelector('#load-template-appended');
         if (loadTemplateBtn) {
             loadTemplateBtn.addEventListener('click', () => this.showTemplateSelector('appended'));
+        }
+    }
+
+    private attachQuickEditPromptListeners(container: HTMLElement): void {
+        const editor = container.querySelector('#quick-edit-prompt-editor') as HTMLTextAreaElement;
+        const lengthDisplay = container.querySelector('#quick-edit-prompt-length');
+
+        if (editor && lengthDisplay) {
+            editor.addEventListener('input', () => {
+                lengthDisplay.textContent = editor.value.length.toString();
+            });
+        }
+
+        const saveBtn = container.querySelector('#save-quick-edit-prompt');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                if (editor) {
+                    this.currentSettings.quickEditPromptTemplate = editor.value;
+                    this.onSave({ quickEditPromptTemplate: editor.value });
+                    showMessage("✅ 快速编辑提示词模板已保存", 2000, "info");
+                }
+            });
+        }
+
+        const cancelBtn = container.querySelector('#cancel-quick-edit-prompt');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                if (editor) {
+                    editor.value = this.currentSettings.quickEditPromptTemplate || `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+                    if (lengthDisplay) lengthDisplay.textContent = editor.value.length.toString();
+                }
+            });
+        }
+
+        const resetBtn = container.querySelector('#reset-quick-edit-prompt');
+        if (resetBtn && editor) {
+            resetBtn.addEventListener('click', () => {
+                editor.value = `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+                if (lengthDisplay) lengthDisplay.textContent = editor.value.length.toString();
+            });
         }
     }
 

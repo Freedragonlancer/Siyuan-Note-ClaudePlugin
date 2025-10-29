@@ -14,8 +14,9 @@ import { Dialog, showMessage, confirm } from "siyuan";
 import type { ConfigManager } from "./ConfigManager";
 import type { PromptTemplate } from "./config-types";
 import type { ClaudeSettings } from "../claude";
+import { BUILTIN_FILTER_TEMPLATES } from "../filter/types";
 
-type TabType = "templates" | "system" | "appended" | "editInstructions";
+type TabType = "templates" | "system" | "appended" | "quickEditPrompt" | "responseFilters";
 
 export class PromptEditorPanel {
     private dialog: Dialog | null = null;
@@ -92,7 +93,7 @@ export class PromptEditorPanel {
             { id: "system", label: "🤖 系统提示词", icon: "🤖" },
             { id: "appended", label: "📌 追加提示词", icon: "📌" },
             { id: "quickEditPrompt", label: "⚡ 快速编辑模板", icon: "⚡" },
-            { id: "editInstructions", label: "✏️ AI编辑指令", icon: "✏️" }
+            { id: "responseFilters", label: "🔧 响应过滤", icon: "🔧" }
         ];
 
         return `
@@ -131,8 +132,8 @@ export class PromptEditorPanel {
                 return this.createAppendedPromptTab();
             case "quickEditPrompt":
                 return this.createQuickEditPromptTab();
-            case "editInstructions":
-                return this.createEditInstructionsTab();
+            case "responseFilters":
+                return this.createResponseFiltersTab();
             default:
                 return "<div>Unknown tab</div>";
         }
@@ -505,71 +506,119 @@ export class PromptEditorPanel {
 
     //#endregion
 
-    //#region Tab 5: Edit Instructions
+    //#region Tab 5: Response Filters
 
-    private createEditInstructionsTab(): string {
-        // Get all presets from ConfigManager and filter those with editInstruction
+    private createResponseFiltersTab(): string {
+        // Get active preset by matching current settings
         const allPresets = this.configManager.getAllTemplates();
-        const presetsWithEditInstruction = allPresets.filter(p => p.editInstruction && p.editInstruction.trim());
+        const activePreset = allPresets.find(p => this.isActivePreset(p));
+        const filterRules = activePreset?.filterRules || [];
 
         return `
-            <div class="edit-instructions-tab" style="padding: 16px;">
+            <div class="response-filters-tab" style="padding: 16px;">
                 <div style="margin-bottom: 16px;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 500;">✏️ AI 编辑指令视图</h3>
+                    <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 500;">🔧 AI响应过滤规则</h3>
                     <div class="ft__smaller ft__secondary">
-                        显示所有配置了编辑指令的预设（编辑指令在 Tab 1 中配置）
+                        使用正则表达式过滤AI响应内容。规则按顺序应用于完整响应文本。
                     </div>
                 </div>
 
-                <div class="edit-instructions-list">
-                    ${presetsWithEditInstruction.length > 0
-                        ? presetsWithEditInstruction.map(preset => this.createEditInstructionCard(preset)).join('')
-                        : '<div class="ft__secondary" style="padding: 32px; text-align: center;">暂无配置编辑指令的预设<br><br>请前往"提示词预设"标签页为预设添加编辑指令</div>'
-                    }
+                <!-- Built-in Templates -->
+                <div style="margin-bottom: 16px; padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px;">
+                    <div style="font-weight: 500; margin-bottom: 8px;">📚 内置模板（快速添加）</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button class="b3-button b3-button--outline filter-template-add" data-template-id="remove-think-tags" style="font-size: 12px;">
+                            ➕ 删除 &lt;think&gt; 标签
+                        </button>
+                        <button class="b3-button b3-button--outline filter-template-add" data-template-id="remove-thinking-tags" style="font-size: 12px;">
+                            ➕ 删除 &lt;thinking&gt; 标签
+                        </button>
+                        <button class="b3-button b3-button--outline filter-template-add" data-template-id="remove-all-tags" style="font-size: 12px;">
+                            ➕ 删除所有 XML 标签
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Current Rules List -->
+                <div style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div style="font-weight: 500;">当前规则列表 (${filterRules.length})</div>
+                        <button class="b3-button b3-button--outline" id="add-filter-rule">
+                            <svg><use xlink:href="#iconAdd"></use></svg>
+                            <span style="margin-left: 4px;">添加规则</span>
+                        </button>
+                    </div>
+
+                    <div id="filter-rules-list" style="display: flex; flex-direction: column; gap: 8px;">
+                        ${filterRules.length > 0
+                            ? filterRules.map((rule, index) => this.createFilterRuleCard(rule, index)).join('')
+                            : '<div class="ft__secondary" style="padding: 32px; text-align: center; border: 1px dashed var(--b3-border-color); border-radius: 4px;">暂无过滤规则<br><br>使用上方模板或添加自定义规则</div>'
+                        }
+                    </div>
+                </div>
+
+                <!-- Tips -->
+                <div style="margin-top: 16px;">
+                    <div class="ft__smaller" style="padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px;">
+                        <div style="font-weight: 500; margin-bottom: 8px;">💡 使用提示</div>
+                        <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                            <li>使用正则表达式匹配需要过滤的内容模式</li>
+                            <li>多条规则按从上到下的顺序依次应用</li>
+                            <li>可以禁用规则而不删除，方便调试</li>
+                            <li>使用测试面板验证规则效果</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         `;
     }
 
-    private createEditInstructionCard(preset: PromptTemplate): string {
-        const instructionPreview = preset.editInstruction!.length > 100
-            ? preset.editInstruction!.substring(0, 100) + '...'
-            : preset.editInstruction!;
+    private createFilterRuleCard(rule: any, index: number): string {
+        const patternPreview = rule.pattern.length > 50 
+            ? rule.pattern.substring(0, 50) + '...' 
+            : rule.pattern;
 
         return `
-            <div class="edit-instruction-card" data-preset-id="${preset.id}" style="
+            <div class="filter-rule-card" data-rule-index="${index}" style="
                 border: 1px solid var(--b3-border-color);
                 border-radius: 4px;
                 padding: 12px;
-                margin-bottom: 8px;
                 background: var(--b3-theme-surface);
+                transition: all 0.2s;
             ">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div style="flex: 1;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <span style="font-size: 18px; margin-right: 4px;">${preset.icon || '📝'}</span>
-                            <span style="font-weight: 500; font-size: 14px;">${preset.name}</span>
-                            ${preset.category ? `<span class="b3-chip" style="margin-left: 8px; font-size: 12px;">${preset.category}</span>` : ''}
-                            <span style="
-                                display: inline-flex;
-                                align-items: center;
-                                padding: 2px 6px;
-                                font-size: 11px;
-                                border-radius: 3px;
-                                margin-left: 8px;
-                                background: ${preset.showDiff ? 'var(--b3-theme-primary-lighter)' : 'var(--b3-theme-surface-light)'};
-                                color: ${preset.showDiff ? 'var(--b3-theme-primary)' : 'var(--b3-theme-on-surface-light)'};
-                            " title="${preset.showDiff ? '启用差异对比' : '禁用差异对比'}">
-                                ${preset.showDiff ? '✅ 显示对比' : '⚪ 不显示'}
-                            </span>
+                            <label style="display: inline-flex; align-items: center; cursor: pointer;">
+                                <input 
+                                    type="checkbox" 
+                                    class="filter-rule-toggle" 
+                                    data-rule-index="${index}"
+                                    ${rule.enabled ? 'checked' : ''}
+                                    style="margin-right: 6px; cursor: pointer;"
+                                >
+                                <span style="font-weight: 500; font-size: 14px;">${this.escapeHtml(rule.name)}</span>
+                            </label>
+                            ${rule.flags ? `<span class="b3-chip" style="font-size: 11px; background: var(--b3-theme-surface-light);">/${rule.flags}</span>` : ''}
                         </div>
-                        <div class="ft__smaller" style="color: var(--b3-theme-on-surface);">
-                            📝 编辑指令: ${instructionPreview}
+                        <div class="ft__smaller" style="color: var(--b3-theme-on-surface-light); margin-bottom: 4px; font-family: 'Consolas', monospace;">
+                            📝 匹配: ${this.escapeHtml(patternPreview)}
                         </div>
+                        ${rule.replacement ? `
+                        <div class="ft__smaller" style="color: var(--b3-theme-on-surface-light); font-family: 'Consolas', monospace;">
+                            ➡️ 替换为: ${this.escapeHtml(rule.replacement.substring(0, 50))}${rule.replacement.length > 50 ? '...' : ''}
+                        </div>
+                        ` : ''}
                     </div>
                     <div style="display: flex; gap: 4px; margin-left: 12px;">
-                        <button class="b3-button b3-button--text edit-instruction-goto-tab1" data-preset-id="${preset.id}" title="前往 Tab 1 编辑完整预设">
-                            <svg><use xlink:href="#iconGoto"></use></svg>
+                        <button class="b3-button b3-button--text filter-rule-edit" data-rule-index="${index}" title="编辑规则">
+                            <svg><use xlink:href="#iconEdit"></use></svg>
+                        </button>
+                        <button class="b3-button b3-button--text filter-rule-test" data-rule-index="${index}" title="测试规则">
+                            <svg><use xlink:href="#iconPlay"></use></svg>
+                        </button>
+                        <button class="b3-button b3-button--text filter-rule-delete" data-rule-index="${index}" title="删除规则">
+                            <svg><use xlink:href="#iconTrashcan"></use></svg>
                         </button>
                     </div>
                 </div>
@@ -602,8 +651,8 @@ export class PromptEditorPanel {
         // Quick edit prompt tab
         this.attachQuickEditPromptListeners(container);
 
-        // Edit instructions tab
-        this.attachEditInstructionsListeners(container);
+        // Response filters tab
+        this.attachResponseFiltersListeners(container);
     }
 
     private attachPresetsListeners(container: HTMLElement): void {
@@ -809,24 +858,50 @@ export class PromptEditorPanel {
         }
     }
 
-    private attachEditInstructionsListeners(container: HTMLElement): void {
-        // "Go to Tab 1" button to edit the full preset
-        container.querySelectorAll('.edit-instruction-goto-tab1').forEach(btn => {
+    private attachResponseFiltersListeners(container: HTMLElement): void {
+        // Add new filter rule
+        const addBtn = container.querySelector('#add-filter-rule');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.showFilterRuleDialog());
+        }
+
+        // Add from template
+        container.querySelectorAll('.filter-template-add').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const presetId = (e.currentTarget as HTMLElement).dataset.presetId;
-                if (presetId) {
-                    // Switch to Tab 1 and highlight the preset
-                    this.switchTab('presets');
-                    // Optional: scroll to and highlight the preset
-                    setTimeout(() => {
-                        const presetCard = document.querySelector(`.preset-card[data-preset-id="${presetId}"]`);
-                        if (presetCard) {
-                            presetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            presetCard.classList.add('preset-highlight');
-                            setTimeout(() => presetCard.classList.remove('preset-highlight'), 2000);
-                        }
-                    }, 100);
-                }
+                const templateId = (e.currentTarget as HTMLElement).dataset.templateId;
+                if (templateId) this.addFilterRuleFromTemplate(templateId);
+            });
+        });
+
+        // Toggle rule enabled/disabled
+        container.querySelectorAll('.filter-rule-toggle').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
+                this.toggleFilterRule(index, (e.currentTarget as HTMLInputElement).checked);
+            });
+        });
+
+        // Edit rule
+        container.querySelectorAll('.filter-rule-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
+                this.showFilterRuleDialog(index);
+            });
+        });
+
+        // Test rule
+        container.querySelectorAll('.filter-rule-test').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
+                this.showFilterRuleTest(index);
+            });
+        });
+
+        // Delete rule
+        container.querySelectorAll('.filter-rule-delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
+                this.deleteFilterRule(index);
             });
         });
     }
@@ -1669,6 +1744,408 @@ export class PromptEditorPanel {
         };
 
         input.click();
+    }
+
+    //#endregion
+
+    //#region Filter Rule Methods
+
+    /**
+     * Show dialog to create or edit a filter rule
+     */
+    private showFilterRuleDialog(ruleIndex?: number): void {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        if (!activePreset) {
+            showMessage("❌ 请先选择一个预设", 2000, "error");
+            return;
+        }
+
+        const filterRules = activePreset.filterRules || [];
+        const isEdit = ruleIndex !== undefined;
+        const rule = isEdit ? filterRules[ruleIndex] : null;
+
+        const dialog = new Dialog({
+            title: isEdit ? "✏️ 编辑过滤规则" : "➕ 添加过滤规则",
+            content: `
+                <div class="filter-rule-dialog" style="padding: 16px;">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">规则名称</label>
+                        <input 
+                            type="text" 
+                            id="filter-rule-name" 
+                            class="b3-text-field" 
+                            value="${rule ? this.escapeHtml(rule.name) : ''}" 
+                            placeholder="例如：删除思考标签"
+                            style="width: 100%;"
+                        >
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">正则表达式</label>
+                        <textarea 
+                            id="filter-rule-pattern" 
+                            class="b3-text-field"
+                            rows="3"
+                            placeholder="例如：<think>.*?</think>"
+                            style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;"
+                        >${rule ? this.escapeHtml(rule.pattern) : ''}</textarea>
+                        <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                            支持JavaScript正则表达式语法，点 . 匹配所有字符
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">替换文本</label>
+                        <input 
+                            type="text" 
+                            id="filter-rule-replacement" 
+                            class="b3-text-field" 
+                            value="${rule ? this.escapeHtml(rule.replacement) : ''}" 
+                            placeholder="留空表示删除匹配内容"
+                            style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;"
+                        >
+                        <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                            支持捕获组引用（\\1, \\2 等）
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">标志</label>
+                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="flag-g" ${rule?.flags?.includes('g') ? 'checked' : 'checked'} style="cursor: pointer;">
+                                <span><code>g</code> - 全局匹配</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="flag-i" ${rule?.flags?.includes('i') ? 'checked' : 'checked'} style="cursor: pointer;">
+                                <span><code>i</code> - 忽略大小写</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="flag-s" ${rule?.flags?.includes('s') ? 'checked' : 'checked'} style="cursor: pointer;">
+                                <span><code>s</code> - 点匹配换行</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="flag-m" ${rule?.flags?.includes('m') ? 'checked' : ''} style="cursor: pointer;">
+                                <span><code>m</code> - 多行模式</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="filter-rule-enabled" ${rule?.enabled !== false ? 'checked' : ''} style="cursor: pointer;">
+                            <span style="font-weight: 500;">启用此规则</span>
+                        </label>
+                    </div>
+
+                    <div style="margin-top: 16px;">
+                        <div class="ft__smaller" style="padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px;">
+                            <div style="font-weight: 500; margin-bottom: 8px;">💡 示例</div>
+                            <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-bottom: 8px;">
+                                <div style="color: var(--b3-theme-on-surface-light);">// 删除 &lt;think&gt; 标签及其内容</div>
+                                <div>正则: &lt;think&gt;.*?&lt;/think&gt;</div>
+                                <div>替换: (留空)</div>
+                                <div>标志: g, i, s</div>
+                            </div>
+                            <div style="background: var(--b3-theme-background); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                                <div style="color: var(--b3-theme-on-surface-light);">// 替换代码块标记</div>
+                                <div>正则: \`\`\`(\w+)</div>
+                                <div>替换: [CODE:\\1]</div>
+                                <div>标志: g</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                        <button class="b3-button b3-button--cancel" id="filter-rule-cancel">取消</button>
+                        <button class="b3-button b3-button--text" id="filter-rule-save">💾 保存</button>
+                    </div>
+                </div>
+            `,
+            width: "700px"
+        });
+
+        const nameInput = dialog.element.querySelector('#filter-rule-name') as HTMLInputElement;
+        const patternInput = dialog.element.querySelector('#filter-rule-pattern') as HTMLTextAreaElement;
+        const replacementInput = dialog.element.querySelector('#filter-rule-replacement') as HTMLInputElement;
+        const enabledCheckbox = dialog.element.querySelector('#filter-rule-enabled') as HTMLInputElement;
+        const flagG = dialog.element.querySelector('#flag-g') as HTMLInputElement;
+        const flagI = dialog.element.querySelector('#flag-i') as HTMLInputElement;
+        const flagS = dialog.element.querySelector('#flag-s') as HTMLInputElement;
+        const flagM = dialog.element.querySelector('#flag-m') as HTMLInputElement;
+        const saveBtn = dialog.element.querySelector('#filter-rule-save');
+        const cancelBtn = dialog.element.querySelector('#filter-rule-cancel');
+
+        saveBtn?.addEventListener('click', () => {
+            const name = nameInput?.value.trim();
+            const pattern = patternInput?.value.trim();
+            const replacement = replacementInput?.value || '';
+            const enabled = enabledCheckbox?.checked !== false;
+
+            if (!name) {
+                showMessage("❌ 请输入规则名称", 2000, "error");
+                return;
+            }
+
+            if (!pattern) {
+                showMessage("❌ 请输入正则表达式", 2000, "error");
+                return;
+            }
+
+            // Build flags string
+            let flags = '';
+            if (flagG?.checked) flags += 'g';
+            if (flagI?.checked) flags += 'i';
+            if (flagS?.checked) flags += 's';
+            if (flagM?.checked) flags += 'm';
+
+            // Validate regex (including ReDoS protection)
+            const validation = this.responseFilter.validatePattern(pattern, flags);
+            if (!validation.valid) {
+                showMessage(`❌ ${validation.error}`, 3000, "error");
+                return;
+            }
+
+            const newRule = {
+                id: rule?.id || `rule-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                name,
+                pattern,
+                replacement,
+                flags,
+                enabled
+            };
+
+            // Get or initialize filterRules
+            const updatedFilterRules = [...(activePreset.filterRules || [])];
+
+            if (isEdit) {
+                updatedFilterRules[ruleIndex!] = newRule;
+            } else {
+                updatedFilterRules.push(newRule);
+            }
+
+            // Update preset
+            const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
+            this.configManager.saveTemplate(updatedPreset);
+
+            // Also update current settings if this is the active preset
+            if (this.isActivePreset(activePreset)) {
+                // Force reload by re-applying the preset
+                this.onSave({
+                    systemPrompt: updatedPreset.systemPrompt,
+                    appendedPrompt: updatedPreset.appendedPrompt
+                });
+            }
+
+            showMessage(`✅ 规则已${isEdit ? '更新' : '添加'}`, 2000, "info");
+            dialog.destroy();
+
+            // Refresh response filters tab
+            this.switchTab('responseFilters');
+        });
+
+        cancelBtn?.addEventListener('click', () => {
+            dialog.destroy();
+        });
+    }
+
+    /**
+     * Add a filter rule from built-in template
+     */
+    private addFilterRuleFromTemplate(templateId: string): void {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        if (!activePreset) {
+            showMessage("❌ 请先选择一个预设", 2000, "error");
+            return;
+        }
+
+        const template = BUILTIN_FILTER_TEMPLATES.find(t => t.id === templateId);
+
+        if (!template) {
+            showMessage("❌ 模板不存在", 2000, "error");
+            return;
+        }
+
+        // Check if rule already exists
+        const filterRules = activePreset.filterRules || [];
+        const exists = filterRules.some(r => r.pattern === template.pattern);
+
+        if (exists) {
+            showMessage("⚠️ 相同的规则已存在", 2000, "warning");
+            return;
+        }
+
+        // Add rule
+        const newRule = {
+            ...template,
+            id: `rule-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        };
+
+        const updatedFilterRules = [...filterRules, newRule];
+        const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
+        this.configManager.saveTemplate(updatedPreset);
+
+        showMessage(`✅ 已添加规则: ${template.name}`, 2000, "info");
+
+        // Refresh response filters tab
+        this.switchTab('responseFilters');
+    }
+
+    /**
+     * Toggle a filter rule on/off
+     */
+    private toggleFilterRule(index: number, enabled: boolean): void {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        if (!activePreset) return;
+
+        const filterRules = activePreset.filterRules || [];
+        if (index < 0 || index >= filterRules.length) return;
+
+        filterRules[index].enabled = enabled;
+
+        const updatedPreset = { ...activePreset, filterRules };
+        this.configManager.saveTemplate(updatedPreset);
+
+        console.log(`[PromptEditor] Filter rule ${index} ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Delete a filter rule
+     */
+    private deleteFilterRule(index: number): void {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        if (!activePreset) return;
+
+        const filterRules = activePreset.filterRules || [];
+        if (index < 0 || index >= filterRules.length) return;
+
+        const rule = filterRules[index];
+
+        confirm(
+            "确认删除",
+            `确定要删除规则"${rule.name}"吗？`,
+            () => {
+                const updatedFilterRules = filterRules.filter((_, i) => i !== index);
+                const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
+                this.configManager.saveTemplate(updatedPreset);
+
+                showMessage("✅ 规则已删除", 2000, "info");
+
+                // Refresh response filters tab
+                this.switchTab('responseFilters');
+            }
+        );
+    }
+
+    /**
+     * Show test dialog for a filter rule
+     */
+    private showFilterRuleTest(index: number): void {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        if (!activePreset) return;
+
+        const filterRules = activePreset.filterRules || [];
+        if (index < 0 || index >= filterRules.length) return;
+
+        const rule = filterRules[index];
+
+        const testDialog = new Dialog({
+            title: `🧪 测试规则: ${rule.name}`,
+            content: `
+                <div class="filter-rule-test-dialog" style="padding: 16px;">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">输入测试文本</label>
+                        <textarea 
+                            id="test-input" 
+                            class="b3-text-field"
+                            rows="6"
+                            placeholder="输入要测试的文本..."
+                            style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;"
+                        ><think>这是思考内容</think>这是保留的正文</textarea>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <button class="b3-button b3-button--text" id="run-test" style="width: 100%;">
+                            ▶️ 运行测试
+                        </button>
+                    </div>
+
+                    <div id="test-result-container" style="display: none;">
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">过滤结果</label>
+                            <div 
+                                id="test-output" 
+                                style="
+                                    padding: 12px; 
+                                    background: var(--b3-theme-surface-lighter); 
+                                    border-radius: 4px; 
+                                    font-family: 'Consolas', monospace; 
+                                    font-size: 13px;
+                                    white-space: pre-wrap;
+                                    word-break: break-word;
+                                    min-height: 60px;
+                                "
+                            ></div>
+                        </div>
+
+                        <div style="margin-top: 12px;">
+                            <div class="ft__smaller" style="padding: 8px; background: var(--b3-theme-surface); border-radius: 4px;">
+                                <div id="test-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                        <button class="b3-button b3-button--cancel" id="test-close">关闭</button>
+                    </div>
+                </div>
+            `,
+            width: "700px"
+        });
+
+        const inputTextarea = testDialog.element.querySelector('#test-input') as HTMLTextAreaElement;
+        const runBtn = testDialog.element.querySelector('#run-test');
+        const resultContainer = testDialog.element.querySelector('#test-result-container') as HTMLElement;
+        const outputDiv = testDialog.element.querySelector('#test-output') as HTMLElement;
+        const statsDiv = testDialog.element.querySelector('#test-stats') as HTMLElement;
+        const closeBtn = testDialog.element.querySelector('#test-close');
+
+        runBtn?.addEventListener('click', () => {
+            const inputText = inputTextarea?.value || '';
+            
+            try {
+                const regex = new RegExp(rule.pattern, rule.flags);
+                const outputText = inputText.replace(regex, rule.replacement);
+                const matchCount = (inputText.match(regex) || []).length;
+
+                outputDiv.textContent = outputText;
+                statsDiv.innerHTML = `
+                    <div>✅ 正则表达式有效</div>
+                    <div>🎯 匹配次数: ${matchCount}</div>
+                    <div>📊 原文长度: ${inputText.length} → 结果长度: ${outputText.length}</div>
+                    ${matchCount > 0 ? `<div>🔧 改变了 ${inputText.length - outputText.length} 个字符</div>` : '<div>⚠️ 没有匹配内容</div>'}
+                `;
+
+                resultContainer.style.display = 'block';
+            } catch (error) {
+                outputDiv.textContent = `❌ 错误: ${error.message}`;
+                statsDiv.innerHTML = '<div style="color: var(--b3-theme-error);">正则表达式执行失败</div>';
+                resultContainer.style.display = 'block';
+            }
+        });
+
+        closeBtn?.addEventListener('click', () => {
+            testDialog.destroy();
+        });
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    private escapeHtml(text: string): string {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     //#endregion

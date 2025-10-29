@@ -41,7 +41,7 @@ export class InlineEditRenderer {
         compareBlock.style.msUserSelect = 'none';
 
         // Build HTML structure - 移除所有多余空白和缩进
-        compareBlock.innerHTML = `<div class="inline-edit-block__container"><div class="inline-edit-block__loading" style="display: ${block.state === 'processing' ? 'flex' : 'none'};"><div class="loading-spinner"></div><span>AI 思考中...</span></div>${options.showProgress ? `<div class="inline-edit-block__progress" style="display: none;"><span class="progress-text">已接收 <span class="progress-count">0</span> 字符</span></div>` : ''}${!options.hideOriginal ? `<div class="inline-edit-block__original" style="display: none;"><div class="block-label">原文（保留）</div><div class="block-content" data-content-type="original">${this.escapeHtml(block.originalText)}</div></div>` : ''}<div class="inline-edit-block__suggestion" style="display: none;"><div class="block-label">AI 建议</div><div class="block-content" data-content-type="suggestion"></div></div><div class="inline-edit-block__error" style="display: none;"><svg class="error-icon"><use xlink:href="#iconClose"></use></svg><span class="error-message"></span></div><div class="inline-edit-block__toolbar" style="display: none;"><div class="toolbar-actions"><button class="b3-button b3-button--outline toolbar-btn" data-action="reject"><svg><use xlink:href="#iconClose"></use></svg><span>拒绝</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="retry"><svg><use xlink:href="#iconRefresh"></use></svg><span>重试</span><span class="shortcut">Ctrl+R</span></button><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--insert" data-action="insert"><svg><use xlink:href="#iconDown"></use></svg><span>插入到下方</span><span class="shortcut">Ctrl+I</span></button><button class="b3-button b3-button--text toolbar-btn toolbar-btn--primary" data-action="accept"><svg><use xlink:href="#iconCheck"></use></svg><span>接受替换</span><span class="shortcut">Tab</span></button></div></div></div>`;
+        compareBlock.innerHTML = `<div class="inline-edit-block__container"><div class="inline-edit-block__loading" style="display: ${block.state === 'processing' ? 'flex' : 'none'};"><div class="loading-spinner"></div><span>AI 思考中...</span></div>${options.showProgress ? `<div class="inline-edit-block__progress" style="display: none;"><span class="progress-text">已接收 <span class="progress-count">0</span> 字符</span></div>` : ''}${!options.hideOriginal ? `<div class="inline-edit-block__original" style="display: none;"><div class="block-label">原文（保留）</div><div class="block-content" data-content-type="original">${this.escapeHtml(block.originalText)}</div></div>` : ''}<div class="inline-edit-block__suggestion" style="display: none;"><div class="block-label">AI 建议</div><div class="block-content" data-content-type="suggestion"></div></div><div class="inline-edit-block__error" style="display: none;"><svg class="error-icon"><use xlink:href="#iconClose"></use></svg><span class="error-message"></span></div><div class="inline-edit-block__toolbar" style="display: none;"><div class="toolbar-actions"><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--cancel" data-action="cancel" style="display: none;"><svg><use xlink:href="#iconClose"></use></svg><span>取消</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="reject"><svg><use xlink:href="#iconClose"></use></svg><span>拒绝</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="retry"><svg><use xlink:href="#iconRefresh"></use></svg><span>重试</span><span class="shortcut">Ctrl+R</span></button><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--insert" data-action="insert"><svg><use xlink:href="#iconDown"></use></svg><span>插入到下方</span><span class="shortcut">Ctrl+I</span></button><button class="b3-button b3-button--text toolbar-btn toolbar-btn--primary" data-action="accept"><svg><use xlink:href="#iconCheck"></use></svg><span>接受替换</span><span class="shortcut">Tab</span></button></div></div></div>`;
 
         // Apply custom colors
         const originalBlock = compareBlock.querySelector('.inline-edit-block__original') as HTMLElement;
@@ -130,6 +130,9 @@ export class InlineEditRenderer {
         if (progress) {
             progress.style.display = 'flex';
         }
+
+        // Show cancel button (allow user to cancel during streaming)
+        this.showCancelButton(blockElement);
     }
 
     /**
@@ -192,6 +195,32 @@ export class InlineEditRenderer {
     }
 
     /**
+     * Replace streaming content with filtered content
+     * Used when response filter is applied after streaming completes
+     */
+    public replaceStreamingContent(
+        blockElement: HTMLElement,
+        newContent: string
+    ): void {
+        const suggestionContent = blockElement.querySelector(
+            '[data-content-type="suggestion"]'
+        ) as HTMLElement;
+
+        if (!suggestionContent) {
+            console.error('[InlineEditRenderer] Suggestion content element not found - cannot replace content!');
+            return;
+        }
+
+        const oldLength = suggestionContent.textContent?.length || 0;
+        
+        // 清空并替换为新内容
+        suggestionContent.textContent = newContent;
+        
+        const blockId = blockElement.getAttribute('data-inline-edit-id');
+        console.log(`[InlineEditRenderer] Content replaced for ${blockId}: ${oldLength} → ${newContent.length} chars (filtered)`);
+    }
+
+    /**
      * Complete streaming and show toolbar
      */
     public completeStreaming(blockElement: HTMLElement): void {
@@ -201,8 +230,8 @@ export class InlineEditRenderer {
             progress.style.display = 'none';
         }
 
-        // Show toolbar
-        this.showToolbar(blockElement);
+        // Show review buttons (hide cancel button)
+        this.showReviewButtons(blockElement);
     }
 
     /**
@@ -223,6 +252,44 @@ export class InlineEditRenderer {
         if (toolbar) {
             toolbar.style.display = 'none';
         }
+    }
+
+    /**
+     * Show toolbar with cancel button (during processing/streaming)
+     */
+    public showCancelButton(blockElement: HTMLElement): void {
+        const toolbar = blockElement.querySelector('.inline-edit-block__toolbar') as HTMLElement;
+        const cancelBtn = blockElement.querySelector('[data-action="cancel"]') as HTMLElement;
+        const otherBtns = blockElement.querySelectorAll('[data-action="reject"], [data-action="retry"], [data-action="insert"], [data-action="accept"]');
+
+        if (toolbar) {
+            toolbar.style.display = 'flex';
+        }
+        if (cancelBtn) {
+            cancelBtn.style.display = 'inline-flex';
+        }
+        otherBtns.forEach((btn: HTMLElement) => {
+            btn.style.display = 'none';
+        });
+    }
+
+    /**
+     * Show toolbar with review buttons (after completion), hide cancel button
+     */
+    public showReviewButtons(blockElement: HTMLElement): void {
+        const toolbar = blockElement.querySelector('.inline-edit-block__toolbar') as HTMLElement;
+        const cancelBtn = blockElement.querySelector('[data-action="cancel"]') as HTMLElement;
+        const otherBtns = blockElement.querySelectorAll('[data-action="reject"], [data-action="retry"], [data-action="insert"], [data-action="accept"]');
+
+        if (toolbar) {
+            toolbar.style.display = 'flex';
+        }
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+        otherBtns.forEach((btn: HTMLElement) => {
+            btn.style.display = 'inline-flex';
+        });
     }
 
     /**

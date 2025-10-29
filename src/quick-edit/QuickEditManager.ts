@@ -19,6 +19,30 @@ import { EditHistory } from '@/editor/EditHistory';
 import { ClaudeClient } from '@/claude';
 import type { ConfigManager } from '@/settings/ConfigManager';
 
+/**
+ * FIX Phase 5: Fetch with timeout protection
+ * Wraps fetch call with a timeout to prevent indefinite hangs
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 10000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+        throw error;
+    }
+}
+
 export class QuickEditManager {
     private plugin: Plugin;
     private claudeClient: ClaudeClient;
@@ -33,6 +57,10 @@ export class QuickEditManager {
 
     // Active inline edits
     private activeBlocks: Map<string, InlineEditBlock> = new Map();
+    
+    // Request cancellation and concurrency control
+    private activeRequestBlockId: string | null = null;
+    private isProcessing: boolean = false;
 
     // FIX 1.1: Store keyboard handlers for cleanup
     private keyboardHandlers: Map<string, (e: KeyboardEvent) => void> = new Map();
@@ -293,6 +321,13 @@ export class QuickEditManager {
             return;
         }
 
+        // 并发保护：防止多个同时进行的编辑
+        if (this.isProcessing) {
+            console.warn('[QuickEdit] Rejected: another Quick Edit is already in progress');
+            showMessage('⚠️ 已有一个快速编辑正在进行中，请等待完成', 2000, 'info');
+            return;
+        }
+
         // 尝试获取文本选择
         let selection = this.getSelection();
 
@@ -336,13 +371,47 @@ export class QuickEditManager {
     }
 
     /**
+     * Cancel the currently active Quick Edit request
+     */
+    public cancelActiveRequest(): void {
+        if (!this.activeRequestBlockId) {
+            console.log('[QuickEdit] No active request to cancel');
+            return;
+        }
+
+        const blockId = this.activeRequestBlockId;
+        const block = this.activeBlocks.get(blockId);
+        
+        console.log(`[QuickEdit] Cancelling active request: ${blockId}`);
+
+        // 取消 ClaudeClient 的网络请求
+        this.claudeClient.cancelActiveRequest();
+
+        // 清理 UI（使用 reject 的清理逻辑）
+        if (block) {
+            this.handleReject(blockId);
+        }
+
+        // 清理标志
+        this.isProcessing = false;
+        this.activeRequestBlockId = null;
+
+        showMessage('⚠️ 已取消快速编辑', 2000, 'info');
+    }
+
+    /**
      * Handle instruction submit
      */
     private async handleInstructionSubmit(instruction: string, actionMode: 'insert' | 'replace' = 'replace'): Promise<void> {
+        // 设置处理中标志，防止并发
+        this.isProcessing = true;
+        console.log('[QuickEdit] Starting Quick Edit processing, isProcessing = true');
+
         // FIX 1.2: Use instance property instead of window
         const selection = this.pendingSelection;
         if (!selection) {
             console.error('[QuickEdit] No selection found');
+            this.isProcessing = false;
             return;
         }
 
@@ -387,6 +456,10 @@ export class QuickEditManager {
         };
 
         this.activeBlocks.set(blockId, inlineBlock);
+        
+        // 设置活动请求ID，用于取消功能
+        this.activeRequestBlockId = blockId;
+        console.log(`[QuickEdit] Active request ID set to: ${blockId}`);
 
         // FIX: Don't mark original text to avoid triggering SiYuan's DOM listeners
         // The comparison block is sufficient for visual feedback
@@ -535,10 +608,59 @@ export class QuickEditManager {
 
             console.log(`[QuickEdit] Final user prompt length: ${userPrompt.length} chars`);
 
+            // 获取当前预设的过滤规则
+            const activeProfile = this.configManager.getActiveProfile();
+            const allTemplates = this.configManager.getAllTemplates();
+            const activePreset = allTemplates.find(t => 
+                t.systemPrompt === activeProfile.settings.systemPrompt &&
+                t.appendedPrompt === activeProfile.settings.appendedPrompt
+            );
+            const filterRules = activePreset?.filterRules;
+            if (filterRules && filterRules.length > 0) {
+                const enabledCount = filterRules.filter(r => r.enabled).length;
+                console.log(`[QuickEdit] Using ${enabledCount}/${filterRules.length} filter rules from preset "${activePreset?.name || 'unknown'}"`);
+            } else {
+                console.log(`[QuickEdit] No filter rules configured for current preset`);
+            }
+
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
                 // onMessage callback
                 (chunk) => {
+                    // 检测是否是过滤后的替换消息
+                    const FILTER_MARKER = '[FILTERED_REPLACE]';
+                    if (chunk.startsWith(FILTER_MARKER)) {
+                        // 这是过滤后的完整内容，需要替换之前的所有内容
+                        const filteredContent = chunk.substring(FILTER_MARKER.length);
+                        
+                        console.log(`[QuickEdit] Received filtered content, replacing ${fullResponseChunks.length} chunks with filtered text (${filteredContent.length} chars)`);
+                        
+                        // 重置计数器以匹配过滤后的内容
+                        totalChars = filteredContent.length;
+                        chunkCount = 1; // 现在只有1个chunk（过滤后的完整内容）
+                        
+                        // 清空之前的内容
+                        fullResponseChunks = [filteredContent];
+                        
+                        // 处理缩进
+                        let processedContent = filteredContent;
+                        if (block.indentPrefix && block.indentPrefix.length > 0) {
+                            processedContent = filteredContent.replace(/\n(?!$)/g, '\n' + block.indentPrefix);
+                        }
+                        fullResponseWithIndentChunks = [processedContent];
+                        
+                        // 更新 block.suggestedText
+                        block.suggestedText = filteredContent;
+                        
+                        // 清空并重新渲染整个内容
+                        if (block.element) {
+                            this.renderer.replaceStreamingContent(block.element, processedContent);
+                        }
+                        
+                        return; // 处理完毕，不继续执行后面的逻辑
+                    }
+                    
+                    // 正常的流式 chunk 处理
                     chunkCount++;
                     totalChars += chunk.length;
 
@@ -578,11 +700,27 @@ export class QuickEditManager {
                     block.state = 'error' as InlineEditState;
                     block.error = error.message;
 
+                    // 清理处理状态
+                    this.isProcessing = false;
+                    this.activeRequestBlockId = null;
+                    console.log('[QuickEdit] Error occurred, cleared processing flags');
+
+                    // FIX Phase 4: Remove red marking from original blocks on error
+                    if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+                        const selector = block.selectedBlockIds.map(id => `[data-node-id="${id}"]`).join(',');
+                        const blockElements = document.querySelectorAll(selector);
+                        blockElements.forEach(el => el.classList.remove('quick-edit-original-block'));
+                        console.log(`[QuickEdit] Error cleanup: Removed red marking from ${blockElements.length} blocks`);
+                    }
+
                     if (block.element) {
                         this.renderer.showError(block.element, error.message);
+                        // 显示重试/拒绝按钮，隐藏取消按钮
+                        this.renderer.showReviewButtons(block.element);
                     }
 
                     console.error('[QuickEdit] Error:', error);
+                    showMessage(`❌ 快速编辑失败: ${error.message}`, 3000, 'error');
                 },
                 // onComplete callback
                 () => {
@@ -642,11 +780,23 @@ export class QuickEditManager {
                     block.suggestedTextWithIndent = fullResponseWithIndent;
                     console.log(`[QuickEdit] ✅ Saved final responses: plain=${fullResponse.length} chars, indented=${fullResponseWithIndent.length} chars`);
 
+                    // 清理处理状态
+                    this.isProcessing = false;
+                    this.activeRequestBlockId = null;
+                    console.log('[QuickEdit] Processing completed, cleared processing flags');
+
                     console.log(`[QuickEdit] ==========================================`);
-                }
+                },
+                "QuickEdit",  // feature
+                filterRules    // filterRules
             );
 
         } catch (error) {
+            // 清理处理状态
+            this.isProcessing = false;
+            this.activeRequestBlockId = null;
+            console.log('[QuickEdit] Exception caught, cleared processing flags');
+            
             block.state = 'error' as InlineEditState;
             block.error = error instanceof Error ? error.message : String(error);
 
@@ -675,6 +825,8 @@ export class QuickEditManager {
                     this.handleReject(blockId);
                 } else if (action === 'retry') {
                     this.handleRetry(blockId);
+                } else if (action === 'cancel') {
+                    this.cancelActiveRequest();
                 }
             });
         });
@@ -698,7 +850,15 @@ export class QuickEditManager {
                 this.handleInsert(blockId);
             } else if (e.key === 'Escape') {
                 e.preventDefault();
-                this.handleReject(blockId);
+                // Check block state: cancel if processing/streaming, reject if reviewing
+                const block = this.activeBlocks.get(blockId);
+                if (block?.state === 'processing' || block?.state === 'streaming') {
+                    // Cancel in-progress request
+                    this.cancelActiveRequest();
+                } else {
+                    // Reject completed suggestion
+                    this.handleReject(blockId);
+                }
             } else if (e.key === 'r' && e.ctrlKey) {
                 e.preventDefault();
                 this.handleRetry(blockId);
@@ -841,7 +1001,7 @@ export class QuickEditManager {
                 const paragraph = paragraphs[i];
 
                 try {
-                    const insertResponse = await fetch('/api/block/insertBlock', {
+                    const insertResponse = await fetchWithTimeout('/api/block/insertBlock', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -919,7 +1079,7 @@ export class QuickEditManager {
                 // Delete all blocks concurrently with individual error handling
                 const deletePromises = block.selectedBlockIds.map(async (blockIdToDelete, i) => {
                     try {
-                        const deleteResponse = await fetch('/api/block/deleteBlock', {
+                        const deleteResponse = await fetchWithTimeout('/api/block/deleteBlock', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -1041,7 +1201,7 @@ export class QuickEditManager {
                 const paragraph = paragraphs[i];
 
                 try {
-                    const insertResponse = await fetch('/api/block/insertBlock', {
+                    const insertResponse = await fetchWithTimeout('/api/block/insertBlock', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

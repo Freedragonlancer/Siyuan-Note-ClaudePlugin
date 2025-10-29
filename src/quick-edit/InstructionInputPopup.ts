@@ -8,6 +8,7 @@ import type { ConfigManager } from '@/settings/ConfigManager';
 
 export class InstructionInputPopup {
     private element: HTMLElement | null = null;
+    private isVisible: boolean = false;  // FIX Phase 6: Track visibility to prevent duplicate opens
     private presets: PromptTemplate[];
     private configManager: ConfigManager;
     private onSubmitCallback?: (instruction: string, actionMode: 'insert' | 'replace') => void;
@@ -30,9 +31,17 @@ export class InstructionInputPopup {
     public show(position: PopupPosition, defaultInstruction: string = ''): void {
         console.log(`[InstructionInputPopup] show() called with position: x=${position.x}, y=${position.y}`);
 
+        // FIX Phase 6: Prevent duplicate opens
+        if (this.isVisible) {
+            console.warn('[InstructionInputPopup] Already visible, ignoring duplicate show() call');
+            return;
+        }
+
         if (this.element) {
             this.close();
         }
+
+        this.isVisible = true;
 
         // Try to load last selected preset (now stored as ID, not index)
         const lastPresetId = this.getLastPresetIndex(); // method name kept for compatibility
@@ -97,6 +106,7 @@ export class InstructionInputPopup {
             this.element.remove();
             this.element = null;
         }
+        this.isVisible = false;  // FIX Phase 6: Reset visibility flag
     }
 
     /**

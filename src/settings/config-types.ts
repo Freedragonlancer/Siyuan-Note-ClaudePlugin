@@ -5,6 +5,7 @@
  */
 
 import type { ClaudeSettings } from "../claude";
+import type { FilterRule } from "../filter";
 
 /**
  * Prompt Template
@@ -40,6 +41,9 @@ export interface PromptTemplate {
 
     /** Whether to show diff comparison for this preset (for quick edit) */
     showDiff?: boolean;
+
+    /** Optional filter rules for AI response content filtering */
+    filterRules?: FilterRule[];
 }
 
 /**
@@ -121,6 +125,24 @@ export const BUILTIN_TEMPLATES: PromptTemplate[] = [
         isBuiltIn: false, // Set to false to allow user editing
         category: 'assistant',
         icon: '🤖',
-        description: '默认配置'
+        description: '默认配置',
+        filterRules: [
+            {
+                id: 'remove-think-tags',
+                name: '删除 <think> 标签',
+                pattern: '<think>.*?</think>',
+                replacement: '',
+                flags: 'gis',
+                enabled: true
+            },
+            {
+                id: 'remove-thinking-tags',
+                name: '删除 <thinking> 标签',
+                pattern: '<thinking>.*?</thinking>',
+                replacement: '',
+                flags: 'gis',
+                enabled: true
+            }
+        ]
     }
 ];

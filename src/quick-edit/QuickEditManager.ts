@@ -18,6 +18,7 @@ import { AIEditProcessor } from '@/editor/AIEditProcessor';
 import { EditHistory } from '@/editor/EditHistory';
 import { ClaudeClient } from '@/claude';
 import type { ConfigManager } from '@/settings/ConfigManager';
+import type { FilterRule } from '@/settings/config-types';
 import { ContextExtractor } from './ContextExtractor';
 import { EditorHelper } from '@/editor/EditorHelper';
 
@@ -589,8 +590,16 @@ export class QuickEditManager {
             }
 
             // 获取当前 preset 的 filterRules
-            const currentPreset = this.getLastSelectedPreset();
-            const filterRules = currentPreset?.filterRules || [];
+            let filterRules: FilterRule[] = [];
+            try {
+                const lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
+                if (lastPresetId) {
+                    const currentPreset = this.configManager.getAllTemplates().find(t => t.id === lastPresetId);
+                    filterRules = currentPreset?.filterRules || [];
+                }
+            } catch (error) {
+                console.warn('[QuickEdit] Failed to get filterRules from preset:', error);
+            }
 
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],

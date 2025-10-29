@@ -588,6 +588,10 @@ export class QuickEditManager {
                 userPrompt += '\n\n' + appendedPrompt;
             }
 
+            // 获取当前 preset 的 filterRules
+            const currentPreset = this.getLastSelectedPreset();
+            const filterRules = currentPreset?.filterRules || [];
+
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
                 // onMessage callback

@@ -57,11 +57,11 @@ export class ResponseFilter {
             }
 
             try {
-                const beforeLength = currentText.length;
+                const beforeText = currentText;  // 保存应用前的文本
                 currentText = this.applyRule(currentText, rule);
 
                 // 如果发生改变，计数器加一
-                if (currentText.length !== beforeLength || currentText !== text.substring(0, beforeLength)) {
+                if (currentText !== beforeText) {
                     appliedCount++;
                 }
             } catch (error) {
@@ -96,15 +96,9 @@ export class ResponseFilter {
 
             const regex = this.getRegex(rule.pattern, rule.flags);
 
-            // 使用超时保护
-            const startTime = Date.now();
-            const result = text.replace(regex, (...args) => {
-                // 检查超时
-                if (Date.now() - startTime > REGEX_TIMEOUT_MS) {
-                    throw new Error(`Regex timeout for pattern: ${rule.pattern}`);
-                }
-                return rule.replacement;
-            });
+            // 直接使用 replace，原生支持 $1, $2 等捕获组引用
+            // 不使用函数形式，因为函数形式会阻止捕获组替换
+            const result = text.replace(regex, rule.replacement);
 
             return result;
         } catch (error) {

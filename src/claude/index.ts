@@ -15,6 +15,24 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
 {original}
 
 重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`,
+    filterRules: [
+        {
+            id: 'remove-think-tags',
+            name: '删除 <think> 标签',
+            pattern: '<think>.*?</think>',
+            replacement: '',
+            flags: 'gis',
+            enabled: true
+        },
+        {
+            id: 'remove-thinking-tags',
+            name: '删除 <thinking> 标签',
+            pattern: '<thinking>.*?</thinking>',
+            replacement: '',
+            flags: 'gis',
+            enabled: true
+        }
+    ],
     enableRequestLogging: false,
     requestLogPath: '',
     requestLogIncludeResponse: true,

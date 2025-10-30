@@ -3,6 +3,7 @@
  */
 
 import type { EditSettings } from "../editor/types";
+import type { FilterRule } from "../filter";
 
 export interface ClaudeSettings {
     apiKey: string;
@@ -16,6 +17,9 @@ export interface ClaudeSettings {
     // Quick Edit prompt template
     // Placeholders: {instruction} - user instruction, {original} - original text
     quickEditPromptTemplate?: string;
+
+    // Response Filter Rules (global, applies to all requests)
+    filterRules?: FilterRule[];
 
     // AI Request Logging
     enableRequestLogging?: boolean;        // 是否启用AI请求日志 (默认false)

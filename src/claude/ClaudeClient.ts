@@ -12,14 +12,23 @@ export class ClaudeClient {
     private settings: ClaudeSettings;
     private logger: RequestLogger;
     private activeAbortController: AbortController | null = null;
+    private configManager: any = null; // ConfigManager reference for preset-level filterRules
 
-    constructor(settings: ClaudeSettings) {
+    constructor(settings: ClaudeSettings, configManager?: any) {
         this.settings = settings;
+        this.configManager = configManager || null;
         this.logger = new RequestLogger();
         this.configureLogger();
         if (settings.apiKey) {
             this.initializeClient();
         }
+    }
+
+    /**
+     * Update config manager reference (for lazy initialization)
+     */
+    setConfigManager(configManager: any): void {
+        this.configManager = configManager;
     }
 
     private initializeClient() {
@@ -72,6 +81,38 @@ export class ClaudeClient {
 
     getAppendedPrompt(): string {
         return this.settings.appendedPrompt || "";
+    }
+
+    /**
+     * Get filter rules with optional preset scope
+     * @param presetId Optional preset ID to include preset-specific rules
+     * @returns Merged filter rules (global first, then preset)
+     */
+    getFilterRules(presetId?: string): FilterRule[] {
+        // Always include global rules
+        const globalRules = this.settings.filterRules || [];
+
+        // If no preset ID or no config manager, return only global rules
+        if (!presetId || !this.configManager) {
+            return globalRules;
+        }
+
+        // Try to get preset-specific rules
+        try {
+            const allTemplates = this.configManager.getAllTemplates?.();
+            if (!allTemplates) return globalRules;
+
+            const preset = allTemplates.find((t: any) => t.id === presetId);
+            if (!preset) return globalRules;
+
+            const presetRules = preset.filterRules || [];
+
+            // Merge: global rules first, then preset rules
+            return [...globalRules, ...presetRules];
+        } catch (error) {
+            console.warn('[ClaudeClient] Failed to get preset filterRules:', error);
+            return globalRules;
+        }
     }
 
     /**
@@ -152,7 +193,16 @@ export class ClaudeClient {
             if (timeoutHandle) clearTimeout(timeoutHandle);
 
             // 流式传输完成后，应用过滤规则
+            // DEBUG: 诊断过滤逻辑
+            console.log('[ClaudeClient] DEBUG filterRules received:', filterRules);
+            console.log('[ClaudeClient] DEBUG filterRules length:', filterRules?.length || 0);
+            console.log('[ClaudeClient] DEBUG enabled rules:', filterRules?.filter(r => r.enabled).length || 0);
+            console.log('[ClaudeClient] DEBUG accumulatedResponse length:', accumulatedResponse.length);
+            console.log('[ClaudeClient] DEBUG accumulatedResponse preview:', accumulatedResponse.substring(0, 200));
+
             const hasFilterRules = filterRules && filterRules.length > 0 && filterRules.some(r => r.enabled);
+            console.log('[ClaudeClient] DEBUG hasFilterRules:', hasFilterRules);
+
             let finalResponse = accumulatedResponse;
             let filterResult = { changed: false, filteredText: accumulatedResponse, appliedRulesCount: 0, originalLength: accumulatedResponse.length, filteredLength: accumulatedResponse.length };
 

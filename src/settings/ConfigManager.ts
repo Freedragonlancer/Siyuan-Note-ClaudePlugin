@@ -17,7 +17,7 @@ import { BUILTIN_TEMPLATES } from "./config-types";
 
 const PROFILES_STORAGE_KEY = "claude-assistant-profiles";
 const ACTIVE_PROFILE_KEY = "claude-assistant-active-profile";
-const CONFIG_VERSION = "1.0.0";
+const CONFIG_VERSION = "1.1.0"; // v1.1.0: Added preset-level filterRules support
 
 /**
  * ConfigManager
@@ -589,10 +589,49 @@ export class ConfigManager {
                 console.log('[ConfigManager] No stored templates found');
             }
 
+            // Run migration for v1.1.0: Add filterRules field to existing templates
+            this.migrateToV1_1_0();
+
             this.templatesLoaded = true;
         } catch (error) {
             console.error('[ConfigManager] ❌ Failed to load custom templates:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Migration for v1.1.0: Add filterRules field to existing presets
+     * Ensures backward compatibility with older config versions
+     */
+    private migrateToV1_1_0(): void {
+        try {
+            let migrationCount = 0;
+
+            // Iterate through all templates and add filterRules if missing
+            this.promptTemplates.forEach((template, id) => {
+                // Skip built-in templates (they don't need migration)
+                if (template.isBuiltIn) {
+                    return;
+                }
+
+                // Add filterRules if it doesn't exist
+                if (!template.filterRules) {
+                    template.filterRules = [];
+                    this.promptTemplates.set(id, template);
+                    migrationCount++;
+                }
+            });
+
+            // Save migrated templates to storage if any were updated
+            if (migrationCount > 0) {
+                this.saveTemplates();
+                console.log(`[ConfigManager] ✅ Migrated ${migrationCount} template(s) to v1.1.0 (added filterRules)`);
+            } else {
+                console.log('[ConfigManager] No templates needed migration to v1.1.0');
+            }
+        } catch (error) {
+            console.error('[ConfigManager] ❌ Migration to v1.1.0 failed:', error);
+            // Don't throw - migration failure shouldn't block template loading
         }
     }
 

@@ -42,7 +42,7 @@ export interface PromptTemplate {
     /** Whether to show diff comparison for this preset (for quick edit) */
     showDiff?: boolean;
 
-    /** Optional filter rules for AI response content filtering */
+    /** Optional preset-specific filter rules (applied after global rules) */
     filterRules?: FilterRule[];
 }
 
@@ -122,27 +122,10 @@ export const BUILTIN_TEMPLATES: PromptTemplate[] = [
         name: 'Default',
         systemPrompt: 'You are a helpful AI assistant integrated into SiYuan Note. Help users with their notes, writing, and questions.',
         appendedPrompt: '请用清晰的 Markdown 格式回复，确保回答准确、简洁、易于理解。',
-        isBuiltIn: false, // Set to false to allow user editing
+        isBuiltIn: true, // Prevent overwriting by saved templates
         category: 'assistant',
         icon: '🤖',
         description: '默认配置',
-        filterRules: [
-            {
-                id: 'remove-think-tags',
-                name: '删除 <think> 标签',
-                pattern: '<think>.*?</think>',
-                replacement: '',
-                flags: 'gis',
-                enabled: true
-            },
-            {
-                id: 'remove-thinking-tags',
-                name: '删除 <thinking> 标签',
-                pattern: '<thinking>.*?</thinking>',
-                replacement: '',
-                flags: 'gis',
-                enabled: true
-            }
-        ]
+        editInstruction: '优化和改进文本' // Default instruction for Quick Edit
     }
 ];

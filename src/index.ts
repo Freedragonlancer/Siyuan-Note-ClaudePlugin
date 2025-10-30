@@ -111,8 +111,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
             settings = this.configManager.getActiveProfile().settings;
         }
 
-        // Initialize Claude client
-        this.claudeClient = new ClaudeClient(settings);
+        // Initialize Claude client with ConfigManager for preset-level filterRules
+        this.claudeClient = new ClaudeClient(settings, this.configManager);
         console.log("[Plugin] ClaudeClient initialized");
 
         // Initialize AI Text Editing feature

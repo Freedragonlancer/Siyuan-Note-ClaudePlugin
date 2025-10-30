@@ -54,7 +54,9 @@ export class InstructionInputPopup {
                 instructionToUse = preset.editInstruction;
                 presetIdToUse = lastPresetId;
             } else {
-                console.warn(`[InstructionInputPopup] Last preset ID ${lastPresetId} not found or has no editInstruction`);
+                console.warn(`[InstructionInputPopup] Preset ${lastPresetId} not found, clearing saved preset`);
+                // Clean up invalid preset ID
+                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
             }
         }
 
@@ -354,9 +356,14 @@ export class InstructionInputPopup {
 
         presetSelect?.addEventListener('change', (e) => {
             const value = (e.target as HTMLSelectElement).value;
-            // Save the selected preset immediately
-            this.savePresetIndex(value);
-            if (value !== 'custom') {
+
+            if (value === 'custom') {
+                // "custom" means user will enter custom instruction, clear saved preset
+                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
+            } else {
+                // Save the selected preset ID
+                this.savePresetIndex(value);
+
                 // Find preset by ID and fill editInstruction to input
                 const preset = this.presets.find(p => p.id === value);
                 if (preset && preset.editInstruction) {
@@ -446,8 +453,11 @@ export class InstructionInputPopup {
             // Save the currently selected preset index before closing
             if (this.element) {
                 const presetSelect = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
-                if (presetSelect) {
+                if (presetSelect && presetSelect.value !== 'custom') {
                     this.savePresetIndex(presetSelect.value);
+                } else {
+                    // Clear saved preset if "custom" is selected
+                    localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
                 }
             }
 

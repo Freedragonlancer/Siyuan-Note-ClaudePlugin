@@ -589,17 +589,18 @@ export class QuickEditManager {
                 userPrompt += '\n\n' + appendedPrompt;
             }
 
-            // 获取当前 preset 的 filterRules
-            let filterRules: FilterRule[] = [];
-            try {
-                const lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
-                if (lastPresetId) {
-                    const currentPreset = this.configManager.getAllTemplates().find(t => t.id === lastPresetId);
-                    filterRules = currentPreset?.filterRules || [];
-                }
-            } catch (error) {
-                console.warn('[QuickEdit] Failed to get filterRules from preset:', error);
-            }
+            // 获取当前预设 ID，用于获取预设级别的 filterRules
+            const currentPresetId = this.getCurrentPresetId();
+
+            // 获取 filterRules（全局 + 预设）
+            const filterRules: FilterRule[] = this.claudeClient.getFilterRules(currentPresetId) || [];
+
+            // DEBUG: 诊断过滤规则加载
+            console.log('[QuickEdit] DEBUG filterRules:', JSON.stringify(filterRules, null, 2));
+            console.log('[QuickEdit] DEBUG filterRules source:', currentPresetId
+                ? `Global + Preset (${currentPresetId})`
+                : 'Global only');
+            console.log('[QuickEdit] DEBUG preset ID:', currentPresetId);
 
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
@@ -1879,5 +1880,27 @@ export class QuickEditManager {
         }
         this.observedContainers.clear();
 
+    }
+
+    /**
+     * Get currently active preset ID from localStorage
+     * Used to fetch preset-level filterRules
+     */
+    private getCurrentPresetId(): string | undefined {
+        try {
+            const lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
+            if (!lastPresetId || lastPresetId === 'custom') {
+                return undefined;
+            }
+
+            // Verify preset exists in ConfigManager
+            const allTemplates = this.configManager.getAllTemplates();
+            const preset = allTemplates.find((t: any) => t.id === lastPresetId);
+
+            return preset ? lastPresetId : undefined;
+        } catch (error) {
+            console.warn('[QuickEdit] Failed to get current preset ID:', error);
+            return undefined;
+        }
     }
 }

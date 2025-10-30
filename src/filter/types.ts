@@ -46,6 +46,25 @@ export interface FilterResult {
 }
 
 /**
+ * 过滤规则作用域类型
+ */
+export type FilterRuleScope = 'global' | 'preset';
+
+/**
+ * 带作用域信息的过滤规则（用于 UI 显示）
+ */
+export interface FilterRuleWithScope extends FilterRule {
+    /** 规则作用域 */
+    scope: FilterRuleScope;
+
+    /** 预设 ID（仅当 scope === 'preset' 时） */
+    presetId?: string;
+
+    /** 预设名称（用于 UI 显示） */
+    presetName?: string;
+}
+
+/**
  * 内置过滤规则模板
  */
 export const BUILTIN_FILTER_TEMPLATES: FilterRule[] = [

@@ -53,15 +53,27 @@ export class ResponseFilter {
         // 按顺序应用所有启用的规则
         for (const rule of rules) {
             if (!rule.enabled) {
+                console.log(`[ResponseFilter] DEBUG skipping disabled rule: ${rule.name}`);
                 continue;
             }
 
             try {
+                // DEBUG: 诊断规则应用
+                console.log(`[ResponseFilter] DEBUG applying rule: ${rule.name}`);
+                console.log(`[ResponseFilter] DEBUG   pattern: ${rule.pattern}`);
+                console.log(`[ResponseFilter] DEBUG   flags: ${rule.flags}`);
+                console.log(`[ResponseFilter] DEBUG   replacement: ${rule.replacement}`);
+                console.log(`[ResponseFilter] DEBUG   text length: ${currentText.length}`);
+                console.log(`[ResponseFilter] DEBUG   text preview: ${currentText.substring(0, 100)}`);
+
                 const beforeText = currentText;  // 保存应用前的文本
                 currentText = this.applyRule(currentText, rule);
 
                 // 如果发生改变，计数器加一
-                if (currentText !== beforeText) {
+                const changed = currentText !== beforeText;
+                console.log(`[ResponseFilter] DEBUG   changed: ${changed}`);
+                if (changed) {
+                    console.log(`[ResponseFilter] DEBUG   length: ${beforeText.length} → ${currentText.length}`);
                     appliedCount++;
                 }
             } catch (error) {

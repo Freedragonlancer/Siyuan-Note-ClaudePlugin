@@ -15,6 +15,7 @@ import type { ConfigManager } from "./ConfigManager";
 import type { PromptTemplate } from "./config-types";
 import type { ClaudeSettings } from "../claude";
 import { BUILTIN_FILTER_TEMPLATES } from "../filter/types";
+import { responseFilter } from "../filter";
 
 type TabType = "templates" | "system" | "appended" | "quickEditPrompt" | "responseFilters";
 
@@ -25,6 +26,10 @@ export class PromptEditorPanel {
     private onSave: (settings: Partial<ClaudeSettings>) => void;
     private activeTab: TabType = "templates";
     private customTemplates: PromptTemplate[] = [];
+
+    // Dual-scope filterRules UI state
+    private filterRulesView: 'global' | 'preset' = 'global';
+    private selectedPresetForFilters: string | null = null;
 
     constructor(
         configManager: ConfigManager,
@@ -528,19 +533,64 @@ export class PromptEditorPanel {
     //#region Tab 5: Response Filters
 
     private createResponseFiltersTab(): string {
-        // Get active preset by matching current settings
-        const allPresets = this.configManager.getAllTemplates();
-        const activePreset = allPresets.find(p => this.isActivePreset(p));
-        const filterRules = activePreset?.filterRules || [];
+        const view = this.filterRulesView;
+
+        // Get rules based on current view
+        let displayRules: any[] = [];
+        let presetName = '';
+
+        if (view === 'global') {
+            displayRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset view
+            if (!this.selectedPresetForFilters) {
+                // Auto-select first preset with editInstruction
+                const allPresets = this.configManager.getAllTemplates();
+                const firstPreset = allPresets.find(p => p.editInstruction);
+                this.selectedPresetForFilters = firstPreset?.id || (allPresets[0]?.id || null);
+            }
+
+            if (this.selectedPresetForFilters) {
+                const preset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+                if (preset) {
+                    displayRules = preset.filterRules || [];
+                    presetName = preset.name;
+                }
+            }
+        }
 
         return `
             <div class="response-filters-tab" style="padding: 16px;">
+                <!-- Scope Toggle Tabs -->
                 <div style="margin-bottom: 16px;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 500;">🔧 AI响应过滤规则</h3>
-                    <div class="ft__smaller ft__secondary">
-                        使用正则表达式过滤AI响应内容。规则按顺序应用于完整响应文本。
+                    <div style="display: flex; gap: 8px; border-bottom: 2px solid var(--b3-border-color); padding-bottom: 8px;">
+                        <button class="b3-button ${view === 'global' ? 'b3-button--text' : 'b3-button--cancel'}"
+                                data-scope="global"
+                                style="flex: 1; ${view === 'global' ? 'border-bottom: 3px solid var(--b3-theme-primary);' : ''}">
+                            🌐 全局规则
+                        </button>
+                        <button class="b3-button ${view === 'preset' ? 'b3-button--text' : 'b3-button--cancel'}"
+                                data-scope="preset"
+                                style="flex: 1; ${view === 'preset' ? 'border-bottom: 3px solid var(--b3-theme-primary);' : ''}">
+                            🎨 预设规则
+                        </button>
                     </div>
                 </div>
+
+                <!-- Scope Info Box -->
+                <div style="margin-bottom: 16px; padding: 12px; background: var(--b3-theme-info-light); border-left: 4px solid var(--b3-theme-primary); border-radius: 4px;">
+                    ${view === 'global'
+                        ? `<div class="ft__smaller">
+                            ℹ️ <strong>全局规则</strong>会应用于所有AI请求（Chat、Quick Edit等），无论使用哪个预设。
+                           </div>`
+                        : `<div class="ft__smaller">
+                            ℹ️ <strong>预设规则</strong>仅在预设"<strong>${this.escapeHtml(presetName)}</strong>"激活时生效。<br>
+                            📋 <strong>应用顺序</strong>: 全局规则 → 预设规则 → 最终输出
+                           </div>`
+                    }
+                </div>
+
+                ${view === 'preset' ? this.createPresetSelector() : ''}
 
                 <!-- Built-in Templates -->
                 <div style="margin-bottom: 16px; padding: 12px; background: var(--b3-theme-surface-lighter); border-radius: 4px;">
@@ -561,7 +611,7 @@ export class PromptEditorPanel {
                 <!-- Current Rules List -->
                 <div style="margin-bottom: 16px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <div style="font-weight: 500;">当前规则列表 (${filterRules.length})</div>
+                        <div style="font-weight: 500;">当前规则列表 (${displayRules.length})</div>
                         <button class="b3-button b3-button--outline" id="add-filter-rule">
                             <svg><use xlink:href="#iconAdd"></use></svg>
                             <span style="margin-left: 4px;">添加规则</span>
@@ -569,9 +619,11 @@ export class PromptEditorPanel {
                     </div>
 
                     <div id="filter-rules-list" style="display: flex; flex-direction: column; gap: 8px;">
-                        ${filterRules.length > 0
-                            ? filterRules.map((rule, index) => this.createFilterRuleCard(rule, index)).join('')
-                            : '<div class="ft__secondary" style="padding: 32px; text-align: center; border: 1px dashed var(--b3-border-color); border-radius: 4px;">暂无过滤规则<br><br>使用上方模板或添加自定义规则</div>'
+                        ${displayRules.length > 0
+                            ? displayRules.map((rule, index) => this.createFilterRuleCard(rule, index, view)).join('')
+                            : `<div class="ft__secondary" style="padding: 32px; text-align: center; border: 1px dashed var(--b3-border-color); border-radius: 4px;">
+                                暂无${view === 'global' ? '全局' : '预设'}过滤规则<br><br>使用上方模板或添加自定义规则
+                               </div>`
                         }
                     </div>
                 </div>
@@ -583,6 +635,7 @@ export class PromptEditorPanel {
                         <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
                             <li>使用正则表达式匹配需要过滤的内容模式</li>
                             <li>多条规则按从上到下的顺序依次应用</li>
+                            <li>全局规则先执行，然后是预设规则</li>
                             <li>可以禁用规则而不删除，方便调试</li>
                             <li>使用测试面板验证规则效果</li>
                         </ul>
@@ -592,10 +645,37 @@ export class PromptEditorPanel {
         `;
     }
 
-    private createFilterRuleCard(rule: any, index: number): string {
-        const patternPreview = rule.pattern.length > 50 
-            ? rule.pattern.substring(0, 50) + '...' 
+    private createPresetSelector(): string {
+        const allPresets = this.configManager.getAllTemplates();
+        const selectedId = this.selectedPresetForFilters || allPresets[0]?.id;
+
+        if (allPresets.length === 0) {
+            return `<div class="ft__secondary" style="padding: 12px; text-align: center;">暂无预设，请先创建预设</div>`;
+        }
+
+        return `
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">当前预设:</label>
+                <select id="preset-filter-selector" class="b3-select" style="width: 100%;">
+                    ${allPresets.map(p => `
+                        <option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>
+                            ${this.escapeHtml(p.name)} ${p.editInstruction ? '✏️' : ''}
+                        </option>
+                    `).join('')}
+                </select>
+            </div>
+        `;
+    }
+
+    private createFilterRuleCard(rule: any, index: number, scope: 'global' | 'preset'): string {
+        const patternPreview = rule.pattern.length > 50
+            ? rule.pattern.substring(0, 50) + '...'
             : rule.pattern;
+
+        // Scope badge
+        const scopeBadge = scope === 'global'
+            ? '<span class="b3-chip" style="font-size: 11px; background: var(--b3-theme-primary-light); color: var(--b3-theme-primary);">🌐 Global</span>'
+            : '<span class="b3-chip" style="font-size: 11px; background: var(--b3-theme-success-light); color: var(--b3-theme-success);">🎨 Preset</span>';
 
         return `
             <div class="filter-rule-card" data-rule-index="${index}" style="
@@ -609,15 +689,16 @@ export class PromptEditorPanel {
                     <div style="flex: 1;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <label style="display: inline-flex; align-items: center; cursor: pointer;">
-                                <input 
-                                    type="checkbox" 
-                                    class="filter-rule-toggle" 
+                                <input
+                                    type="checkbox"
+                                    class="filter-rule-toggle"
                                     data-rule-index="${index}"
                                     ${rule.enabled ? 'checked' : ''}
                                     style="margin-right: 6px; cursor: pointer;"
                                 >
                                 <span style="font-weight: 500; font-size: 14px;">${this.escapeHtml(rule.name)}</span>
                             </label>
+                            ${scopeBadge}
                             ${rule.flags ? `<span class="b3-chip" style="font-size: 11px; background: var(--b3-theme-surface-light);">/${rule.flags}</span>` : ''}
                         </div>
                         <div class="ft__smaller" style="color: var(--b3-theme-on-surface-light); margin-bottom: 4px; font-family: 'Consolas', monospace;">
@@ -878,13 +959,33 @@ export class PromptEditorPanel {
     }
 
     private attachResponseFiltersListeners(container: HTMLElement): void {
-        // Add new filter rule
+        // Tab toggle buttons (Global/Preset scope)
+        container.querySelectorAll('[data-scope]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const scope = (e.currentTarget as HTMLElement).dataset.scope as 'global' | 'preset';
+                if (scope !== this.filterRulesView) {
+                    this.filterRulesView = scope;
+                    this.switchTab('responseFilters'); // Re-render tab with new scope
+                }
+            });
+        });
+
+        // Preset selector (only visible in preset view)
+        const presetSelector = container.querySelector('#preset-filter-selector');
+        if (presetSelector) {
+            presetSelector.addEventListener('change', (e) => {
+                this.selectedPresetForFilters = (e.target as HTMLSelectElement).value;
+                this.switchTab('responseFilters'); // Re-render with new preset
+            });
+        }
+
+        // Add new filter rule (scope-aware)
         const addBtn = container.querySelector('#add-filter-rule');
         if (addBtn) {
             addBtn.addEventListener('click', () => this.showFilterRuleDialog());
         }
 
-        // Add from template
+        // Add from template (scope-aware)
         container.querySelectorAll('.filter-template-add').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const templateId = (e.currentTarget as HTMLElement).dataset.templateId;
@@ -892,7 +993,7 @@ export class PromptEditorPanel {
             });
         });
 
-        // Toggle rule enabled/disabled
+        // Toggle rule enabled/disabled (scope-aware)
         container.querySelectorAll('.filter-rule-toggle').forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
                 const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
@@ -900,7 +1001,7 @@ export class PromptEditorPanel {
             });
         });
 
-        // Edit rule
+        // Edit rule (scope-aware)
         container.querySelectorAll('.filter-rule-edit').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
@@ -908,7 +1009,7 @@ export class PromptEditorPanel {
             });
         });
 
-        // Test rule
+        // Test rule (scope-aware)
         container.querySelectorAll('.filter-rule-test').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
@@ -916,7 +1017,7 @@ export class PromptEditorPanel {
             });
         });
 
-        // Delete rule
+        // Delete rule (scope-aware)
         container.querySelectorAll('.filter-rule-delete').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const index = parseInt((e.currentTarget as HTMLElement).dataset.ruleIndex || '0');
@@ -1773,13 +1874,27 @@ export class PromptEditorPanel {
      * Show dialog to create or edit a filter rule
      */
     private showFilterRuleDialog(ruleIndex?: number): void {
-        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
-        if (!activePreset) {
-            showMessage("❌ 请先选择一个预设", 2000, "error");
-            return;
+        // Get filter rules based on current scope
+        const scope = this.filterRulesView;
+        let filterRules: any[] = [];
+        let targetPreset: any = null;
+
+        if (scope === 'global') {
+            filterRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset scope
+            if (!this.selectedPresetForFilters) {
+                showMessage("❌ 请先选择预设", 2000, "error");
+                return;
+            }
+            targetPreset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+            if (!targetPreset) {
+                showMessage("❌ 预设不存在", 2000, "error");
+                return;
+            }
+            filterRules = targetPreset.filterRules || [];
         }
 
-        const filterRules = activePreset.filterRules || [];
         const isEdit = ruleIndex !== undefined;
         const rule = isEdit ? filterRules[ruleIndex] : null;
 
@@ -1919,7 +2034,7 @@ export class PromptEditorPanel {
             if (flagM?.checked) flags += 'm';
 
             // Validate regex (including ReDoS protection)
-            const validation = this.responseFilter.validatePattern(pattern, flags);
+            const validation = responseFilter.validatePattern(pattern, flags);
             if (!validation.valid) {
                 showMessage(`❌ ${validation.error}`, 3000, "error");
                 return;
@@ -1934,8 +2049,8 @@ export class PromptEditorPanel {
                 enabled
             };
 
-            // Get or initialize filterRules
-            const updatedFilterRules = [...(activePreset.filterRules || [])];
+            // Update rules in the correct scope
+            const updatedFilterRules = [...filterRules];
 
             if (isEdit) {
                 updatedFilterRules[ruleIndex!] = newRule;
@@ -1943,20 +2058,18 @@ export class PromptEditorPanel {
                 updatedFilterRules.push(newRule);
             }
 
-            // Update preset
-            const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
-            this.configManager.saveTemplate(updatedPreset);
-
-            // Also update current settings if this is the active preset
-            if (this.isActivePreset(activePreset)) {
-                // Force reload by re-applying the preset
-                this.onSave({
-                    systemPrompt: updatedPreset.systemPrompt,
-                    appendedPrompt: updatedPreset.appendedPrompt
-                });
+            // Save to correct scope
+            if (scope === 'global') {
+                // Update global settings
+                this.currentSettings.filterRules = updatedFilterRules;
+                this.onSave({ filterRules: updatedFilterRules });
+            } else {
+                // Update preset filterRules
+                targetPreset.filterRules = updatedFilterRules;
+                this.configManager.updateTemplate(targetPreset.id, targetPreset);
             }
 
-            showMessage(`✅ 规则已${isEdit ? '更新' : '添加'}`, 2000, "info");
+            showMessage(`✅ 规则已${isEdit ? '更新' : '添加'} (${scope === 'global' ? '全局' : '预设'})`, 2000, "info");
             dialog.destroy();
 
             // Refresh response filters tab
@@ -1969,15 +2082,9 @@ export class PromptEditorPanel {
     }
 
     /**
-     * Add a filter rule from built-in template
+     * Add a filter rule from built-in template (scope-aware)
      */
     private addFilterRuleFromTemplate(templateId: string): void {
-        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
-        if (!activePreset) {
-            showMessage("❌ 请先选择一个预设", 2000, "error");
-            return;
-        }
-
         const template = BUILTIN_FILTER_TEMPLATES.find(t => t.id === templateId);
 
         if (!template) {
@@ -1985,8 +2092,28 @@ export class PromptEditorPanel {
             return;
         }
 
+        // Get filter rules based on current scope
+        const scope = this.filterRulesView;
+        let filterRules: any[] = [];
+        let targetPreset: any = null;
+
+        if (scope === 'global') {
+            filterRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset scope
+            if (!this.selectedPresetForFilters) {
+                showMessage("❌ 请先选择预设", 2000, "error");
+                return;
+            }
+            targetPreset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+            if (!targetPreset) {
+                showMessage("❌ 预设不存在", 2000, "error");
+                return;
+            }
+            filterRules = targetPreset.filterRules || [];
+        }
+
         // Check if rule already exists
-        const filterRules = activePreset.filterRules || [];
         const exists = filterRules.some(r => r.pattern === template.pattern);
 
         if (exists) {
@@ -2001,41 +2128,76 @@ export class PromptEditorPanel {
         };
 
         const updatedFilterRules = [...filterRules, newRule];
-        const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
-        this.configManager.saveTemplate(updatedPreset);
 
-        showMessage(`✅ 已添加规则: ${template.name}`, 2000, "info");
+        // Save to correct scope
+        if (scope === 'global') {
+            this.currentSettings.filterRules = updatedFilterRules;
+            this.onSave({ filterRules: updatedFilterRules });
+        } else {
+            targetPreset.filterRules = updatedFilterRules;
+            this.configManager.updateTemplate(targetPreset.id, targetPreset);
+        }
+
+        showMessage(`✅ 已添加规则: ${template.name} (${scope === 'global' ? '全局' : '预设'})`, 2000, "info");
 
         // Refresh response filters tab
         this.switchTab('responseFilters');
     }
 
     /**
-     * Toggle a filter rule on/off
+     * Toggle a filter rule on/off (scope-aware)
      */
     private toggleFilterRule(index: number, enabled: boolean): void {
-        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
-        if (!activePreset) return;
+        // Get filter rules based on current scope
+        const scope = this.filterRulesView;
+        let filterRules: any[] = [];
+        let targetPreset: any = null;
 
-        const filterRules = activePreset.filterRules || [];
+        if (scope === 'global') {
+            filterRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset scope
+            if (!this.selectedPresetForFilters) return;
+            targetPreset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+            if (!targetPreset) return;
+            filterRules = targetPreset.filterRules || [];
+        }
+
         if (index < 0 || index >= filterRules.length) return;
 
         filterRules[index].enabled = enabled;
 
-        const updatedPreset = { ...activePreset, filterRules };
-        this.configManager.saveTemplate(updatedPreset);
+        // Save to correct scope
+        if (scope === 'global') {
+            this.currentSettings.filterRules = filterRules;
+            this.onSave({ filterRules });
+        } else {
+            targetPreset.filterRules = filterRules;
+            this.configManager.updateTemplate(targetPreset.id, targetPreset);
+        }
 
-        console.log(`[PromptEditor] Filter rule ${index} ${enabled ? 'enabled' : 'disabled'}`);
+        console.log(`[PromptEditor] Filter rule ${index} ${enabled ? 'enabled' : 'disabled'} (${scope})`);
     }
 
     /**
-     * Delete a filter rule
+     * Delete a filter rule (scope-aware)
      */
     private deleteFilterRule(index: number): void {
-        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
-        if (!activePreset) return;
+        // Get filter rules based on current scope
+        const scope = this.filterRulesView;
+        let filterRules: any[] = [];
+        let targetPreset: any = null;
 
-        const filterRules = activePreset.filterRules || [];
+        if (scope === 'global') {
+            filterRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset scope
+            if (!this.selectedPresetForFilters) return;
+            targetPreset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+            if (!targetPreset) return;
+            filterRules = targetPreset.filterRules || [];
+        }
+
         if (index < 0 || index >= filterRules.length) return;
 
         const rule = filterRules[index];
@@ -2045,10 +2207,17 @@ export class PromptEditorPanel {
             `确定要删除规则"${rule.name}"吗？`,
             () => {
                 const updatedFilterRules = filterRules.filter((_, i) => i !== index);
-                const updatedPreset = { ...activePreset, filterRules: updatedFilterRules };
-                this.configManager.saveTemplate(updatedPreset);
 
-                showMessage("✅ 规则已删除", 2000, "info");
+                // Save to correct scope
+                if (scope === 'global') {
+                    this.currentSettings.filterRules = updatedFilterRules;
+                    this.onSave({ filterRules: updatedFilterRules });
+                } else {
+                    targetPreset.filterRules = updatedFilterRules;
+                    this.configManager.updateTemplate(targetPreset.id, targetPreset);
+                }
+
+                showMessage(`✅ 规则已删除 (${scope === 'global' ? '全局' : '预设'})`, 2000, "info");
 
                 // Refresh response filters tab
                 this.switchTab('responseFilters');
@@ -2057,13 +2226,23 @@ export class PromptEditorPanel {
     }
 
     /**
-     * Show test dialog for a filter rule
+     * Show test dialog for a filter rule (scope-aware)
      */
     private showFilterRuleTest(index: number): void {
-        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
-        if (!activePreset) return;
+        // Get filter rules based on current scope
+        const scope = this.filterRulesView;
+        let filterRules: any[] = [];
 
-        const filterRules = activePreset.filterRules || [];
+        if (scope === 'global') {
+            filterRules = this.currentSettings.filterRules || [];
+        } else {
+            // Preset scope
+            if (!this.selectedPresetForFilters) return;
+            const targetPreset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+            if (!targetPreset) return;
+            filterRules = targetPreset.filterRules || [];
+        }
+
         if (index < 0 || index >= filterRules.length) return;
 
         const rule = filterRules[index];

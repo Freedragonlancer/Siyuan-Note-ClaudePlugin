@@ -135,10 +135,8 @@ if (appendedPrompt) {
 
 **Step 3: Get FilterRules**
 ```typescript
-// Retrieve from current preset (stored in localStorage)
-const lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
-const currentPreset = configManager.getAllTemplates().find(t => t.id === lastPresetId);
-const filterRules = currentPreset?.filterRules || [];
+// Get global filterRules from ClaudeSettings (always applied, not preset-dependent)
+const filterRules = claudeClient.getFilterRules() || [];
 ```
 
 **Step 4: Send Request with Streaming**
@@ -201,20 +199,55 @@ Implementation: `ContextExtractor.ts` parses placeholders → fetches content fr
 **FilterRule Structure**:
 ```typescript
 interface FilterRule {
-    name: string;
-    enabled: boolean;
+    id: string;             // Unique identifier
+    name: string;           // Display name
+    enabled: boolean;       // Whether rule is active
     pattern: string;        // Regex or keyword
     replacement: string;    // Replacement text
-    useRegex: boolean;      // true for regex, false for keyword
     flags?: string;         // Regex flags (g, i, m, s)
 }
 ```
+
+**Global Configuration** (ClaudeSettings):
+- `filterRules` is stored in `ClaudeSettings`, **not** in individual presets
+- Applied to **all** AI requests (Chat, Quick Edit, etc.)
+- Configured via Settings UI → Response Filters tab
+- Default rules: Remove `<think>` and `<thinking>` tags
 
 **Filter Application** (ResponseFilter.ts):
 1. Check if response matches any enabled rule's pattern
 2. If match found: apply replacement, return filtered content with `wasFiltered: true`
 3. ClaudeClient sends `[FILTERED_REPLACE]` marker + filtered content
 4. QuickEditManager replaces entire preview with filtered version
+
+**Critical Bug Fixes (2025-10-30)**:
+
+**Bug 1: Capture Group Replacement Failure**
+- **Problem**: Replace function format blocked `$1`, `$2` capture group references
+  ```typescript
+  // ❌ BAD: Returns literal "$1" string
+  text.replace(regex, () => rule.replacement)
+  ```
+- **Solution**: Use direct string replacement for native `$1` support
+  ```typescript
+  // ✅ GOOD: Captures groups work correctly
+  text.replace(regex, rule.replacement)
+  ```
+- **Impact**: All rules using capture groups (e.g., remove code blocks but keep content) now work
+
+**Bug 2: Change Detection Logic Error**
+- **Problem**: Compared against original text instead of previous iteration
+  ```typescript
+  // ❌ BAD: Wrong comparison
+  if (currentText !== text.substring(0, beforeLength))
+  ```
+- **Solution**: Compare before/after each rule application
+  ```typescript
+  // ✅ GOOD: Correct change detection
+  const beforeText = currentText;
+  currentText = applyRule(currentText, rule);
+  if (currentText !== beforeText) appliedCount++;
+  ```
 
 ## Critical Performance Fixes
 

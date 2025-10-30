@@ -1,0 +1,240 @@
+name: Version & Commit Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+    name: Validate Conventional Commits
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Commit Messages
+        run: |
+          echo "## 📝 Commit Message Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get all commits in this PR
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          COMMITS=$(git log --pretty=format:"%H %s" $BASE_SHA..$HEAD_SHA)
+
+          if [ -z "$COMMITS" ]; then
+            echo "⚠️ No commits found in this PR"
+            exit 0
+          fi
+
+          # Conventional Commits pattern
+          VALID_PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+$'
+
+          INVALID_COMMITS=()
+          VALID_COMMITS=()
+
+          while IFS= read -r commit; do
+            HASH=$(echo "$commit" | cut -d' ' -f1)
+            MESSAGE=$(echo "$commit" | cut -d' ' -f2-)
+
+            if [[ "$MESSAGE" =~ $VALID_PATTERN ]]; then
+              VALID_COMMITS+=("✅ \`${HASH:0:7}\` $MESSAGE")
+            else
+              INVALID_COMMITS+=("❌ \`${HASH:0:7}\` $MESSAGE")
+            fi
+          done <<< "$COMMITS"
+
+          # Display results
+          if [ ${#VALID_COMMITS[@]} -gt 0 ]; then
+            echo "### ✅ Valid Commits (${#VALID_COMMITS[@]})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            for commit in "${VALID_COMMITS[@]}"; do
+              echo "$commit" >> $GITHUB_STEP_SUMMARY
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ ${#INVALID_COMMITS[@]} -gt 0 ]; then
+            echo "### ❌ Invalid Commits (${#INVALID_COMMITS[@]})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            for commit in "${INVALID_COMMITS[@]}"; do
+              echo "$commit" >> $GITHUB_STEP_SUMMARY
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**❗ Action Required**: Please fix commit messages to follow [Conventional Commits](https://www.conventionalcommits.org/)." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Format**: \`<type>[optional scope]: <description>\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Valid types**: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Examples**:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`feat: add support for Claude 3.5 Sonnet\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`fix(quick-edit): resolve streaming timeout\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`docs: update installation instructions\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "See [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/RELEASE.md#conventional-commits) for details." >> $GITHUB_STEP_SUMMARY
+
+            exit 1
+          fi
+
+          echo "### 🎉 All Commits Valid!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All ${#VALID_COMMITS[@]} commit(s) follow Conventional Commits format." >> $GITHUB_STEP_SUMMARY
+
+  check-version:
+    runs-on: ubuntu-latest
+    name: Validate Version Consistency
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Check Version Consistency
+        run: |
+          echo "## 🔢 Version Consistency Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./plugin.json').version")
+
+          echo "| File | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| package.json | \`$PACKAGE_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| plugin.json | \`$PLUGIN_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$PACKAGE_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "### ❌ Version Mismatch Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**package.json** and **plugin.json** have different versions." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Action Required**: Update both files to the same version before merging." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Use \`npm run bump-version -- <major|minor|patch>\` to update both files consistently." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Validate semantic versioning format
+          if [[ ! "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "### ⚠️ Invalid Version Format" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Version \`$PACKAGE_VERSION\` does not follow Semantic Versioning (MAJOR.MINOR.PATCH)." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "### ✅ Version Consistency Valid" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Both files have matching version: **\`$PACKAGE_VERSION\`**" >> $GITHUB_STEP_SUMMARY
+
+  build-test:
+    runs-on: ubuntu-latest
+    name: Build Verification
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Plugin
+        run: npm run build
+
+      - name: Verify Build Output
+        run: |
+          echo "## 🏗️ Build Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          REQUIRED_FILES=("dist/index.js" "dist/index.css" "dist/plugin.json" "dist/icon.png")
+          MISSING_FILES=()
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              SIZE=$(du -h "$file" | cut -f1)
+              echo "- ✅ \`$file\` ($SIZE)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ❌ \`$file\` (missing)" >> $GITHUB_STEP_SUMMARY
+              MISSING_FILES+=("$file")
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ ${#MISSING_FILES[@]} -gt 0 ]; then
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Missing files**: ${MISSING_FILES[*]}" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All required files generated successfully." >> $GITHUB_STEP_SUMMARY
+
+  summary:
+    runs-on: ubuntu-latest
+    name: PR Summary
+    needs: [check-commits, check-version, build-test]
+    if: always()
+
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🎯 Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          COMMITS_STATUS="${{ needs.check-commits.result }}"
+          VERSION_STATUS="${{ needs.check-version.result }}"
+          BUILD_STATUS="${{ needs.build-test.result }}"
+
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$COMMITS_STATUS" = "success" ]; then
+            echo "| Conventional Commits | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Conventional Commits | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$VERSION_STATUS" = "success" ]; then
+            echo "| Version Consistency | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Version Consistency | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$BUILD_STATUS" = "success" ]; then
+            echo "| Build Verification | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Build Verification | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$COMMITS_STATUS" = "success" ] && [ "$VERSION_STATUS" = "success" ] && [ "$BUILD_STATUS" = "success" ]; then
+            echo "### 🎉 All Checks Passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This PR is ready for review and merge." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Some Checks Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the failed checks above and make necessary fixes." >> $GITHUB_STEP_SUMMARY
+          fi

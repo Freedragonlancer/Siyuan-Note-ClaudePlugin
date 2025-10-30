@@ -31,7 +31,14 @@
     "deploy": "npm run build && npm run copy-plugin",
     "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\"",
     "make-link": "node scripts/make_dev_link.cjs",
-    "make-link-win": "node scripts/make_dev_link.cjs"
+    "make-link-win": "node scripts/make_dev_link.cjs",
+    "bump-version": "node scripts/bump-version.js",
+    "release": "npm run bump-version && git add package.json plugin.json && git commit -m \"chore: bump version to $(node -p \\\"require('./package.json').version\\\")\" && git tag v$(node -p \"require('./package.json').version\") && git push origin main --tags",
+    "release:major": "npm run bump-version major && npm run release:commit-and-tag",
+    "release:minor": "npm run bump-version minor && npm run release:commit-and-tag",
+    "release:patch": "npm run bump-version patch && npm run release:commit-and-tag",
+    "release:commit-and-tag": "git add package.json plugin.json && git commit -m \"chore: bump version to $(node -p \\\"require('./package.json').version\\\")\" && git tag v$(node -p \"require('./package.json').version\") && git push origin main --tags",
+    "version:check": "node -p \"'package.json: ' + require('./package.json').version\" && node -p \"'plugin.json: ' + require('./plugin.json').version\""
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.0.1",

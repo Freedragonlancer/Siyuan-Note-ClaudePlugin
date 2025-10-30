@@ -23,6 +23,56 @@ npm run copy-plugin        # Copy to N:/Siyuan-Note/data/plugins/
 **Build Output**: `dist/` → `index.js`, `index.css`, `plugin.json`, `icon.png`, i18n files
 **Format**: CommonJS (required by SiYuan), externals: `siyuan`, `process`
 
+## Release & Versioning
+
+**Complete guide**: See [RELEASE.md](RELEASE.md) for comprehensive release documentation
+
+**Quick Release** (automated):
+```bash
+npm run release  # Auto-bumps version based on commits, creates tag, triggers GitHub Actions
+```
+
+**Version Management**:
+- **Versioning**: Semantic Versioning (MAJOR.MINOR.PATCH)
+- **Commits**: Conventional Commits format (`feat:`, `fix:`, etc.)
+- **Automation**: GitHub Actions handles build, packaging, GitHub Release, and SiYuan Bazaar submission
+
+**Key Commands**:
+```bash
+npm run bump-version          # Auto-detect version bump from commits
+npm run bump-version major    # Force major version bump
+npm run bump-version minor    # Force minor version bump
+npm run bump-version patch    # Force patch version bump
+```
+
+**Release Workflow**:
+1. Commit changes using Conventional Commits format
+2. Run `npm run release` (or manually create tag)
+3. GitHub Actions automatically:
+   - Validates version consistency
+   - Builds plugin
+   - Generates changelog from commits
+   - Creates GitHub Release with assets
+   - Submits to SiYuan Bazaar
+
+**Version Bump Rules** (Conventional Commits):
+- `feat:` commits → MINOR version bump (new features)
+- `fix:` commits → PATCH version bump (bug fixes)
+- `BREAKING CHANGE:` or `feat!:` → MAJOR version bump
+- Other commits (`docs:`, `chore:`, etc.) → no version bump
+
+**Files Updated**:
+- `package.json` - npm package version
+- `plugin.json` - SiYuan plugin version
+- Both must match for release to succeed
+
+See [RELEASE.md](RELEASE.md) for:
+- Complete automation setup
+- Manual release steps
+- SiYuan Bazaar integration
+- Release checklist
+- Rollback strategies
+
 ## Architecture
 
 ### Plugin Entry Points

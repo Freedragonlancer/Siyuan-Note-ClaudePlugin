@@ -29,9 +29,11 @@ FIX_*.md
 new_*.txt
 optimized_*.txt
 edit_message_original.txt
+*_numbered.txt
 
 # IDE
 .serena/
+.claude/settings.local.json
 
 # OS
 Thumbs.db

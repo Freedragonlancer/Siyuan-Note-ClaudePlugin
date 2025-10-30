@@ -1,0 +1,262 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Tag Format
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Tag must follow vMAJOR.MINOR.PATCH format (e.g., v1.2.3)"
+            exit 1
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "VERSION=${TAG_NAME#v}" >> $GITHUB_ENV
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Version Consistency
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./plugin.json').version")
+
+          if [ "$PACKAGE_VERSION" != "${{ env.VERSION }}" ]; then
+            echo "Error: package.json version ($PACKAGE_VERSION) does not match tag (${{ env.VERSION }})"
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "${{ env.VERSION }}" ]; then
+            echo "Error: plugin.json version ($PLUGIN_VERSION) does not match tag (${{ env.VERSION }})"
+            exit 1
+          fi
+
+          echo "✅ Version consistency verified: ${{ env.VERSION }}"
+
+      - name: Build Plugin
+        run: npm run build
+
+      - name: Verify Build Output
+        run: |
+          REQUIRED_FILES=("dist/index.js" "dist/index.css" "dist/plugin.json" "dist/icon.png")
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "Error: Required file $file not found in build output"
+              exit 1
+            fi
+          done
+          echo "✅ All required files present in dist/"
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '2p')
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found, using all commits"
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          echo "Generating changelog from $PREV_TAG to ${{ env.TAG_NAME }}"
+
+          # Parse commits and categorize
+          FEATURES=$(git log $PREV_TAG..${{ env.TAG_NAME }} --pretty=format:"- %s (%h)" --grep="^feat" --grep="^feat(" --regexp-ignore-case)
+          FIXES=$(git log $PREV_TAG..${{ env.TAG_NAME }} --pretty=format:"- %s (%h)" --grep="^fix" --grep="^fix(" --regexp-ignore-case)
+          BREAKING=$(git log $PREV_TAG..${{ env.TAG_NAME }} --pretty=format:"- %s (%h)" --grep="BREAKING CHANGE" --regexp-ignore-case)
+          PERF=$(git log $PREV_TAG..${{ env.TAG_NAME }} --pretty=format:"- %s (%h)" --grep="^perf" --grep="^perf(" --regexp-ignore-case)
+
+          # Build changelog
+          CHANGELOG="## What's Changed\n\n"
+
+          if [ -n "$BREAKING" ]; then
+            CHANGELOG+="### ⚠️ BREAKING CHANGES\n\n$BREAKING\n\n"
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            CHANGELOG+="### ✨ Features\n\n$FEATURES\n\n"
+          fi
+
+          if [ -n "$FIXES" ]; then
+            CHANGELOG+="### 🐛 Bug Fixes\n\n$FIXES\n\n"
+          fi
+
+          if [ -n "$PERF" ]; then
+            CHANGELOG+="### ⚡ Performance\n\n$PERF\n\n"
+          fi
+
+          # Add contributor info
+          CHANGELOG+="\n---\n\n**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...${{ env.TAG_NAME }}"
+
+          # Save to file and output
+          echo -e "$CHANGELOG" > RELEASE_NOTES.md
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release Package
+        run: |
+          cd dist
+          zip -r ../siyuan-plugin-claude-assistant-${{ env.TAG_NAME }}.zip \
+            index.js \
+            index.css \
+            plugin.json \
+            icon.png \
+            README.md \
+            README_zh_CN.md \
+            i18n/
+          cd ..
+
+          # Verify ZIP contents
+          echo "📦 Release package contents:"
+          unzip -l siyuan-plugin-claude-assistant-${{ env.TAG_NAME }}.zip
+
+          # Get file size
+          SIZE=$(du -h siyuan-plugin-claude-assistant-${{ env.TAG_NAME }}.zip | cut -f1)
+          echo "Package size: $SIZE"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.TAG_NAME }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          files: |
+            siyuan-plugin-claude-assistant-${{ env.TAG_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Submit to SiYuan Bazaar
+        if: ${{ vars.ENABLE_BAZAAR_SUBMISSION == 'true' }}
+        env:
+          BAZAAR_TOKEN: ${{ secrets.BAZAAR_TOKEN }}
+        run: |
+          if [ -z "$BAZAAR_TOKEN" ]; then
+            echo "⚠️ BAZAAR_TOKEN not configured, skipping Bazaar submission"
+            echo "To enable automatic Bazaar submission:"
+            echo "1. Create a GitHub Personal Access Token"
+            echo "2. Add it as BAZAAR_TOKEN secret in repository settings"
+            echo "3. Set ENABLE_BAZAAR_SUBMISSION variable to 'true'"
+            exit 0
+          fi
+
+          echo "🚀 Submitting to SiYuan Bazaar..."
+
+          # Clone bazaar repository
+          git clone https://github.com/siyuan-note/bazaar.git bazaar-repo
+          cd bazaar-repo
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create new branch
+          BRANCH_NAME="update-claude-assistant-${{ env.VERSION }}"
+          git checkout -b "$BRANCH_NAME"
+
+          # Update plugins.json
+          MIN_APP_VERSION=$(node -p "require('../plugin.json').minAppVersion")
+
+          # Use node to update JSON properly
+          node -e "
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('plugins.json', 'utf8'));
+
+          // Find existing plugin or add new entry
+          const pluginIndex = data.repos.findIndex(p =>
+            p.owner === 'Freedragonlancer' && p.repo === 'Siyuan-Note-ClaudePlugin'
+          );
+
+          const pluginEntry = {
+            owner: 'Freedragonlancer',
+            repo: 'Siyuan-Note-ClaudePlugin',
+            version: '${{ env.VERSION }}',
+            minAppVersion: '$MIN_APP_VERSION'
+          };
+
+          if (pluginIndex >= 0) {
+            data.repos[pluginIndex] = pluginEntry;
+          } else {
+            data.repos.push(pluginEntry);
+          }
+
+          fs.writeFileSync('plugins.json', JSON.stringify(data, null, 2) + '\n');
+          "
+
+          # Commit and push
+          git add plugins.json
+          git commit -m "chore: update siyuan-plugin-claude-assistant to ${{ env.VERSION }}"
+
+          # Push to fork (requires BAZAAR_TOKEN with repo permissions)
+          git remote set-url origin "https://x-access-token:${BAZAAR_TOKEN}@github.com/${{ github.repository_owner }}/bazaar.git"
+          git push origin "$BRANCH_NAME"
+
+          # Create Pull Request using GitHub API
+          PR_RESPONSE=$(curl -X POST \
+            -H "Authorization: token ${BAZAAR_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/siyuan-note/bazaar/pulls \
+            -d "{
+              \"title\": \"chore: update siyuan-plugin-claude-assistant to ${{ env.VERSION }}\",
+              \"head\": \"${{ github.repository_owner }}:${BRANCH_NAME}\",
+              \"base\": \"main\",
+              \"body\": \"Update siyuan-plugin-claude-assistant plugin to version ${{ env.VERSION }}.\n\n**Release Notes**: https://github.com/${{ github.repository }}/releases/tag/${{ env.TAG_NAME }}\n\nAuto-generated by GitHub Actions.\"
+            }")
+
+          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+
+          if [ "$PR_URL" != "null" ]; then
+            echo "✅ Bazaar PR created: $PR_URL"
+            echo "PR_URL=$PR_URL" >> $GITHUB_ENV
+          else
+            echo "⚠️ Failed to create Bazaar PR"
+            echo "Response: $PR_RESPONSE"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release ${{ env.TAG_NAME }} Published!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Release Assets" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: siyuan-plugin-claude-assistant-${{ env.TAG_NAME }}.zip" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release URL**: https://github.com/${{ github.repository }}/releases/tag/${{ env.TAG_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ env.PR_URL }}" ]; then
+            echo "### 🎯 SiYuan Bazaar" >> $GITHUB_STEP_SUMMARY
+            echo "- **PR Created**: ${{ env.PR_URL }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Status**: Awaiting maintainer review" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ℹ️ SiYuan Bazaar" >> $GITHUB_STEP_SUMMARY
+            echo "Automatic submission not configured. See RELEASE.md for manual submission steps." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat RELEASE_NOTES.md >> $GITHUB_STEP_SUMMARY

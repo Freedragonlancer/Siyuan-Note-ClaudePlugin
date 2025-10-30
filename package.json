@@ -1,6 +1,6 @@
 {
   "name": "siyuan-plugin-claude-assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "🤖 Claude AI Assistant plugin for SiYuan Note - Unified Chat & AI Text Editing with streaming responses",
   "repository": {
@@ -32,7 +32,7 @@
     "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\"",
     "make-link": "node scripts/make_dev_link.cjs",
     "make-link-win": "node scripts/make_dev_link.cjs",
-    "bump-version": "node scripts/bump-version.js",
+    "bump-version": "node scripts/bump-version.cjs",
     "release": "npm run bump-version && git add package.json plugin.json && git commit -m \"chore: bump version to $(node -p \\\"require('./package.json').version\\\")\" && git tag v$(node -p \"require('./package.json').version\") && git push origin main --tags",
     "release:major": "npm run bump-version major && npm run release:commit-and-tag",
     "release:minor": "npm run bump-version minor && npm run release:commit-and-tag",

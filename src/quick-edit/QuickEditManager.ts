@@ -99,7 +99,7 @@ export class QuickEditManager {
 
         // Setup popup callbacks
         this.inputPopup.setCallbacks({
-            onSubmit: (instruction, actionMode) => this.handleInstructionSubmit(instruction, actionMode),
+            onSubmit: (instruction) => this.handleInstructionSubmit(instruction),
             onCancel: () => {
                 this.pendingSelection = null;
             },
@@ -383,7 +383,7 @@ export class QuickEditManager {
     /**
      * Handle instruction submit
      */
-    private async handleInstructionSubmit(instruction: string, actionMode: 'insert' | 'replace' = 'replace'): Promise<void> {
+    private async handleInstructionSubmit(instruction: string): Promise<void> {
         // 设置处理中标志，防止并发
         this.isProcessing = true;
 
@@ -435,9 +435,7 @@ export class QuickEditManager {
             originalRange: selection.range.cloneRange(),
             // FIX Issue #1: Store block type for format preservation
             originalBlockType,
-            originalBlockSubtype,
-            // Store user's action mode selection
-            actionMode
+            originalBlockSubtype
         };
 
         this.activeBlocks.set(blockId, inlineBlock);

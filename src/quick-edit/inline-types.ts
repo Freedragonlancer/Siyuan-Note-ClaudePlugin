@@ -86,9 +86,6 @@ export interface InlineEditBlock {
     /** 原始块类型信息（用于保留块格式） - FIX Issue #1 */
     originalBlockType?: string;       // data-type attribute (e.g., "h", "l", "p", "c")
     originalBlockSubtype?: string;    // data-subtype attribute (e.g., "h1", "h2", "u", "o")
-
-    /** 用户选择的操作模式：插入到下方（保留原文）或替换原文（删除原文） */
-    actionMode?: 'insert' | 'replace';
 }
 
 /**

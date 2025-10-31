@@ -105,6 +105,9 @@ export interface ConfigExport {
     /** Exported profiles */
     profiles: ConfigProfile[];
 
+    /** Custom templates (user-created, excluding built-in) */
+    customTemplates?: PromptTemplate[];
+
     /** Optional metadata */
     metadata?: {
         exportedBy?: string;

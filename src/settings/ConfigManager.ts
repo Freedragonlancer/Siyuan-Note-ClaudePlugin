@@ -259,6 +259,7 @@ export class ConfigManager {
             version: CONFIG_VERSION,
             exportedAt: Date.now(),
             profiles: [profile],
+            customTemplates: this.getCustomTemplates(),
             metadata: {
                 exportedBy: 'Claude Assistant Plugin',
                 notes: `Exported profile: ${profile.name}`
@@ -276,9 +277,10 @@ export class ConfigManager {
             version: CONFIG_VERSION,
             exportedAt: Date.now(),
             profiles: this.getAllProfiles(),
+            customTemplates: this.getCustomTemplates(),
             metadata: {
                 exportedBy: 'Claude Assistant Plugin',
-                notes: `Exported ${this.profiles.size} profile(s)`
+                notes: `Exported ${this.profiles.size} profile(s) and ${this.getCustomTemplates().length} custom template(s)`
             }
         };
 
@@ -304,6 +306,13 @@ export class ConfigManager {
                 return result;
             }
 
+            // Version compatibility check
+            const supportedVersions = ['1.0.0', '1.1.0'];
+            if (!supportedVersions.includes(parsed.version)) {
+                console.warn(`[ConfigManager] Config version ${parsed.version} may not be fully compatible. Supported: ${supportedVersions.join(', ')}`);
+                // Continue anyway - attempt to import with best effort
+            }
+
             // Import each profile
             for (const profileData of parsed.profiles) {
                 try {
@@ -311,6 +320,24 @@ export class ConfigManager {
                     if (!profileData.name || !profileData.settings) {
                         result.errors.push(`Invalid profile data: ${profileData.name || 'unknown'}`);
                         continue;
+                    }
+
+                    // Validate ClaudeSettings structure
+                    const settings = profileData.settings;
+                    if (!settings.model || typeof settings.maxTokens !== 'number' || typeof settings.temperature !== 'number') {
+                        result.errors.push(`Invalid settings in profile: ${profileData.name}`);
+                        continue;
+                    }
+
+                    // Validate global filterRules if present
+                    if (settings.filterRules && Array.isArray(settings.filterRules)) {
+                        settings.filterRules = settings.filterRules.filter(rule => {
+                            if (!rule.id || !rule.pattern || typeof rule.enabled !== 'boolean') {
+                                console.warn(`[ConfigManager] Removing invalid filterRule in profile: ${profileData.name}`, rule);
+                                return false;
+                            }
+                            return true;
+                        });
                     }
 
                     // Generate new ID to avoid conflicts
@@ -330,6 +357,62 @@ export class ConfigManager {
                 } catch (err) {
                     result.errors.push(`Failed to import profile: ${profileData.name || 'unknown'}`);
                     console.error('[ConfigManager] Import error:', err);
+                }
+            }
+
+            // Import custom templates (if present)
+            if (parsed.customTemplates && Array.isArray(parsed.customTemplates)) {
+                let templatesImported = 0;
+
+                for (const templateData of parsed.customTemplates) {
+                    try {
+                        // Skip built-in templates (should never be in export, but safety check)
+                        if (templateData.isBuiltIn) {
+                            console.log(`[ConfigManager] Skipping built-in template: ${templateData.name}`);
+                            continue;
+                        }
+
+                        // Validate template data
+                        if (!templateData.id || !templateData.name || !templateData.systemPrompt) {
+                            result.errors.push(`Invalid template data: ${templateData.name || 'unknown'}`);
+                            continue;
+                        }
+
+                        // Validate filterRules if present
+                        if (templateData.filterRules && Array.isArray(templateData.filterRules)) {
+                            for (const rule of templateData.filterRules) {
+                                if (!rule.id || !rule.pattern || typeof rule.enabled !== 'boolean') {
+                                    result.errors.push(`Invalid filterRule in template: ${templateData.name}`);
+                                    console.warn('[ConfigManager] Invalid filterRule:', rule);
+                                    // Remove invalid filterRules
+                                    templateData.filterRules = templateData.filterRules.filter(r => r.id && r.pattern && typeof r.enabled === 'boolean');
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Check for ID conflicts with existing custom templates
+                        const existingTemplate = this.promptTemplates.get(templateData.id);
+                        if (existingTemplate && !existingTemplate.isBuiltIn) {
+                            // Regenerate ID for imported template to avoid conflict
+                            const oldId = templateData.id;
+                            templateData.id = `template-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                            console.log(`[ConfigManager] Template ID conflict, regenerated: ${oldId} → ${templateData.id}`);
+                        }
+
+                        // Save imported template
+                        this.saveTemplate(templateData);
+                        templatesImported++;
+
+                        console.log(`[ConfigManager] Imported template: ${templateData.name}`);
+                    } catch (err) {
+                        result.errors.push(`Failed to import template: ${templateData.name || 'unknown'}`);
+                        console.error('[ConfigManager] Template import error:', err);
+                    }
+                }
+
+                if (templatesImported > 0) {
+                    console.log(`[ConfigManager] Successfully imported ${templatesImported} custom template(s)`);
                 }
             }
 

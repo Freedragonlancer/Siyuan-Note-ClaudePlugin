@@ -94,30 +94,19 @@ export class PromptEditorPanel {
 
     private createTabBar(): string {
         const tabs = [
-            { id: "presets", label: "🎨 提示词预设", icon: "🎨" },
-            { id: "system", label: "🤖 系统提示词", icon: "🤖" },
-            { id: "appended", label: "📌 追加提示词", icon: "📌" },
-            { id: "quickEditPrompt", label: "⚡ 快速编辑模板", icon: "⚡" },
-            { id: "responseFilters", label: "🔧 响应过滤", icon: "🔧" }
+            { id: "presets", label: "提示词预设", icon: "🎨" },
+            { id: "system", label: "系统提示词", icon: "🤖" },
+            { id: "appended", label: "追加提示词", icon: "📌" },
+            { id: "quickEditPrompt", label: "快速编辑模板", icon: "⚡" },
+            { id: "responseFilters", label: "响应过滤", icon: "🔧" }
         ];
 
         return `
-            <div class="prompt-editor-tabs" style="display: flex; border-bottom: 1px solid var(--b3-border-color); margin-bottom: 16px;">
+            <div class="prompt-editor-tabs">
                 ${tabs.map(tab => `
                     <button
                         class="prompt-editor-tab ${this.activeTab === tab.id ? 'active' : ''}"
                         data-tab="${tab.id}"
-                        style="
-                            flex: 1;
-                            padding: 12px 16px;
-                            border: none;
-                            background: ${this.activeTab === tab.id ? 'var(--b3-theme-primary)' : 'transparent'};
-                            color: ${this.activeTab === tab.id ? 'var(--b3-theme-on-primary)' : 'var(--b3-theme-on-background)'};
-                            cursor: pointer;
-                            font-size: 14px;
-                            transition: all 0.2s;
-                            border-bottom: 2px solid ${this.activeTab === tab.id ? 'var(--b3-theme-primary)' : 'transparent'};
-                        "
                     >
                         ${tab.icon} ${tab.label}
                     </button>
@@ -356,13 +345,13 @@ export class PromptEditorPanel {
                     placeholder="例如：You are a helpful AI assistant..."
                 >${this.currentSettings.systemPrompt || ''}</textarea>
 
-                <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div class="settings-flex-between" style="margin-top: 12px;">
                     <div class="ft__smaller ft__secondary">
                         字符数: <span id="system-prompt-length">${this.currentSettings.systemPrompt?.length || 0}</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="settings-button-group">
                         <button class="b3-button b3-button--cancel" id="cancel-system-prompt">取消</button>
-                        <button class="b3-button b3-button--text" id="save-system-prompt">💾 保存</button>
+                        <button class="b3-button b3-button--text" id="save-system-prompt">保存</button>
                     </div>
                 </div>
             </div>
@@ -421,13 +410,13 @@ export class PromptEditorPanel {
                     </div>
                 </div>
 
-                <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div class="settings-flex-between" style="margin-top: 12px;">
                     <div class="ft__smaller ft__secondary">
                         字符数: <span id="appended-prompt-length">${this.currentSettings.appendedPrompt?.length || 0}</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="settings-button-group">
                         <button class="b3-button b3-button--cancel" id="cancel-appended-prompt">取消</button>
-                        <button class="b3-button b3-button--text" id="save-appended-prompt">💾 保存</button>
+                        <button class="b3-button b3-button--text" id="save-appended-prompt">保存</button>
                     </div>
                 </div>
             </div>
@@ -515,13 +504,13 @@ export class PromptEditorPanel {
                     <div class="ft__smaller ft__secondary">
                         字符数: <span id="quick-edit-prompt-length">${(this.currentSettings.quickEditPromptTemplate || defaultTemplate).length}</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="settings-button-group">
                         <button class="b3-button b3-button--cancel" id="reset-quick-edit-prompt">
                             <svg><use xlink:href="#iconUndo"></use></svg>
                             <span style="margin-left: 4px;">恢复默认</span>
                         </button>
                         <button class="b3-button b3-button--cancel" id="cancel-quick-edit-prompt">取消</button>
-                        <button class="b3-button b3-button--text" id="save-quick-edit-prompt">💾 保存</button>
+                        <button class="b3-button b3-button--text" id="save-quick-edit-prompt">保存</button>
                     </div>
                 </div>
             </div>

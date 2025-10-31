@@ -203,18 +203,17 @@ export class SettingsPanelV3 {
                 </div>
 
                 <!-- API Key -->
-                <div class="setting-item" style="margin-bottom: 16px;">
-                    <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">API Key <span style="color: var(--b3-theme-error);">*</span></span>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>API Key <span style="color: var(--b3-theme-error);">*</span></span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="settings-input-group">
                         <input
                             class="b3-text-field"
                             type="password"
                             id="claude-api-key"
                             placeholder="输入您的 API Key"
                             value="${settings.apiKey || ""}"
-                            style="flex: 1;"
                         >
                         <button
                             class="b3-button b3-button--outline"
@@ -256,21 +255,21 @@ export class SettingsPanelV3 {
 
         return `
             <div class="settings-section">
-                <div class="section-header" style="margin-bottom: 16px;">
-                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                <div class="settings-section-header">
+                    <h3>
                         🤖 模型设置
                     </h3>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                    <div class="ft__secondary">
                         选择模型并调整参数
                     </div>
                 </div>
 
                 <!-- Model Selection -->
-                <div class="setting-item" style="margin-bottom: 16px;">
-                    <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">模型</span>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>模型</span>
                     </div>
-                    <select class="b3-select" id="claude-model" style="width: 100%;">
+                    <select class="b3-select settings-full-width" id="claude-model">
                         ${this.availableModels.map(m => `
                             <option value="${m.value}" ${m.value === settings.model ? 'selected' : ''}>
                                 ${m.label}
@@ -283,9 +282,9 @@ export class SettingsPanelV3 {
                 </div>
 
                 <!-- Max Tokens -->
-                <div class="setting-item" style="margin-bottom: 16px;">
-                    <div class="setting-label" style="margin-bottom: 8px; display: flex; justify-content: space-between;">
-                        <span style="font-weight: 500;">最大输出长度</span>
+                <div class="setting-item">
+                    <div class="settings-slider-header">
+                        <span class="settings-label-weight">最大输出长度</span>
                         <span class="ft__smaller ft__secondary" id="max-tokens-value">${settings.maxTokens} tokens</span>
                     </div>
                     <input
@@ -295,7 +294,7 @@ export class SettingsPanelV3 {
                         max="8192"
                         step="256"
                         value="${settings.maxTokens}"
-                        style="width: 100%;"
+                        class="settings-full-width"
                     >
                     <div style="display: flex; justify-content: space-between; margin-top: 4px;">
                         <span class="ft__smaller ft__secondary">256</span>
@@ -305,8 +304,8 @@ export class SettingsPanelV3 {
 
                 <!-- Temperature -->
                 <div class="setting-item">
-                    <div class="setting-label" style="margin-bottom: 8px; display: flex; justify-content: space-between;">
-                        <span style="font-weight: 500;">Temperature</span>
+                    <div class="settings-slider-header">
+                        <span class="settings-label-weight">Temperature</span>
                         <span class="ft__smaller ft__secondary" id="temperature-value">${settings.temperature}</span>
                     </div>
                     <input
@@ -316,7 +315,7 @@ export class SettingsPanelV3 {
                         max="1"
                         step="0.1"
                         value="${settings.temperature}"
-                        style="width: 100%;"
+                        class="settings-full-width"
                     >
                     <div style="display: flex; justify-content: space-between; margin-top: 4px;">
                         <span class="ft__smaller ft__secondary">保守 (0.0)</span>
@@ -342,7 +341,7 @@ export class SettingsPanelV3 {
                 <div class="setting-item">
                     <button class="b3-button b3-button--outline" id="open-prompt-editor-btn" style="width: 100%; padding: 12px;">
                         <svg style="width: 16px; height: 16px;"><use xlink:href="#iconEdit"></use></svg>
-                        <span style="margin-left: 8px; font-weight: 500;">✏️ 编辑提示词和模板</span>
+                        <span style="margin-left: 8px; font-weight: 500;">编辑提示词和模板</span>
                     </button>
                     <div class="ft__smaller ft__secondary" style="margin-top: 12px; padding: 8px; background: var(--b3-theme-surface); border-radius: 4px;">
                         💡 在独立面板中编辑：<br>
@@ -431,17 +430,17 @@ export class SettingsPanelV3 {
 
     private createActionsSection(): string {
         return `
-            <div class="settings-actions" style="display: flex; justify-content: space-between; align-items: center; padding-top: 16px;">
+            <div class="settings-flex-between" style="padding-top: 16px;">
                 <button class="b3-button b3-button--outline" id="claude-test-connection" style="min-width: 120px;">
                     <svg><use xlink:href="#iconRefresh"></use></svg>
                     <span style="margin-left: 4px;">测试连接</span>
                 </button>
-                <div style="display: flex; gap: 8px;">
+                <div class="settings-button-group">
                     <button class="b3-button b3-button--cancel" id="claude-cancel">
                         取消
                     </button>
                     <button class="b3-button b3-button--text" id="claude-save" style="min-width: 100px;">
-                        💾 保存设置
+                        保存设置
                     </button>
                 </div>
             </div>
@@ -911,14 +910,14 @@ export class SettingsPanelV3 {
                 { role: "user", content: "Hi" }
             ]);
 
-            testBtn.innerHTML = '<svg><use xlink:href="#iconCheck"></use></svg><span style="margin-left: 4px;">✅ 连接成功</span>';
+            testBtn.innerHTML = '<svg><use xlink:href="#iconCheck"></use></svg><span style="margin-left: 4px;">连接成功</span>';
             setTimeout(() => {
                 testBtn.innerHTML = originalHTML;
                 testBtn.disabled = false;
             }, 2000);
 
         } catch (error) {
-            testBtn.innerHTML = '<svg><use xlink:href="#iconClose"></use></svg><span style="margin-left: 4px;">❌ 连接失败</span>';
+            testBtn.innerHTML = '<svg><use xlink:href="#iconClose"></use></svg><span style="margin-left: 4px;">连接失败</span>';
             alert(`测试失败: ${error instanceof Error ? error.message : String(error)}`);
             setTimeout(() => {
                 testBtn.innerHTML = originalHTML;

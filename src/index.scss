@@ -1667,3 +1667,70 @@
     outline: 2px solid var(--b3-theme-primary);
     outline-offset: 2px;
 }
+
+/* Mode Badge Styling (Selection Q&A) */
+.claude-mode-badge {
+    font-weight: 500;
+    animation: fadeInBadge 0.3s ease-in;
+    transition: all 0.2s ease;
+
+    &:hover {
+        transform: scale(1.05);
+    }
+
+    /* Fade out animation when clearing selection */
+    &.fading-out {
+        animation: fadeOutBadge 0.3s ease-out forwards;
+    }
+}
+
+@keyframes fadeInBadge {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeOutBadge {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+}
+
+/* Selection Q&A Action Buttons */
+.claude-qa-actions {
+    animation: slideUp 0.3s ease-out;
+
+    button {
+        transition: all 0.2s ease;
+
+        &:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        &:active {
+            transform: translateY(0);
+        }
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

@@ -32,6 +32,9 @@ export interface ChatMessage extends BaseMessage {
 
     /** Whether this message is currently being streamed */
     streaming?: boolean;
+
+    /** Whether this message is part of a Selection Q&A conversation */
+    isSelectionQA?: boolean;
 }
 
 /**

@@ -83,6 +83,10 @@ export class ClaudeClient {
         return this.settings.appendedPrompt || "";
     }
 
+    getSystemPrompt(): string {
+        return this.settings.systemPrompt || "";
+    }
+
     /**
      * Get filter rules with optional preset scope
      * @param presetId Optional preset ID to include preset-specific rules
@@ -124,7 +128,8 @@ export class ClaudeClient {
         onError: ErrorCallback,
         onComplete: CompleteCallback,
         feature: string = "Chat",
-        filterRules?: FilterRule[]
+        filterRules?: FilterRule[],
+        systemPrompt?: string
     ): Promise<void> {
         if (!this.isConfigured()) {
             onError(new Error("Claude API is not configured. Please set your API key in settings."));
@@ -149,7 +154,7 @@ export class ClaudeClient {
                 model: this.settings.model,
                 max_tokens: this.settings.maxTokens,
                 temperature: this.settings.temperature,
-                system: this.settings.systemPrompt,
+                system: systemPrompt || this.settings.systemPrompt,
                 messages: messages.map(m => ({
                     role: m.role,
                     content: m.content
@@ -287,7 +292,7 @@ export class ClaudeClient {
     /**
      * Send a simple message and get the complete response (non-streaming)
      */
-    async sendMessageSimple(messages: Message[], feature: string = "QuickEdit", filterRules?: FilterRule[]): Promise<string> {
+    async sendMessageSimple(messages: Message[], feature: string = "QuickEdit", filterRules?: FilterRule[], systemPrompt?: string): Promise<string> {
         if (!this.isConfigured()) {
             throw new Error("Claude API is not configured. Please set your API key in settings.");
         }
@@ -305,7 +310,7 @@ export class ClaudeClient {
                 model: this.settings.model,
                 max_tokens: this.settings.maxTokens,
                 temperature: this.settings.temperature,
-                system: this.settings.systemPrompt,
+                system: systemPrompt || this.settings.systemPrompt,
                 messages: messages.map(m => ({
                     role: m.role,
                     content: m.content

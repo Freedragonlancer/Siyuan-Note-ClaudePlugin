@@ -33,6 +33,7 @@ export class UnifiedAIPanel {
     // Chat state
     private messages: UnifiedMessage[] = [];
     private isStreaming: boolean = false;
+    private activeChatPresetId: string = 'default'; // Active preset for chat
 
     // Edit state
     private textSelectionManager: TextSelectionManager;
@@ -45,7 +46,16 @@ export class UnifiedAIPanel {
         processingCount: 0
     };
 
-    // Edit mode state
+    // Panel mode state (for automatic mode switching)
+    private panelMode: 'freeChat' | 'selectionQA' = 'freeChat';
+    private currentSelection: {
+        blockIds: string[];
+        text: string;
+        timestamp: number;
+    } | null = null;
+    private selectionCheckInterval: number | null = null;
+
+    // Legacy edit mode state (kept for Edit Queue functionality)
     private isEditMode: boolean = false;
     private editModeSelection: TextSelection | null = null;
     private editModeShowDiff: boolean = true;
@@ -82,6 +92,9 @@ export class UnifiedAIPanel {
         // Create UI
         this.element = this.createPanel();
 
+        // Populate preset selector
+        this.populatePresetSelector();
+
         // Setup event listeners
         this.attachEventListeners();
 
@@ -90,7 +103,189 @@ export class UnifiedAIPanel {
 
         // Load queue state from localStorage
         this.loadQueueState();
+
+        // Start selection monitoring for automatic mode switching
+        this.startSelectionMonitoring();
     }
+
+    //#region Selection Monitoring & Mode Switching
+
+    /**
+     * Start monitoring for block selection changes every 300ms
+     */
+    private startSelectionMonitoring(): void {
+        if (this.selectionCheckInterval !== null) {
+            return; // Already monitoring
+        }
+
+        // Check every 300ms
+        this.selectionCheckInterval = window.setInterval(() => {
+            this.checkAndUpdateSelection();
+        }, 300);
+
+        console.log('[UnifiedAIPanel] Selection monitoring started');
+    }
+
+    /**
+     * Stop selection monitoring
+     */
+    private stopSelectionMonitoring(): void {
+        if (this.selectionCheckInterval !== null) {
+            clearInterval(this.selectionCheckInterval);
+            this.selectionCheckInterval = null;
+            console.log('[UnifiedAIPanel] Selection monitoring stopped');
+        }
+    }
+
+    /**
+     * Get currently selected blocks from the editor
+     */
+    private getSelectedBlocks(): Element[] {
+        // Query all selected blocks in the SiYuan editor
+        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
+        return Array.from(selectedBlocks);
+    }
+
+    /**
+     * Check for selection changes and update mode accordingly
+     */
+    private checkAndUpdateSelection(): void {
+        const selectedBlocks = this.getSelectedBlocks();
+
+        if (selectedBlocks.length > 0) {
+            // Extract block IDs and text content
+            const blockIds = selectedBlocks
+                .map(block => block.getAttribute('data-node-id'))
+                .filter(id => id !== null) as string[];
+
+            const texts = selectedBlocks
+                .map(block => (block.textContent || '').trim())
+                .filter(text => text.length > 0);
+
+            const text = texts.join('\n\n');
+
+            // Check if selection changed
+            const selectionChanged = !this.currentSelection ||
+                JSON.stringify(blockIds) !== JSON.stringify(this.currentSelection.blockIds);
+
+            if (selectionChanged) {
+                this.currentSelection = {
+                    blockIds,
+                    text,
+                    timestamp: Date.now()
+                };
+
+                this.switchToSelectionQAMode();
+            }
+        } else {
+            // No selection - switch to free chat if we had a selection before
+            if (this.currentSelection) {
+                this.currentSelection = null;
+                this.switchToFreeChatMode();
+            }
+        }
+    }
+
+    /**
+     * Switch to Selection Q&A mode
+     */
+    private switchToSelectionQAMode(): void {
+        if (this.panelMode === 'selectionQA') {
+            // Already in this mode, just update UI
+            this.updateModeUI();
+            return;
+        }
+
+        this.panelMode = 'selectionQA';
+        this.updateModeUI();
+        console.log('[UnifiedAIPanel] Switched to Selection Q&A mode');
+    }
+
+    /**
+     * Switch to Free Chat mode
+     */
+    private switchToFreeChatMode(): void {
+        if (this.panelMode === 'freeChat') {
+            // Already in this mode
+            return;
+        }
+
+        this.panelMode = 'freeChat';
+        this.updateModeUI();
+        console.log('[UnifiedAIPanel] Switched to Free Chat mode');
+    }
+
+    /**
+     * Update UI to reflect current mode
+     */
+    private updateModeUI(): void {
+        const modeBadge = this.element.querySelector('#claude-mode-badge') as HTMLElement;
+
+        if (!modeBadge) {
+            return; // Badge not created yet
+        }
+
+        if (this.panelMode === 'selectionQA' && this.currentSelection) {
+            // Show selection badge
+            const blockCount = this.currentSelection.blockIds.length;
+            modeBadge.textContent = `📝 已选中 ${blockCount} 个块`;
+            modeBadge.classList.remove('fading-out');
+            modeBadge.style.display = 'inline-block';
+        } else {
+            // Hide badge in free chat mode with fade-out animation
+            if (modeBadge.style.display !== 'none') {
+                modeBadge.classList.add('fading-out');
+                // Wait for animation to complete before hiding
+                setTimeout(() => {
+                    modeBadge.style.display = 'none';
+                    modeBadge.classList.remove('fading-out');
+                }, 300); // Match CSS animation duration
+            }
+        }
+    }
+
+    /**
+     * Clear current selection (called when user cancels or completes an action)
+     */
+    private clearCurrentSelection(): void {
+        // Store selection info before clearing (for user feedback)
+        const blockCount = this.currentSelection?.blockIds.length || 0;
+
+        // ===== STEP 1: Clear DOM Selection States =====
+
+        // 1a. Clear text selection (window.getSelection)
+        const windowSelection = window.getSelection();
+        if (windowSelection) {
+            windowSelection.removeAllRanges();
+        }
+
+        // 1b. Clear block selection (SiYuan's block selection)
+        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
+        selectedBlocks.forEach(block => {
+            block.classList.remove('protyle-wysiwyg--select');
+        });
+
+        // ===== STEP 2: Update Internal State =====
+
+        // Clear internal state
+        this.currentSelection = null;
+
+        // Switch to Free Chat mode (updates mode badge)
+        this.switchToFreeChatMode();
+
+        // ===== STEP 3: User Feedback =====
+
+        // Show toast message with block count
+        if (blockCount > 0) {
+            this.addSystemMessage(`✅ 已取消选择 (${blockCount} 个块)`);
+        } else {
+            this.addSystemMessage(`✅ 已取消选择`);
+        }
+
+        console.log('[UnifiedAIPanel] Selection cleared successfully');
+    }
+
+    //#endregion
 
     //#region Markdown Configuration
     private configureMarkdown() {
@@ -128,16 +323,21 @@ export class UnifiedAIPanel {
         container.innerHTML = `
             <!-- Compact Header -->
             <div class="claude-unified-header" style="padding: 4px 6px; border-bottom: 1px solid var(--b3-border-color); flex-shrink: 0;">
-                <div class="fn__flex" style="align-items: center; justify-content: flex-end; gap: 3px;">
-                    <button class="b3-button b3-button--text" id="claude-settings-btn" title="设置" style="padding: 2px 4px;">
-                        <svg class="fn__size200"><use xlink:href="#iconSettings"></use></svg>
-                    </button>
-                    <button class="b3-button b3-button--text" id="claude-use-selection" title="使用选中文本" style="padding: 2px 4px;">
-                        <svg class="fn__size200"><use xlink:href="#iconSelect"></use></svg>
-                    </button>
-                    <button class="b3-button b3-button--text" id="claude-clear-chat" title="清空对话" style="padding: 2px 4px;">
-                        <svg class="fn__size200"><use xlink:href="#iconTrashcan"></use></svg>
-                    </button>
+                <div class="fn__flex" style="align-items: center; justify-content: space-between; gap: 6px;">
+                    <div class="fn__flex" style="align-items: center; gap: 6px; flex: 1;">
+                        <select class="b3-select" id="claude-preset-selector" title="选择预设" style="max-width: 150px; font-size: 12px;">
+                            <option value="default">默认</option>
+                        </select>
+                        <span id="claude-mode-badge" class="claude-mode-badge" style="display: none; font-size: 11px; padding: 2px 8px; background: var(--b3-theme-primary-lighter); color: var(--b3-theme-primary); border-radius: 10px; white-space: nowrap;">📝 已选中 0 个块</span>
+                    </div>
+                    <div class="fn__flex" style="align-items: center; gap: 3px;">
+                        <button class="b3-button b3-button--text" id="claude-settings-btn" title="设置" style="padding: 2px 4px;">
+                            <svg class="fn__size200"><use xlink:href="#iconSettings"></use></svg>
+                        </button>
+                        <button class="b3-button b3-button--text" id="claude-clear-chat" title="清空对话" style="padding: 2px 4px;">
+                            <svg class="fn__size200"><use xlink:href="#iconTrashcan"></use></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -216,9 +416,7 @@ export class UnifiedAIPanel {
         const sendBtn = this.element.querySelector("#claude-send-btn") as HTMLButtonElement;
         const settingsBtn = this.element.querySelector("#claude-settings-btn");
         const clearBtn = this.element.querySelector("#claude-clear-chat");
-        const useSelectionBtn = this.element.querySelector("#claude-use-selection");
-        const insertBtn = this.element.querySelector("#claude-insert-btn");
-        const replaceBtn = this.element.querySelector("#claude-replace-btn");
+        const presetSelector = this.element.querySelector("#claude-preset-selector") as HTMLSelectElement;
 
         // Queue controls
         const queueSummary = this.element.querySelector("#claude-queue-summary");
@@ -229,9 +427,25 @@ export class UnifiedAIPanel {
         // Chat event listeners
         sendBtn?.addEventListener("click", () => this.sendMessage());
         input?.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                this.sendMessage();
+            if (e.key === "Enter") {
+                if (e.ctrlKey || e.metaKey) {
+                    // Ctrl+Enter: Insert newline at cursor position
+                    e.preventDefault();
+                    const textarea = e.target as HTMLTextAreaElement;
+                    const start = textarea.selectionStart;
+                    const end = textarea.selectionEnd;
+                    const value = textarea.value;
+
+                    // Insert newline at cursor position
+                    textarea.value = value.substring(0, start) + '\n' + value.substring(end);
+
+                    // Move cursor after the newline
+                    textarea.selectionStart = textarea.selectionEnd = start + 1;
+                } else if (!e.shiftKey) {
+                    // Plain Enter: Send message
+                    e.preventDefault();
+                    this.sendMessage();
+                }
             }
         });
 
@@ -240,10 +454,11 @@ export class UnifiedAIPanel {
                 this.onSettingsCallback();
             }
         });
+        presetSelector?.addEventListener("change", () => {
+            this.activeChatPresetId = presetSelector.value;
+            console.log(`[UnifiedAIPanel] Switched to preset: ${this.activeChatPresetId}`);
+        });
         clearBtn?.addEventListener("click", () => this.clearChat());
-        useSelectionBtn?.addEventListener("click", () => this.useSelectedText());
-        insertBtn?.addEventListener("click", () => this.insertLastResponse());
-        replaceBtn?.addEventListener("click", () => this.replaceSelectedText());
 
         // Queue event listeners
         queueSummary?.addEventListener("click", () => this.toggleQueueExpansion());
@@ -272,7 +487,7 @@ export class UnifiedAIPanel {
             return;
         }
 
-        // Handle edit mode
+        // Handle edit mode (legacy Edit Queue functionality)
         if (this.isEditMode && this.editModeSelection) {
             await this.processEditModeRequest(userMessage);
             return;
@@ -283,13 +498,25 @@ export class UnifiedAIPanel {
             return;
         }
 
-        // Create chat message
+        // Prepare content based on mode
+        let content = userMessage;
+        let isSelectionQA = false;
+
+        // If in Selection Q&A mode, prepend selection context
+        if (this.panelMode === 'selectionQA' && this.currentSelection) {
+            isSelectionQA = true;
+            const selectionContext = `以下是选中的内容（共 ${this.currentSelection.blockIds.length} 个块）：\n\n${this.currentSelection.text}\n\n---\n\n用户问题：${userMessage}`;
+            content = selectionContext;
+        }
+
+        // Create chat message (store original user message for display)
         const chatMessage: ChatMessage = {
             id: `chat-${Date.now()}`,
             type: 'chat',
             role: 'user',
-            content: userMessage,
-            timestamp: Date.now()
+            content: userMessage,  // Display original message to user
+            timestamp: Date.now(),
+            isSelectionQA: isSelectionQA  // Mark as Selection Q&A message
         };
 
         this.messages.push(chatMessage);
@@ -308,19 +535,44 @@ export class UnifiedAIPanel {
 
         // Send to Claude
         let fullResponse = "";
-        const apiMessages = this.messages.filter(isChatMessage).map(m => ({
-            role: m.role,
-            content: m.content
-        }));
 
-        // Append the appended prompt to the last user message (if any)
-        const appendedPrompt = this.claudeClient.getAppendedPrompt();
-        if (appendedPrompt && apiMessages.length > 0) {
+        // Build API messages - use enriched content for the last message if in Selection Q&A mode
+        const apiMessages = this.messages.filter(isChatMessage).map((m, index, arr) => {
+            // For the last user message in Selection Q&A mode, use enriched content
+            if (isSelectionQA && index === arr.length - 1 && m.role === 'user') {
+                return {
+                    role: m.role,
+                    content: content  // Use selection-enriched content
+                };
+            }
+            return {
+                role: m.role,
+                content: m.content
+            };
+        });
+
+        // Get active preset
+        const configManager = (this.claudeClient as any).configManager;
+        let activePreset: any = null;
+        if (configManager && configManager.getAllTemplates) {
+            const templates = configManager.getAllTemplates();
+            activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+        }
+
+        // Get system prompt from preset (fallback to global if not set)
+        const systemPrompt = activePreset?.systemPrompt || this.claudeClient.getSystemPrompt();
+
+        // Append the appended prompt to the last user message (only for non-selection messages)
+        const appendedPrompt = activePreset?.appendedPrompt || this.claudeClient.getAppendedPrompt();
+        if (appendedPrompt && apiMessages.length > 0 && !isSelectionQA) {
             const lastMessage = apiMessages[apiMessages.length - 1];
             if (lastMessage.role === 'user') {
                 lastMessage.content += '\n\n' + appendedPrompt;
             }
         }
+
+        // Get filter rules for active preset
+        const filterRules = this.claudeClient.getFilterRules(this.activeChatPresetId);
 
         await this.claudeClient.sendMessage(
             apiMessages,
@@ -340,22 +592,27 @@ export class UnifiedAIPanel {
                     type: 'chat',
                     role: 'assistant',
                     content: fullResponse,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    isSelectionQA: isSelectionQA  // Mark as Selection Q&A message
                 };
 
                 this.messages.push(assistantMessage);
                 this.isStreaming = false;
                 sendBtn.disabled = false;
                 sendBtn.textContent = "Send";
-                this.updateActionButtons();
 
                 // Remove streaming message and add final one
                 const streamingMsg = document.getElementById(streamingMsgId);
                 if (streamingMsg) {
                     streamingMsg.remove();
                 }
-                this.addChatMessageToUI(assistantMessage);
-            }
+
+                // Add message to UI with action buttons if in Selection Q&A mode
+                this.addChatMessageToUI(assistantMessage, isSelectionQA);
+            },
+            "Chat",
+            filterRules,
+            systemPrompt
         );
     }
 
@@ -398,7 +655,7 @@ export class UnifiedAIPanel {
         sendBtn.textContent = '发送';
     }
 
-    private addChatMessageToUI(message: ChatMessage) {
+    private addChatMessageToUI(message: ChatMessage, isSelectionQA: boolean = false) {
         if (!this.messagesContainer) return;
 
         // Remove welcome message if exists
@@ -407,6 +664,7 @@ export class UnifiedAIPanel {
 
         const messageDiv = document.createElement("div");
         messageDiv.className = `claude-message claude-message-chat claude-message-${message.role}`;
+        messageDiv.setAttribute("data-message-id", message.id);  // Add message ID for deletion
         messageDiv.style.cssText = `
             margin-bottom: 12px;
             padding: 8px 12px;
@@ -468,6 +726,101 @@ export class UnifiedAIPanel {
 
         messageDiv.appendChild(headerDiv);
         messageDiv.appendChild(contentDiv);
+
+        // Add Selection Q&A action buttons if applicable
+        if (message.role === "assistant" && isSelectionQA && this.currentSelection) {
+            const qaActionsDiv = document.createElement("div");
+            qaActionsDiv.className = "claude-qa-actions";
+            qaActionsDiv.style.cssText = "display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--b3-border-color);";
+
+            const replaceBtn = document.createElement("button");
+            replaceBtn.className = "b3-button b3-button--outline";
+            replaceBtn.innerHTML = `<svg class="fn__size200"><use xlink:href="#iconReplace"></use></svg><span style="margin-left: 4px;">替换</span>`;
+            replaceBtn.title = "Replace selected blocks with this response";
+            replaceBtn.onclick = () => this.handleReplaceSelection(message.content);
+
+            const insertBtn = document.createElement("button");
+            insertBtn.className = "b3-button b3-button--outline";
+            insertBtn.innerHTML = `<svg class="fn__size200"><use xlink:href="#iconDown"></use></svg><span style="margin-left: 4px;">插入</span>`;
+            insertBtn.title = "Insert response below selected blocks";
+            insertBtn.onclick = () => this.handleInsertBelow(message.content);
+
+            // Button 3: [继续] - Keep conversation (NEW)
+            const continueBtn = document.createElement("button");
+            continueBtn.className = "b3-button b3-button--outline";
+            continueBtn.innerHTML = `<svg class="fn__size200"><use xlink:href="#iconCheck"></use></svg><span style="margin-left: 4px;">继续</span>`;
+            continueBtn.title = "Keep conversation and clear selection";
+            continueBtn.onclick = () => {
+                // Edge Case 1: If AI is still streaming, show confirmation
+                if (this.isStreaming) {
+                    const confirmed = confirm('AI 正在生成回复，确定要取消吗？');
+                    if (!confirmed) return;
+
+                    // Cancel streaming if possible
+                    if (this.claudeClient && typeof (this.claudeClient as any).cancelActiveRequest === 'function') {
+                        (this.claudeClient as any).cancelActiveRequest();
+                    }
+                }
+
+                // Edge Case 2: If user typed long message, show confirmation
+                const input = this.element.querySelector("#claude-input") as HTMLTextAreaElement;
+                if (input && input.value.trim().length > 50) {
+                    const confirmed = confirm('你已输入较长内容，取消将清空输入，确定继续吗？');
+                    if (!confirmed) return;
+
+                    // Clear input if user confirmed
+                    input.value = '';
+                }
+
+                // Clear selection only, keep conversation
+                this.clearCurrentSelection();
+            };
+
+            // Button 4: [取消] - Clear response (MODIFIED)
+            const cancelBtn = document.createElement("button");
+            cancelBtn.className = "b3-button b3-button--cancel";
+            cancelBtn.innerHTML = `<svg class="fn__size200"><use xlink:href="#iconClose"></use></svg><span style="margin-left: 4px;">取消</span>`;
+            cancelBtn.title = "Clear selection and delete AI response";
+            cancelBtn.onclick = () => {
+                // Edge Case 1: If AI is still streaming, show confirmation
+                if (this.isStreaming) {
+                    const confirmed = confirm('AI 正在生成回复，确定要取消吗？');
+                    if (!confirmed) return;
+
+                    // Cancel streaming if possible
+                    if (this.claudeClient && typeof (this.claudeClient as any).cancelActiveRequest === 'function') {
+                        (this.claudeClient as any).cancelActiveRequest();
+                    }
+                }
+
+                // Edge Case 2: If user typed long message, show confirmation
+                const input = this.element.querySelector("#claude-input") as HTMLTextAreaElement;
+                if (input && input.value.trim().length > 50) {
+                    const confirmed = confirm('你已输入较长内容，取消将清空输入，确定继续吗？');
+                    if (!confirmed) return;
+
+                    // Clear input if user confirmed
+                    input.value = '';
+                }
+
+                // Clear response and selection
+                this.clearLastQAResponse();
+                this.clearCurrentSelection();
+            };
+
+            // Visual separator between action buttons and cancel buttons
+            const separator = document.createElement("div");
+            separator.style.cssText = "width: 1px; height: 24px; background: var(--b3-border-color); margin: 0 4px;";
+
+            qaActionsDiv.appendChild(replaceBtn);
+            qaActionsDiv.appendChild(insertBtn);
+            qaActionsDiv.appendChild(separator);
+            qaActionsDiv.appendChild(continueBtn);
+            qaActionsDiv.appendChild(cancelBtn);
+
+            messageDiv.appendChild(qaActionsDiv);
+        }
+
         this.messagesContainer.appendChild(messageDiv);
 
         // Scroll to bottom
@@ -578,28 +931,6 @@ export class UnifiedAIPanel {
                 `;
             }
         }
-
-        this.updateActionButtons();
-    }
-
-    private useSelectedText() {
-        const selectedText = EditorHelper.getSelectedText(this.currentProtyle);
-        if (!selectedText) {
-            this.addSystemMessage("No text selected. Please select some text in the editor first.");
-            return;
-        }
-
-        const input = this.element.querySelector("#claude-input") as HTMLTextAreaElement;
-        const contextInfo = this.element.querySelector("#claude-context-info");
-
-        if (input) {
-            input.value = `Context: ${selectedText}\n\n`;
-            input.focus();
-        }
-
-        if (contextInfo) {
-            contextInfo.textContent = `Using ${selectedText.length} characters as context`;
-        }
     }
 
     private getLastChatAssistantMessage(): string {
@@ -612,55 +943,45 @@ export class UnifiedAIPanel {
         return "";
     }
 
-    private insertLastResponse() {
-        const lastResponse = this.getLastChatAssistantMessage();
-        if (!lastResponse) {
-            this.addSystemMessage("No response to insert.");
+    /**
+     * Clear the last Selection Q&A AI response only
+     */
+    private clearLastQAResponse(): void {
+        // Find the last assistant message marked as Selection Q&A
+        let lastQAResponseIndex = -1;
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+            const msg = this.messages[i];
+            if (isChatMessage(msg) && msg.role === 'assistant' && msg.isSelectionQA) {
+                lastQAResponseIndex = i;
+                break;
+            }
+        }
+
+        if (lastQAResponseIndex === -1) {
+            // No QA response to clear - silent return
+            console.log('[UnifiedAIPanel] No QA response found to clear');
             return;
         }
 
-        const success = EditorHelper.insertTextAtCursor(lastResponse, this.currentProtyle);
-        if (success) {
-            this.addSystemMessage("Response inserted at cursor position.");
-        } else {
-            this.addSystemMessage("Failed to insert response. Please click in the editor first.");
+        const messageToRemove = this.messages[lastQAResponseIndex];
+
+        // Remove from messages array
+        this.messages.splice(lastQAResponseIndex, 1);
+
+        // Remove from DOM
+        if (this.messagesContainer) {
+            const element = this.messagesContainer.querySelector(
+                `[data-message-id="${messageToRemove.id}"]`
+            );
+            element?.remove();
         }
+
+        this.addSystemMessage("✅ 已清除 AI 答复");
+        console.log('[UnifiedAIPanel] Cleared QA response');
     }
 
-    private replaceSelectedText() {
-        const lastResponse = this.getLastChatAssistantMessage();
-        if (!lastResponse) {
-            this.addSystemMessage("No response to use for replacement.");
-            return;
-        }
 
-        if (!EditorHelper.hasSelection()) {
-            this.addSystemMessage("No text selected. Please select text to replace.");
-            return;
-        }
-
-        const success = EditorHelper.replaceSelectedText(lastResponse, this.currentProtyle);
-        if (success) {
-            this.addSystemMessage("Selected text replaced with response.");
-        } else {
-            this.addSystemMessage("Failed to replace text.");
-        }
-    }
-
-    private updateActionButtons() {
-        const insertBtn = this.element.querySelector("#claude-insert-btn") as HTMLElement;
-        const replaceBtn = this.element.querySelector("#claude-replace-btn") as HTMLElement;
-
-        const hasResponse = this.getLastChatAssistantMessage().length > 0;
-
-        if (insertBtn) {
-            insertBtn.style.display = hasResponse ? "block" : "none";
-        }
-
-        if (replaceBtn) {
-            replaceBtn.style.display = hasResponse ? "block" : "none";
-        }
-    }
+    // updateActionButtons() removed - no longer needed with new Selection Q&A design
 
     private copyMessage(content: string) {
         navigator.clipboard.writeText(content).then(() => {
@@ -721,6 +1042,29 @@ export class UnifiedAIPanel {
             content: m.content
         }));
 
+        // Get active preset
+        const configManager = (this.claudeClient as any).configManager;
+        let activePreset: any = null;
+        if (configManager && configManager.getAllTemplates) {
+            const templates = configManager.getAllTemplates();
+            activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+        }
+
+        // Get system prompt from preset (fallback to global if not set)
+        const systemPrompt = activePreset?.systemPrompt || this.claudeClient.getSystemPrompt();
+
+        // Append the appended prompt to the last user message
+        const appendedPrompt = activePreset?.appendedPrompt || this.claudeClient.getAppendedPrompt();
+        if (appendedPrompt && apiMessages.length > 0) {
+            const lastMessage = apiMessages[apiMessages.length - 1];
+            if (lastMessage.role === 'user') {
+                lastMessage.content += '\n\n' + appendedPrompt;
+            }
+        }
+
+        // Get filter rules for active preset
+        const filterRules = this.claudeClient.getFilterRules(this.activeChatPresetId);
+
         await this.claudeClient.sendMessage(
             apiMessages,
             (chunk) => {
@@ -746,7 +1090,6 @@ export class UnifiedAIPanel {
                 this.isStreaming = false;
                 sendBtn.disabled = false;
                 sendBtn.textContent = "Send";
-                this.updateActionButtons();
 
                 // Remove streaming message and add final one
                 const streamingMsg = document.getElementById(streamingMsgId);
@@ -754,7 +1097,10 @@ export class UnifiedAIPanel {
                     streamingMsg.remove();
                 }
                 this.addChatMessageToUI(assistantMessage);
-            }
+            },
+            "Chat",
+            filterRules,
+            systemPrompt
         );
     }
     //#endregion
@@ -1210,6 +1556,147 @@ export class UnifiedAIPanel {
         div.textContent = text;
         return div.innerHTML;
     }
+
+    /**
+     * Populate preset selector with available templates
+     */
+    private populatePresetSelector(): void {
+        const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
+        if (!selector) return;
+
+        // Get config manager from claude client
+        const configManager = (this.claudeClient as any).configManager;
+        if (!configManager || !configManager.getAllTemplates) {
+            console.warn('[UnifiedAIPanel] ConfigManager not available, using default preset only');
+            return;
+        }
+
+        // Get all templates
+        const templates = configManager.getAllTemplates();
+        if (!templates || templates.length === 0) {
+            console.warn('[UnifiedAIPanel] No presets found');
+            return;
+        }
+
+        // Clear existing options
+        selector.innerHTML = '';
+
+        // Add templates as options
+        templates.forEach((template: any) => {
+            const option = document.createElement('option');
+            option.value = template.id;
+            option.textContent = `${template.icon || '📝'} ${template.name}`;
+            selector.appendChild(option);
+        });
+
+        // Set current selection
+        selector.value = this.activeChatPresetId;
+    }
+
+    /**
+     * Refresh preset selector (call when presets change)
+     */
+    refreshPresetSelector(): void {
+        this.populatePresetSelector();
+    }
+    //#endregion
+
+    //#region Selection Q&A Action Handlers
+
+    /**
+     * Replace selected blocks with AI response
+     */
+    private async handleReplaceSelection(content: string): Promise<void> {
+        if (!this.currentSelection || this.currentSelection.blockIds.length === 0) {
+            this.addSystemMessage("❌ No selection found");
+            return;
+        }
+
+        try {
+            const blockIds = this.currentSelection.blockIds;
+            const firstBlockId = blockIds[0];
+            const lastBlockId = blockIds[blockIds.length - 1];
+
+            // Step 1: Insert new block after the selection
+            const insertResponse = await fetch('/api/block/insertBlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dataType: 'markdown',
+                    data: content,
+                    nextID: lastBlockId  // Insert after last selected block
+                })
+            });
+
+            if (!insertResponse.ok) {
+                throw new Error(`Failed to insert block: ${insertResponse.statusText}`);
+            }
+
+            const insertResult = await insertResponse.json();
+            console.log('[UnifiedAIPanel] Inserted new block:', insertResult);
+
+            // Step 2: Delete all selected blocks
+            for (const blockId of blockIds) {
+                const deleteResponse = await fetch('/api/block/deleteBlock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: blockId })
+                });
+
+                if (!deleteResponse.ok) {
+                    console.warn(`[UnifiedAIPanel] Failed to delete block ${blockId}`);
+                }
+            }
+
+            this.addSystemMessage(`✅ 已替换 ${blockIds.length} 个块`);
+            this.clearCurrentSelection();
+
+        } catch (error) {
+            console.error('[UnifiedAIPanel] Error replacing selection:', error);
+            this.addSystemMessage(`❌ 替换失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Insert AI response below selected blocks
+     */
+    private async handleInsertBelow(content: string): Promise<void> {
+        if (!this.currentSelection || this.currentSelection.blockIds.length === 0) {
+            this.addSystemMessage("❌ No selection found");
+            return;
+        }
+
+        try {
+            const blockIds = this.currentSelection.blockIds;
+            const lastBlockId = blockIds[blockIds.length - 1];
+
+            // Insert new block after the last selected block
+            const insertResponse = await fetch('/api/block/insertBlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dataType: 'markdown',
+                    data: content,
+                    nextID: lastBlockId  // Insert after last block
+                })
+            });
+
+            if (!insertResponse.ok) {
+                throw new Error(`Failed to insert block: ${insertResponse.statusText}`);
+            }
+
+            const result = await insertResponse.json();
+            console.log('[UnifiedAIPanel] Inserted block below selection:', result);
+
+            this.addSystemMessage(`✅ 已在选中块下方插入内容`);
+            this.clearCurrentSelection();
+
+        } catch (error) {
+            console.error('[UnifiedAIPanel] Error inserting below selection:', error);
+            this.addSystemMessage(`❌ 插入失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     //#endregion
 
     //#region Public API
@@ -1336,6 +1823,10 @@ export class UnifiedAIPanel {
     }
 
     destroy() {
+        // Stop selection monitoring
+        this.stopSelectionMonitoring();
+
+        // Remove element
         this.element.remove();
     }
 

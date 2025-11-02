@@ -547,6 +547,29 @@ export class ConfigManager {
     }
 
     /**
+     * Save multiple custom templates at once
+     */
+    saveCustomTemplates(templates: PromptTemplate[]): void {
+        // Clear existing custom templates (keep built-ins)
+        const builtInTemplates = this.getBuiltInTemplates();
+        this.promptTemplates.clear();
+
+        // Re-add built-in templates
+        builtInTemplates.forEach(template => {
+            this.promptTemplates.set(template.id, template);
+        });
+
+        // Add all provided custom templates
+        templates.forEach(template => {
+            if (!template.isBuiltIn) {
+                this.promptTemplates.set(template.id, template);
+            }
+        });
+
+        this.saveTemplates();
+    }
+
+    /**
      * Delete a custom template
      */
     deleteTemplate(id: string): boolean {

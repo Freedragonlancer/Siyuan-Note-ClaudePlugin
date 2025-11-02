@@ -44,6 +44,13 @@ export interface PromptTemplate {
 
     /** Optional preset-specific filter rules (applied after global rules) */
     filterRules?: FilterRule[];
+
+    /**
+     * Optional Selection Q&A template with context placeholders
+     * Supports: {selection}, {question}, {above_blocks=n}, {below_blocks=n}, {above=n}, {below=n}
+     * If not set, uses default format
+     */
+    selectionQATemplate?: string;
 }
 
 /**
@@ -132,3 +139,15 @@ export const BUILTIN_TEMPLATES: PromptTemplate[] = [
         editInstruction: '优化和改进文本' // Default instruction for Quick Edit
     }
 ];
+
+/**
+ * Default Selection Q&A Template
+ * Used when preset doesn't define a custom selectionQATemplate
+ */
+export const DEFAULT_SELECTION_QA_TEMPLATE = `以下是选中的内容：
+
+{selection}
+
+---
+
+用户问题：{question}`;

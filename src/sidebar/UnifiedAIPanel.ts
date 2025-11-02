@@ -20,6 +20,8 @@ import { AIEditProcessor } from "../editor/AIEditProcessor";
 import { EditQueue } from "../editor/EditQueue";
 import { DiffRenderer } from "../editor/DiffRenderer";
 import { EditorHelper } from "../editor";
+import { ContextExtractor } from "../quick-edit/ContextExtractor";
+import { DEFAULT_SELECTION_QA_TEMPLATE } from "../settings/config-types";
 import { marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
@@ -40,6 +42,7 @@ export class UnifiedAIPanel {
     private aiEditProcessor: AIEditProcessor;
     private editQueue: EditQueue;
     private diffRenderer: DiffRenderer;
+    private contextExtractor: ContextExtractor;
     private editQueueState: EditQueueState = {
         expanded: false,
         queueSize: 0,
@@ -83,6 +86,7 @@ export class UnifiedAIPanel {
         this.aiEditProcessor = aiEditProcessor;
         this.editQueue = editQueue;
         this.diffRenderer = diffRenderer;
+        this.contextExtractor = new ContextExtractor(new EditorHelper());
         this.onSettingsCallback = onSettings;
         this.config = { ...DEFAULT_UNIFIED_PANEL_CONFIG, ...config };
 
@@ -502,11 +506,38 @@ export class UnifiedAIPanel {
         let content = userMessage;
         let isSelectionQA = false;
 
-        // If in Selection Q&A mode, prepend selection context
+        // If in Selection Q&A mode, use template with context extraction
         if (this.panelMode === 'selectionQA' && this.currentSelection) {
             isSelectionQA = true;
-            const selectionContext = `以下是选中的内容（共 ${this.currentSelection.blockIds.length} 个块）：\n\n${this.currentSelection.text}\n\n---\n\n用户问题：${userMessage}`;
-            content = selectionContext;
+
+            // Get active preset
+            const configManager = (this.claudeClient as any).configManager;
+            let activePreset: any = null;
+            if (configManager && configManager.getAllTemplates) {
+                const templates = configManager.getAllTemplates();
+                activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+            }
+
+            // Get Selection Q&A template from preset (fallback to default)
+            let template = activePreset?.selectionQATemplate || DEFAULT_SELECTION_QA_TEMPLATE;
+
+            // Process context placeholders (if template contains them)
+            try {
+                if (this.contextExtractor.hasPlaceholders(template)) {
+                    template = await this.contextExtractor.processTemplate(
+                        template,
+                        this.currentSelection.blockIds
+                    );
+                }
+            } catch (error) {
+                console.error('[UnifiedAIPanel] Error processing context placeholders:', error);
+                // Fall back to template without context extraction
+            }
+
+            // Replace content placeholders
+            content = template
+                .replace(/{selection}/g, this.currentSelection.text)
+                .replace(/{question}/g, userMessage);
         }
 
         // Create chat message (store original user message for display)

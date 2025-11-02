@@ -483,4 +483,43 @@ export class InstructionInputPopup {
             console.warn('[InstructionInputPopup] Failed to save last preset to localStorage:', error);
         }
     }
+
+    /**
+     * Update presets list dynamically
+     * Call this when presets are added/updated in settings
+     */
+    public updatePresets(presets: PromptTemplate[]): void {
+        this.presets = presets;
+        console.log('[InstructionInputPopup] Presets updated, count:', presets.length);
+
+        // If popup is currently visible, update the preset selector
+        if (this.isVisible && this.element) {
+            const selector = this.element.querySelector('#preset-select') as HTMLSelectElement;
+            if (selector) {
+                const currentValue = selector.value;
+
+                // Rebuild options
+                selector.innerHTML = `
+                    <option value="custom">自定义</option>
+                    ${this.presets
+                        .filter(p => p.editInstruction)
+                        .map(preset => {
+                            const activeMarker = this.isActivePreset(preset) ? ' ⭐' : '';
+                            return `<option value="${this.escapeAttr(preset.id)}">${this.escapeHtml(preset.name)}${activeMarker}</option>`;
+                        })
+                        .join('')}
+                `;
+
+                // Restore selection if the preset still exists
+                const presetStillExists = this.presets.some(p => p.id === currentValue);
+                if (presetStillExists) {
+                    selector.value = currentValue;
+                } else if (currentValue !== 'custom') {
+                    // Preset was deleted, reset to custom
+                    selector.value = 'custom';
+                    console.log('[InstructionInputPopup] Previously selected preset no longer exists, reset to custom');
+                }
+            }
+        }
+    }
 }

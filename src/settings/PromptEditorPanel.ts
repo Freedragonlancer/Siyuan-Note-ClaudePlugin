@@ -19,13 +19,26 @@ import { responseFilter } from "../filter";
 
 type TabType = "templates" | "system" | "appended" | "quickEditPrompt" | "responseFilters";
 
+// New two-level tab system types
+type MainTabType = "presets" | "filters";
+type SubTabType = "system" | "appended" | "quickEdit" | "selectionQA";
+
 export class PromptEditorPanel {
     private dialog: Dialog | null = null;
     private configManager: ConfigManager;
     private currentSettings: ClaudeSettings;
     private onSave: (settings: Partial<ClaudeSettings>) => void;
+    private onPresetsChanged?: () => void;
+
+    // Legacy tab system (keep for backward compatibility)
     private activeTab: TabType = "templates";
     private customTemplates: PromptTemplate[] = [];
+
+    // New two-level tab system
+    private activeMainTab: MainTabType = "presets";
+    private activeSubTab: SubTabType = "system";
+    private selectedPresetId: string | null = null;
+    private presetDraftData: Partial<PromptTemplate> = {};
 
     // Dual-scope filterRules UI state
     private filterRulesView: 'global' | 'preset' = 'global';
@@ -34,11 +47,13 @@ export class PromptEditorPanel {
     constructor(
         configManager: ConfigManager,
         currentSettings: ClaudeSettings,
-        onSave: (settings: Partial<ClaudeSettings>) => void
+        onSave: (settings: Partial<ClaudeSettings>) => void,
+        onPresetsChanged?: () => void
     ) {
         this.configManager = configManager;
         this.currentSettings = { ...currentSettings };
         this.onSave = onSave;
+        this.onPresetsChanged = onPresetsChanged;
 
         // Load custom templates
         this.loadCustomTemplates();
@@ -82,9 +97,9 @@ export class PromptEditorPanel {
     private renderContent(container: HTMLElement): void {
         container.innerHTML = `
             <div class="prompt-editor-layout">
-                ${this.createTabBar()}
+                ${this.createMainTabBar()}
                 <div class="prompt-editor-body">
-                    ${this.createTabContent()}
+                    ${this.createMainTabContent()}
                 </div>
             </div>
         `;
@@ -720,7 +735,72 @@ export class PromptEditorPanel {
     //#region Event Listeners
 
     private attachEventListeners(container: HTMLElement): void {
-        // Tab switching
+        // ===== New Two-Level Tab System =====
+
+        // Main tab switching (Level 1: Presets | Filters)
+        container.querySelectorAll('[data-main-tab]').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const tabId = (e.currentTarget as HTMLElement).dataset.mainTab as MainTabType;
+                this.switchMainTab(tabId);
+            });
+        });
+
+        // Sub tab switching (Level 2: System | Appended | Quick Edit | Selection Q&A)
+        container.querySelectorAll('[data-sub-tab]').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const tabId = (e.currentTarget as HTMLElement).dataset.subTab as SubTabType;
+                this.switchSubTab(tabId);
+            });
+        });
+
+        // Preset selector dropdown
+        const presetSelector = container.querySelector('#preset-selector') as HTMLSelectElement;
+        if (presetSelector) {
+            presetSelector.addEventListener('change', (e) => {
+                this.selectedPresetId = (e.target as HTMLSelectElement).value || null;
+                this.presetDraftData = {}; // Clear draft when switching presets
+                this.renderContent(container);
+            });
+        }
+
+        // New preset button
+        const newPresetBtn = container.querySelector('#new-preset-btn');
+        if (newPresetBtn) {
+            newPresetBtn.addEventListener('click', () => this.handleNewPreset());
+        }
+
+        // Delete preset button
+        const deletePresetBtn = container.querySelector('#delete-preset-btn');
+        if (deletePresetBtn) {
+            deletePresetBtn.addEventListener('click', () => this.handleDeletePreset());
+        }
+
+        // Apply preset button
+        const applyPresetBtn = container.querySelector('#apply-preset-btn');
+        if (applyPresetBtn) {
+            applyPresetBtn.addEventListener('click', () => this.handleApplyPreset());
+        }
+
+        // Save sub-tab button
+        const saveBtn = container.querySelector('#save-sub-tab-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => this.handleSaveSubTab(container));
+        }
+
+        // Textarea character count update
+        const textarea = container.querySelector('textarea');
+        if (textarea) {
+            const charCountSpan = container.querySelector('#char-count');
+            if (charCountSpan) {
+                textarea.addEventListener('input', () => {
+                    charCountSpan.textContent = textarea.value.length.toString();
+                });
+            }
+        }
+
+        // ===== Legacy Tab System (keep for backward compatibility) =====
+
+        // Old tab switching
         container.querySelectorAll('.prompt-editor-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 const tabId = (e.currentTarget as HTMLElement).dataset.tab as TabType;
@@ -728,19 +808,11 @@ export class PromptEditorPanel {
             });
         });
 
-        // Presets tab
+        // Legacy listeners
         this.attachPresetsListeners(container);
-
-        // System prompt tab
         this.attachSystemPromptListeners(container);
-
-        // Appended prompt tab
         this.attachAppendedPromptListeners(container);
-
-        // Quick edit prompt tab
         this.attachQuickEditPromptListeners(container);
-
-        // Response filters tab
         this.attachResponseFiltersListeners(container);
     }
 
@@ -751,16 +823,28 @@ export class PromptEditorPanel {
             addBtn.addEventListener('click', () => this.showPresetEditDialog());
         }
 
-        // Export all presets
+        // Export all presets (old button, keep for backward compatibility)
         const exportAllBtn = container.querySelector('#export-all-presets');
         if (exportAllBtn) {
             exportAllBtn.addEventListener('click', () => this.exportAllPresets());
         }
 
-        // Import presets
-        const importBtn = container.querySelector('#import-presets');
+        // Import presets (new button in preset selector)
+        const importBtn = container.querySelector('#import-presets-btn');
         if (importBtn) {
             importBtn.addEventListener('click', () => this.importPresets());
+        }
+
+        // Export current preset (new button in preset selector)
+        const exportCurrentBtn = container.querySelector('#export-current-preset-btn');
+        if (exportCurrentBtn) {
+            exportCurrentBtn.addEventListener('click', () => this.exportCurrentPreset());
+        }
+
+        // Import presets (old button, keep for backward compatibility)
+        const importBtnOld = container.querySelector('#import-presets');
+        if (importBtnOld) {
+            importBtnOld.addEventListener('click', () => this.importPresets());
         }
 
         // Preview preset
@@ -1160,6 +1244,27 @@ export class PromptEditorPanel {
                         </div>
                     </div>
 
+                    <div style="border-top: 1px solid var(--b3-border-color); padding-top: 16px; margin-top: 16px; margin-bottom: 16px;">
+                        <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                            <span style="font-weight: 500; margin-right: 8px;">💬 Selection Q&A 模板配置</span>
+                            <span class="ft__smaller ft__secondary">(可选)</span>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px;">Selection Q&A 模板</label>
+                            <textarea id="template-selection-qa-template" class="b3-text-field" rows="6" placeholder="支持占位符: {selection}, {question}, {above_blocks=n}, {below_blocks=n}, {above=n}, {below=n}" style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;">${template?.selectionQATemplate || ''}</textarea>
+                            <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                                定义 Selection Q&A 模式下如何构建 AI 请求。留空使用默认格式。<br>
+                                支持的占位符：<br>
+                                • <code>{selection}</code> - 选中的内容<br>
+                                • <code>{question}</code> - 用户问题<br>
+                                • <code>{above_blocks=2}</code> - 选中块之前的 2 个块<br>
+                                • <code>{below_blocks=2}</code> - 选中块之后的 2 个块<br>
+                                • <code>{above=5}</code> - 选中内容之前的 5 行文本<br>
+                                • <code>{below=5}</code> - 选中内容之后的 5 行文本
+                            </div>
+                        </div>
+                    </div>
+
                     <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
                         <button class="b3-button b3-button--cancel" id="template-cancel">取消</button>
                         <button class="b3-button b3-button--text" id="template-save">💾 保存</button>
@@ -1178,6 +1283,7 @@ export class PromptEditorPanel {
         const appendedPromptTextarea = editDialog.element.querySelector('#template-appended-prompt') as HTMLTextAreaElement;
         const editInstructionTextarea = editDialog.element.querySelector('#template-edit-instruction') as HTMLTextAreaElement;
         const showDiffCheckbox = editDialog.element.querySelector('#template-show-diff') as HTMLInputElement;
+        const selectionQATemplateTextarea = editDialog.element.querySelector('#template-selection-qa-template') as HTMLTextAreaElement;
         const saveBtn = editDialog.element.querySelector('#template-save');
         const cancelBtn = editDialog.element.querySelector('#template-cancel');
 
@@ -1190,6 +1296,7 @@ export class PromptEditorPanel {
             const appendedPrompt = appendedPromptTextarea?.value || '';
             const editInstruction = editInstructionTextarea?.value.trim() || undefined;
             const showDiff = showDiffCheckbox?.checked || false;
+            const selectionQATemplate = selectionQATemplateTextarea?.value.trim() || undefined;
 
             if (!name) {
                 showMessage("❌ 请输入模板名称", 2000, "error");
@@ -1211,7 +1318,8 @@ export class PromptEditorPanel {
                 appendedPrompt,
                 isBuiltIn: false,
                 editInstruction,
-                showDiff
+                showDiff,
+                selectionQATemplate
             };
 
             if (isEdit) {
@@ -1770,6 +1878,19 @@ export class PromptEditorPanel {
     }
 
     /**
+     * Export currently selected preset from dropdown
+     */
+    private exportCurrentPreset(): void {
+        if (!this.selectedPresetId) {
+            showMessage("❌ 请先选择一个预设", 2000, "error");
+            return;
+        }
+
+        // Reuse existing exportPreset method
+        this.exportPreset(this.selectedPresetId);
+    }
+
+    /**
      * Export all presets to JSON
      */
     private exportAllPresets(): void {
@@ -1843,9 +1964,17 @@ export class PromptEditorPanel {
 
                 showMessage(`✅ 成功导入 ${importedCount} 个预设`, 2000, "info");
 
+                // Notify presets changed to refresh UI in QuickEditManager and UnifiedAIPanel
+                if (this.onPresetsChanged) {
+                    this.onPresetsChanged();
+                }
+
                 // Refresh presets tab
                 this.loadCustomTemplates();
-                this.switchTab('presets');
+                const container = this.dialog?.element.querySelector("#prompt-editor-container");
+                if (container) {
+                    this.renderContent(container as HTMLElement);
+                }
             } catch (error) {
                 console.error('[PromptEditor] Import error:', error);
                 showMessage("❌ 导入失败: " + error.message, 3000, "error");
@@ -2333,6 +2462,509 @@ export class PromptEditorPanel {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    //#endregion
+
+    //#region New Two-Level Tab System Methods
+
+    /**
+     * Create main tab bar (Level 1: Presets | Filters)
+     */
+    private createMainTabBar(): string {
+        const tabs = [
+            { id: "presets", label: "提示词预设", icon: "iconList" },
+            { id: "filters", label: "响应过滤", icon: "iconFilter" }
+        ];
+
+        return `
+            <div class="b3-tab-bar prompt-editor-main-tabs" style="background: var(--b3-theme-background); border-bottom: 1px solid var(--b3-border-color); padding: 0 16px;">
+                ${tabs.map(tab => `
+                    <div class="b3-tab-bar__item ${this.activeMainTab === tab.id ? 'b3-tab-bar__item--active' : ''}"
+                         data-main-tab="${tab.id}"
+                         style="display: flex; align-items: center; gap: 6px; padding: 12px 16px; cursor: pointer;">
+                        <svg style="width: 16px; height: 16px;"><use xlink:href="#${tab.icon}"></use></svg>
+                        <span>${tab.label}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Create main tab content based on active main tab
+     */
+    private createMainTabContent(): string {
+        switch (this.activeMainTab) {
+            case "presets":
+                return this.createPresetsManagementView();
+            case "filters":
+                return this.createResponseFiltersTab(); // Existing method
+            default:
+                return "";
+        }
+    }
+
+    /**
+     * Create presets management view with two-level tab system
+     */
+    private createPresetsManagementView(): string {
+        const allPresets = this.configManager.getAllTemplates();
+        const selectedPreset = this.selectedPresetId
+            ? allPresets.find(p => p.id === this.selectedPresetId)
+            : null;
+
+        // Build preset options for selector
+        const presetOptions = allPresets.map(preset =>
+            `<option value="${preset.id}" ${this.selectedPresetId === preset.id ? 'selected' : ''}>
+                ${preset.icon || '📝'} ${this.escapeHtml(preset.name)}
+            </option>`
+        ).join('');
+
+        return `
+            <div class="presets-management-container">
+                ${this.createPresetSelectorSection(presetOptions, selectedPreset)}
+                ${this.createSubTabBar()}
+                ${this.createSubTabContent(selectedPreset)}
+            </div>
+        `;
+    }
+
+    /**
+     * Create preset selector section with action buttons
+     */
+    private createPresetSelectorSection(presetOptions: string, selectedPreset: PromptTemplate | null): string {
+        const activePreset = this.configManager.getAllTemplates().find(p => this.isActivePreset(p));
+        const activeIndicator = activePreset
+            ? `<div style="margin-top: 12px; padding: 8px 12px; background: var(--b3-theme-primary-lightest); border-left: 3px solid var(--b3-theme-primary); border-radius: 4px;">
+                   <span class="ft__smaller">💡 当前使用中的预设: <strong>${activePreset.icon || ''} ${this.escapeHtml(activePreset.name)}</strong></span>
+               </div>`
+            : '';
+
+        return `
+            <div class="preset-selector-section" style="padding: 16px; border-bottom: 1px solid var(--b3-border-color); background: var(--b3-theme-surface);">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+                    <div style="flex: 1; max-width: 400px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">当前编辑预设</label>
+                        <select id="preset-selector" class="b3-select" style="width: 100%;">
+                            <option value="">-- 选择预设 --</option>
+                            ${presetOptions}
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="b3-button b3-button--outline" id="new-preset-btn" title="新建预设">
+                            <svg class="fn__size200"><use xlink:href="#iconAdd"></use></svg>
+                            <span style="margin-left: 4px;">新建</span>
+                        </button>
+                        <button class="b3-button b3-button--outline" id="delete-preset-btn"
+                                ${!selectedPreset || selectedPreset.isBuiltIn ? 'disabled' : ''} title="删除预设">
+                            <svg class="fn__size200"><use xlink:href="#iconTrashcan"></use></svg>
+                            <span style="margin-left: 4px;">删除</span>
+                        </button>
+                        <button class="b3-button b3-button--text" id="import-presets-btn" title="从JSON文件导入预设">
+                            <svg class="fn__size200"><use xlink:href="#iconUpload"></use></svg>
+                            <span style="margin-left: 4px;">导入</span>
+                        </button>
+                        <button class="b3-button b3-button--text" id="export-current-preset-btn"
+                                ${!selectedPreset ? 'disabled' : ''} title="导出当前选中的预设">
+                            <svg class="fn__size200"><use xlink:href="#iconDownload"></use></svg>
+                            <span style="margin-left: 4px;">导出</span>
+                        </button>
+                        <button class="b3-button b3-button--text" id="apply-preset-btn"
+                                ${!selectedPreset ? 'disabled' : ''} title="应用到当前配置">
+                            <svg class="fn__size200"><use xlink:href="#iconCheck"></use></svg>
+                            <span style="margin-left: 4px;">应用预设</span>
+                        </button>
+                    </div>
+                </div>
+                ${activeIndicator}
+            </div>
+        `;
+    }
+
+    /**
+     * Create sub-tab bar (Level 2: System | Appended | Quick Edit | Selection Q&A)
+     */
+    private createSubTabBar(): string {
+        const subTabs = [
+            { id: "system", label: "系统提示词" },
+            { id: "appended", label: "追加提示词" },
+            { id: "quickEdit", label: "快速编辑模版" },
+            { id: "selectionQA", label: "Selection Q&A 模版" }
+        ];
+
+        return `
+            <div class="b3-tab-bar prompt-editor-sub-tabs" style="padding: 0 16px; margin-top: 16px; border-bottom: 2px solid var(--b3-border-color);">
+                ${subTabs.map(tab => `
+                    <div class="b3-tab-bar__item ${this.activeSubTab === tab.id ? 'b3-tab-bar__item--active' : ''}"
+                         data-sub-tab="${tab.id}"
+                         style="font-size: 13px; padding: 8px 12px; cursor: pointer; color: ${this.activeSubTab === tab.id ? 'var(--b3-theme-primary)' : 'var(--b3-theme-on-surface-light)'};">
+                        ${tab.label}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Create sub-tab content based on active sub-tab
+     */
+    private createSubTabContent(selectedPreset: PromptTemplate | null): string {
+        if (!selectedPreset) {
+            return `
+                <div class="b3-tab-container" style="padding: 40px; text-align: center;">
+                    <div class="ft__secondary" style="font-size: 14px;">
+                        <svg style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.3;"><use xlink:href="#iconInfo"></use></svg>
+                        <div>请先选择或创建一个预设</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Merge draft data with preset data
+        const data = { ...selectedPreset, ...this.presetDraftData };
+
+        let content = '';
+        switch (this.activeSubTab) {
+            case "system":
+                content = this.createSystemPromptSubTab(data);
+                break;
+            case "appended":
+                content = this.createAppendedPromptSubTab(data);
+                break;
+            case "quickEdit":
+                content = this.createQuickEditSubTab(data);
+                break;
+            case "selectionQA":
+                content = this.createSelectionQASubTab(data);
+                break;
+        }
+
+        return `<div class="b3-tab-container" style="padding: 16px;"><div class="sub-tab-content" style="max-width: 900px; margin: 0 auto;">${content}</div></div>`;
+    }
+
+    /**
+     * Create system prompt sub-tab content
+     */
+    private createSystemPromptSubTab(preset: PromptTemplate): string {
+        const charCount = preset.systemPrompt?.length || 0;
+        return `
+            <div style="margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 15px;">系统提示词</h4>
+                <div class="ft__smaller ft__secondary">定义 AI 的角色、行为和回应风格</div>
+            </div>
+            <textarea
+                id="system-prompt-textarea"
+                class="b3-text-field"
+                rows="12"
+                style="width: 100%; font-family: Consolas, monospace; font-size: 13px; resize: vertical;"
+                placeholder="You are a helpful assistant...">${this.escapeHtml(preset.systemPrompt || '')}</textarea>
+            <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <span class="ft__smaller ft__secondary">
+                    字符数: <span id="char-count">${charCount}</span>
+                </span>
+                <button class="b3-button b3-button--text" id="save-sub-tab-btn">
+                    <svg class="fn__size200"><use xlink:href="#iconSave"></use></svg>
+                    <span style="margin-left: 4px;">保存</span>
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Create appended prompt sub-tab content
+     */
+    private createAppendedPromptSubTab(preset: PromptTemplate): string {
+        const charCount = preset.appendedPrompt?.length || 0;
+        return `
+            <div style="margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 15px;">追加提示词</h4>
+                <div class="ft__smaller ft__secondary">自动附加到每次用户请求末尾的指令</div>
+            </div>
+            <textarea
+                id="appended-prompt-textarea"
+                class="b3-text-field"
+                rows="8"
+                style="width: 100%; font-family: Consolas, monospace; font-size: 13px; resize: vertical;"
+                placeholder="请用清晰的 Markdown 格式回复...">${this.escapeHtml(preset.appendedPrompt || '')}</textarea>
+            <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <span class="ft__smaller ft__secondary">
+                    字符数: <span id="char-count">${charCount}</span>
+                </span>
+                <button class="b3-button b3-button--text" id="save-sub-tab-btn">
+                    <svg class="fn__size200"><use xlink:href="#iconSave"></use></svg>
+                    <span style="margin-left: 4px;">保存</span>
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Create quick edit template sub-tab content
+     */
+    private createQuickEditSubTab(preset: PromptTemplate): string {
+        const defaultTemplate = `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何解释或说明。`;
+        return `
+            <div style="margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 15px;">快速编辑模版</h4>
+                <div class="ft__smaller ft__secondary">
+                    支持占位符: <code>{instruction}</code>, <code>{original}</code>, <code>{above=n}</code>, <code>{below=n}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>
+                </div>
+            </div>
+            <textarea
+                id="quick-edit-template-textarea"
+                class="b3-text-field"
+                rows="10"
+                style="width: 100%; font-family: Consolas, monospace; font-size: 13px; resize: vertical;"
+                placeholder="${this.escapeHtml(defaultTemplate)}">${this.escapeHtml(preset.editInstruction || '')}</textarea>
+            <div style="margin-top: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="show-diff-checkbox" ${preset.showDiff ? 'checked' : ''}>
+                    <span>启用差异对比显示</span>
+                </label>
+            </div>
+            <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+                <button class="b3-button b3-button--text" id="save-sub-tab-btn">
+                    <svg class="fn__size200"><use xlink:href="#iconSave"></use></svg>
+                    <span style="margin-left: 4px;">保存</span>
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Create Selection Q&A template sub-tab content
+     */
+    private createSelectionQASubTab(preset: PromptTemplate): string {
+        const defaultTemplate = `以下是选中的内容：
+
+{selection}
+
+---
+
+用户问题：{question}`;
+        return `
+            <div style="margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 15px;">Selection Q&A 模版</h4>
+                <div class="ft__smaller ft__secondary">
+                    支持占位符: <code>{selection}</code>, <code>{question}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>, <code>{above=n}</code>, <code>{below=n}</code>
+                </div>
+            </div>
+            <textarea
+                id="selection-qa-template-textarea"
+                class="b3-text-field"
+                rows="10"
+                style="width: 100%; font-family: Consolas, monospace; font-size: 13px; resize: vertical;"
+                placeholder="${this.escapeHtml(defaultTemplate)}">${this.escapeHtml(preset.selectionQATemplate || '')}</textarea>
+            <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+                <button class="b3-button b3-button--text" id="save-sub-tab-btn">
+                    <svg class="fn__size200"><use xlink:href="#iconSave"></use></svg>
+                    <span style="margin-left: 4px;">保存</span>
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Switch main tab (Level 1)
+     */
+    private switchMainTab(tabId: MainTabType): void {
+        this.activeMainTab = tabId;
+        const container = this.dialog?.element.querySelector("#prompt-editor-container");
+        if (container) {
+            this.renderContent(container as HTMLElement);
+        }
+    }
+
+    /**
+     * Switch sub-tab (Level 2)
+     */
+    private switchSubTab(tabId: SubTabType): void {
+        this.activeSubTab = tabId;
+        const container = this.dialog?.element.querySelector("#prompt-editor-container");
+        if (container) {
+            this.renderContent(container as HTMLElement);
+        }
+    }
+
+    /**
+     * Handle new preset creation
+     */
+    private handleNewPreset(): void {
+        const dialog = new Dialog({
+            title: "新建预设",
+            content: `
+                <div style="padding: 16px;">
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px;">预设名称</label>
+                        <input type="text" id="new-preset-name" class="b3-text-field" style="width: 100%;" placeholder="输入预设名称">
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px;">描述</label>
+                        <input type="text" id="new-preset-desc" class="b3-text-field" style="width: 100%;" placeholder="简短描述（可选）">
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                        <button class="b3-button b3-button--cancel" id="cancel-new">取消</button>
+                        <button class="b3-button b3-button--text" id="confirm-new">创建</button>
+                    </div>
+                </div>
+            `,
+            width: "400px"
+        });
+
+        dialog.element.querySelector('#cancel-new')?.addEventListener('click', () => dialog.destroy());
+        dialog.element.querySelector('#confirm-new')?.addEventListener('click', () => {
+            const name = (dialog.element.querySelector('#new-preset-name') as HTMLInputElement).value.trim();
+            const description = (dialog.element.querySelector('#new-preset-desc') as HTMLInputElement).value.trim();
+
+            if (!name) {
+                showMessage("❌ 请输入预设名称", 2000, "error");
+                return;
+            }
+
+            // Create new preset
+            const newPreset: PromptTemplate = {
+                id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                name,
+                description,
+                icon: '📝',
+                category: 'custom',
+                systemPrompt: '',
+                appendedPrompt: '',
+                isBuiltIn: false
+            };
+
+            this.customTemplates.push(newPreset);
+            this.configManager.saveCustomTemplates(this.customTemplates);
+            this.selectedPresetId = newPreset.id;
+            this.presetDraftData = {};
+
+            // Notify presets changed
+            if (this.onPresetsChanged) {
+                this.onPresetsChanged();
+            }
+
+            dialog.destroy();
+            const container = this.dialog?.element.querySelector("#prompt-editor-container");
+            if (container) {
+                this.renderContent(container as HTMLElement);
+            }
+            showMessage("✅ 预设创建成功", 2000, "info");
+        });
+    }
+
+    /**
+     * Handle preset deletion
+     */
+    private handleDeletePreset(): void {
+        if (!this.selectedPresetId) return;
+
+        const preset = this.customTemplates.find(t => t.id === this.selectedPresetId);
+        if (!preset || preset.isBuiltIn) return;
+
+        confirm("确认删除", `确定要删除预设 "${preset.name}" 吗？此操作不可恢复。`, () => {
+            const index = this.customTemplates.findIndex(t => t.id === this.selectedPresetId);
+            if (index !== -1) {
+                this.customTemplates.splice(index, 1);
+                this.configManager.saveCustomTemplates(this.customTemplates);
+                this.selectedPresetId = null;
+                this.presetDraftData = {};
+
+                // Notify presets changed
+                if (this.onPresetsChanged) {
+                    this.onPresetsChanged();
+                }
+
+                const container = this.dialog?.element.querySelector("#prompt-editor-container");
+                if (container) {
+                    this.renderContent(container as HTMLElement);
+                }
+                showMessage("✅ 预设已删除", 2000, "info");
+            }
+        });
+    }
+
+    /**
+     * Handle preset application to current settings
+     */
+    private handleApplyPreset(): void {
+        if (!this.selectedPresetId) return;
+
+        const preset = this.configManager.getAllTemplates().find(p => p.id === this.selectedPresetId);
+        if (!preset) return;
+
+        // Apply preset to current settings
+        const updatedSettings: Partial<ClaudeSettings> = {
+            systemPrompt: preset.systemPrompt,
+            appendedPrompt: preset.appendedPrompt
+        };
+
+        this.currentSettings = { ...this.currentSettings, ...updatedSettings };
+        this.onSave(updatedSettings);
+
+        const container = this.dialog?.element.querySelector("#prompt-editor-container");
+        if (container) {
+            this.renderContent(container as HTMLElement);
+        }
+        showMessage("✅ 预设已应用到当前配置", 2000, "info");
+    }
+
+    /**
+     * Handle save sub-tab content
+     */
+    private handleSaveSubTab(container: HTMLElement): void {
+        if (!this.selectedPresetId) return;
+
+        const presetIndex = this.customTemplates.findIndex(t => t.id === this.selectedPresetId);
+        if (presetIndex === -1) return;
+
+        const preset = this.customTemplates[presetIndex];
+
+        // Get data based on active sub-tab
+        switch (this.activeSubTab) {
+            case "system":
+                const systemTextarea = container.querySelector('#system-prompt-textarea') as HTMLTextAreaElement;
+                if (systemTextarea) {
+                    preset.systemPrompt = systemTextarea.value;
+                }
+                break;
+            case "appended":
+                const appendedTextarea = container.querySelector('#appended-prompt-textarea') as HTMLTextAreaElement;
+                if (appendedTextarea) {
+                    preset.appendedPrompt = appendedTextarea.value;
+                }
+                break;
+            case "quickEdit":
+                const quickEditTextarea = container.querySelector('#quick-edit-template-textarea') as HTMLTextAreaElement;
+                const showDiffCheckbox = container.querySelector('#show-diff-checkbox') as HTMLInputElement;
+                if (quickEditTextarea) {
+                    preset.editInstruction = quickEditTextarea.value;
+                    preset.showDiff = showDiffCheckbox?.checked || false;
+                }
+                break;
+            case "selectionQA":
+                const selectionQATextarea = container.querySelector('#selection-qa-template-textarea') as HTMLTextAreaElement;
+                if (selectionQATextarea) {
+                    preset.selectionQATemplate = selectionQATextarea.value;
+                }
+                break;
+        }
+
+        // Save to config manager
+        this.configManager.saveCustomTemplates(this.customTemplates);
+        this.presetDraftData = {}; // Clear draft after save
+
+        // Notify presets changed
+        if (this.onPresetsChanged) {
+            this.onPresetsChanged();
+        }
+
+        showMessage("✅ 已保存", 2000, "info");
     }
 
     //#endregion

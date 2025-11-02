@@ -1844,6 +1844,16 @@ export class QuickEditManager {
     }
 
     /**
+     * Refresh presets list in input popup
+     * Call this when presets are added/updated/deleted
+     */
+    public refreshPresets(): void {
+        const presets = this.configManager.getAllTemplates();
+        this.inputPopup.updatePresets(presets);
+        console.log('[QuickEditManager] Presets refreshed, count:', presets.length);
+    }
+
+    /**
      * Cleanup - FIX: Proper cleanup of all resources
      */
     public destroy(): void {

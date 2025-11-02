@@ -1734,3 +1734,104 @@
         transform: translateY(0);
     }
 }
+
+/* Two-Level Tab System Styles for Prompt Editor */
+
+// Main tabs (Level 1) - Primary navigation
+.prompt-editor-main-tabs {
+    background: var(--b3-theme-background);
+    border-bottom: 1px solid var(--b3-border-color);
+    padding: 0 16px;
+    display: flex;
+
+    .b3-tab-bar__item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 12px 16px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-bottom: 2px solid transparent;
+
+        svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        &:hover:not(&--active) {
+            background: var(--b3-list-hover);
+        }
+
+        &--active {
+            color: var(--b3-theme-primary);
+            border-bottom-color: var(--b3-theme-primary);
+            font-weight: 500;
+        }
+    }
+}
+
+// Sub tabs (Level 2) - Secondary navigation for presets
+.prompt-editor-sub-tabs {
+    display: flex;
+    gap: 0;
+
+    .b3-tab-bar__item {
+        font-size: 13px;
+        padding: 8px 12px;
+        cursor: pointer;
+        color: var(--b3-theme-on-surface-light);
+        transition: all 0.2s ease;
+        border-bottom: 2px solid transparent;
+
+        &:hover:not(&--active) {
+            background: var(--b3-list-hover);
+            color: var(--b3-theme-on-surface);
+        }
+
+        &--active {
+            color: var(--b3-theme-primary);
+            border-bottom-color: var(--b3-theme-primary);
+            font-weight: 500;
+        }
+    }
+}
+
+// Preset selector section
+.preset-selector-section {
+    background: var(--b3-theme-surface);
+}
+
+// Sub-tab content container
+.sub-tab-content {
+    max-width: 900px;
+    margin: 0 auto;
+
+    h4 {
+        font-weight: 500;
+        font-size: 15px;
+        margin: 0 0 8px 0;
+    }
+
+    code {
+        background: var(--b3-theme-surface-lighter);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+    }
+}
+
+// Presets management container
+.presets-management-container {
+    min-height: 400px;
+}
+
+// Hide old custom tab styles when using new system
+.prompt-editor-layout {
+    .prompt-editor-tabs {
+        // Legacy tab bar - hide if new system is active
+        &.legacy {
+            display: none;
+        }
+    }
+}

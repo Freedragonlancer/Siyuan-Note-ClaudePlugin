@@ -115,6 +115,10 @@ export default class ClaudeAssistantPlugin extends Plugin {
         this.claudeClient = new ClaudeClient(settings, this.configManager);
         console.log("[Plugin] ClaudeClient initialized");
 
+        // Migrate quickEditPromptTemplate to default preset (new two-level tab system)
+        await this.migrateQuickEditToDefaultPreset();
+        console.log("[Plugin] QuickEdit template migration check completed");
+
         // Initialize AI Text Editing feature
         try {
             this.initializeEditFeature(settings);
@@ -406,10 +410,32 @@ export default class ClaudeAssistantPlugin extends Plugin {
                     // Update Claude client (QuickEditManager will automatically get new settings from ClaudeClient)
                     this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
+                    // Refresh presets in QuickEditManager and UnifiedAIPanel
+                    if (this.quickEditManager) {
+                        this.quickEditManager.refreshPresets();
+                        console.log("[ClaudePlugin] QuickEditManager presets refreshed");
+                    }
+                    if (this.unifiedPanel) {
+                        this.unifiedPanel.refreshPresetSelector();
+                        console.log("[ClaudePlugin] UnifiedAIPanel presets refreshed");
+                    }
+
                     console.log("[ClaudePlugin] ✅ Prompt settings updated successfully (QuickEditManager will use ClaudeClient settings)");
                 } catch (error) {
                     console.error("[ClaudePlugin] Failed to save prompt settings:", error);
                     showMessage("❌ 保存提示词失败", 3000, "error");
+                }
+            },
+            () => {
+                // onPresetsChanged callback - refresh presets when they are created/updated/deleted
+                console.log("[ClaudePlugin] Presets changed, refreshing UI...");
+                if (this.quickEditManager) {
+                    this.quickEditManager.refreshPresets();
+                    console.log("[ClaudePlugin] QuickEditManager presets refreshed");
+                }
+                if (this.unifiedPanel) {
+                    this.unifiedPanel.refreshPresetSelector();
+                    console.log("[ClaudePlugin] UnifiedAIPanel presets refreshed");
                 }
             }
         );
@@ -1017,6 +1043,48 @@ export default class ClaudeAssistantPlugin extends Plugin {
         } catch (error) {
             console.error('[Migration] Error during quickEditPromptTemplate migration:', error);
             return settings; // Return original settings on error
+        }
+    }
+
+    /**
+     * Migrate global quickEditPromptTemplate to default preset's editInstruction
+     * This ensures the new two-level tab UI can display the previously saved template
+     */
+    private async migrateQuickEditToDefaultPreset(): Promise<void> {
+        try {
+            const settings = this.claudeClient.getSettings();
+
+            // Check if global quickEditPromptTemplate exists and has content
+            if (settings.quickEditPromptTemplate && settings.quickEditPromptTemplate.trim()) {
+                console.log('[Migration] Found global quickEditPromptTemplate:',
+                    settings.quickEditPromptTemplate.substring(0, 50) + '...');
+
+                // Get all presets
+                const allPresets = this.configManager.getAllTemplates();
+                const defaultPreset = allPresets.find(p => p.id === 'default');
+
+                if (defaultPreset) {
+                    // Only migrate if default preset doesn't already have editInstruction
+                    if (!defaultPreset.editInstruction || defaultPreset.editInstruction.trim() === '') {
+                        // Migrate the template
+                        defaultPreset.editInstruction = settings.quickEditPromptTemplate;
+
+                        // Save updated presets
+                        this.configManager.saveCustomTemplates(allPresets);
+
+                        console.log('[Migration] ✅ Successfully migrated quickEditPromptTemplate to default preset');
+                        showMessage('✅ 已迁移快速编辑模板配置到默认预设', 3000, 'info');
+                    } else {
+                        console.log('[Migration] ⏭️  Default preset already has editInstruction, skipping migration');
+                    }
+                } else {
+                    console.warn('[Migration] ⚠️  Default preset not found, cannot migrate');
+                }
+            } else {
+                console.log('[Migration] ℹ️  No global quickEditPromptTemplate found, skipping migration');
+            }
+        } catch (error) {
+            console.error('[Migration] ❌ Error during quickEditPromptTemplate migration:', error);
         }
     }
 }

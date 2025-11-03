@@ -351,7 +351,8 @@ export class QuickEditManager {
             }
         };
 
-        this.inputPopup.show(position, this.settings.quickEditDefaultInstruction);
+        // Don't pass quickEditDefaultInstruction - let popup handle defaults via preset system
+        this.inputPopup.show(position, '');
     }
 
     /**

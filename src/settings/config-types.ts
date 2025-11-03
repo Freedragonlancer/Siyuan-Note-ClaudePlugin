@@ -39,6 +39,9 @@ export interface PromptTemplate {
     /** Optional edit instruction for AI Quick Edit feature */
     editInstruction?: string;
 
+    /** Optional placeholder text for instruction input in Quick Edit */
+    inputPlaceholder?: string;
+
     /** Whether to show diff comparison for this preset (for quick edit) */
     showDiff?: boolean;
 
@@ -136,7 +139,8 @@ export const BUILTIN_TEMPLATES: PromptTemplate[] = [
         category: 'assistant',
         icon: '🤖',
         description: '默认配置',
-        editInstruction: '优化和改进文本' // Default instruction for Quick Edit
+        editInstruction: '优化和改进文本', // Default instruction for Quick Edit
+        inputPlaceholder: '输入编辑指令...' // Default placeholder for Quick Edit input
     }
 ];
 

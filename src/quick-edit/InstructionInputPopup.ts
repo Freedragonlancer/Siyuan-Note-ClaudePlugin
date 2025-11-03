@@ -5,6 +5,7 @@
 import type { PopupPosition } from './inline-types';
 import type { PromptTemplate } from '@/settings/config-types';
 import type { ConfigManager } from '@/settings/ConfigManager';
+import { showMessage } from 'siyuan';
 
 export class InstructionInputPopup {
     private element: HTMLElement | null = null;
@@ -42,15 +43,17 @@ export class InstructionInputPopup {
 
         // Try to load last selected preset (now stored as ID, not index)
         const lastPresetId = this.getLastPresetIndex(); // method name kept for compatibility
-        let instructionToUse = defaultInstruction;
+        let instructionToUse = defaultInstruction; // Keep empty - user will type instruction
         let presetIdToUse = 'custom';
 
         // If there's a last selected preset and it's still valid
         if (lastPresetId && lastPresetId !== 'custom') {
             const preset = this.presets.find(p => p.id === lastPresetId);
-            if (preset && preset.editInstruction) {
-                instructionToUse = preset.editInstruction;
+            if (preset) {
+                // Don't fill editInstruction (full template) into input field
+                // Just remember the preset ID for placeholder and button highlighting
                 presetIdToUse = lastPresetId;
+                instructionToUse = ''; // Keep empty for user input
             } else {
                 console.warn(`[InstructionInputPopup] Preset ${lastPresetId} not found, clearing saved preset`);
                 // Clean up invalid preset ID
@@ -223,12 +226,22 @@ export class InstructionInputPopup {
         const popup = document.createElement('div');
         popup.className = 'instruction-input-popup';
 
-        // Filter presets with editInstruction for dropdown (第一个功能)
+        // Determine placeholder text based on preset
+        let placeholderText = '输入编辑指令...'; // Default fallback
+        if (presetId !== 'custom') {
+            const selectedPreset = this.presets.find(p => p.id === presetId);
+            if (selectedPreset?.inputPlaceholder) {
+                placeholderText = selectedPreset.inputPlaceholder;
+            }
+        }
+
+        // Generate dropdown options - simplified to show preset names only
         const presetsWithEditInstruction = this.presets.filter(p => p.editInstruction && p.editInstruction.trim());
         const options = presetsWithEditInstruction
             .map((preset, idx) => {
                 const shortcut = idx < 9 ? ` [${idx + 1}]` : '';
-                return `<option value="${preset.id}">${this.escapeHtml(preset.editInstruction!)}${shortcut}</option>`;
+                const selected = preset.id === presetId ? ' selected' : '';
+                return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}${shortcut}</option>`;
             })
             .join('');
 
@@ -280,16 +293,20 @@ export class InstructionInputPopup {
                 </button>
             </div>
             <div class="popup-body">
-                <select class="b3-select" id="instruction-preset">
-                    <option value="custom">自定义指令</option>
-                    ${options}
-                </select>
+                ${presetsWithEditInstruction.length > 5 ? `
+                <div style="margin-bottom: 8px;">
+                    <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--b3-theme-on-surface-light);">更多预设</label>
+                    <select class="b3-select" id="instruction-preset">
+                        ${options}
+                    </select>
+                </div>
+                ` : ''}
                 ${shortcutsSection}
                 <input
                     type="text"
                     class="b3-text-field"
                     id="instruction-input"
-                    placeholder="输入编辑指令..."
+                    placeholder="${this.escapeHtml(placeholderText)}"
                     value="${defaultInstruction}"
                 />
                 <div class="popup-actions">
@@ -313,20 +330,31 @@ export class InstructionInputPopup {
         const presetSelect = popup.querySelector('#instruction-preset') as HTMLSelectElement;
         const input = popup.querySelector('#instruction-input') as HTMLInputElement;
 
-        // Set default selected preset
-        if (presetSelect) {
+        // Set default selected preset (only if dropdown exists)
+        if (presetSelect && presetId !== 'custom') {
             presetSelect.value = presetId;
         }
 
-        // Bind quick access preset buttons (全局切换配置)
+        // Bind quick access preset buttons (global switch + fill instruction)
         const presetBtns = popup.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
         presetBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const presetId = btn.getAttribute('data-preset-id');
-                if (presetId && this.onPresetSwitchCallback) {
+                if (presetId) {
+                    // Save selected preset
+                    this.savePresetIndex(presetId);
+
                     // Trigger global preset switch
-                    this.onPresetSwitchCallback(presetId);
+                    if (this.onPresetSwitchCallback) {
+                        this.onPresetSwitchCallback(presetId);
+                    }
+
+                    // Update UI immediately: fill instruction, update placeholder, refresh indicators
+                    this.applyPresetToInput(presetId, input);
+                    this.syncDropdownSelection(presetId);
+                    this.refreshActiveIndicators();
+
                     // Don't close popup, user may still want to edit instruction
                 }
             });
@@ -339,19 +367,17 @@ export class InstructionInputPopup {
         presetSelect?.addEventListener('change', (e) => {
             const value = (e.target as HTMLSelectElement).value;
 
-            if (value === 'custom') {
-                // "custom" means user will enter custom instruction, clear saved preset
-                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
-            } else {
-                // Save the selected preset ID
-                this.savePresetIndex(value);
+            // Save the selected preset ID
+            this.savePresetIndex(value);
 
-                // Find preset by ID and fill editInstruction to input
-                const preset = this.presets.find(p => p.id === value);
-                if (preset && preset.editInstruction) {
-                    input.value = preset.editInstruction;
-                }
+            // Trigger preset switch (global config + fill instruction)
+            if (this.onPresetSwitchCallback) {
+                this.onPresetSwitchCallback(value);
             }
+
+            // Update UI immediately
+            this.applyPresetToInput(value, input);
+            this.refreshActiveIndicators();
         });
 
         input?.addEventListener('keydown', (e) => {
@@ -424,21 +450,53 @@ export class InstructionInputPopup {
      * Handle submit
      */
     private handleSubmit(instruction: string): void {
-        if (instruction.trim() && this.onSubmitCallback) {
-            // Save the currently selected preset index before closing
-            if (this.element) {
-                const presetSelect = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
-                if (presetSelect && presetSelect.value !== 'custom') {
-                    this.savePresetIndex(presetSelect.value);
-                } else {
-                    // Clear saved preset if "custom" is selected
-                    localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
-                }
+        console.log('[InstructionInputPopup] handleSubmit called, instruction:', instruction, 'length:', instruction.length);
+
+        let trimmedInstruction = instruction.trim();
+        console.log('[InstructionInputPopup] Trimmed instruction:', trimmedInstruction, 'length:', trimmedInstruction.length);
+
+        // If input is empty, use the input's placeholder as default instruction
+        if (!trimmedInstruction) {
+            console.log('[InstructionInputPopup] Input empty, checking input placeholder...');
+
+            // Read placeholder directly from input element (already set during popup creation)
+            const input = this.element?.querySelector('#instruction-input') as HTMLInputElement;
+            if (input?.placeholder && input.placeholder !== '输入编辑指令...') {
+                trimmedInstruction = input.placeholder.trim();
+                console.log('[InstructionInputPopup] Using input placeholder as instruction:', trimmedInstruction);
             }
 
-            // Call callback with instruction
-            this.onSubmitCallback(instruction.trim());
+            // If still empty (default placeholder or no placeholder), show error
+            if (!trimmedInstruction) {
+                console.warn('[InstructionInputPopup] No instruction and no custom placeholder, not submitting');
+                showMessage('请输入编辑指令或选择预设', 2000, 'info');
+                return;
+            }
         }
+
+        // Validate: callback must exist
+        if (!this.onSubmitCallback) {
+            console.error('[InstructionInputPopup] No submit callback registered');
+            this.close();
+            return;
+        }
+
+        // Save the currently selected preset index before closing
+        if (this.element) {
+            const presetSelect = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
+            if (presetSelect && presetSelect.value !== 'custom') {
+                this.savePresetIndex(presetSelect.value);
+            } else {
+                // Clear saved preset if "custom" is selected
+                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
+            }
+        }
+
+        // Call callback with instruction (either user input or placeholder)
+        console.log('[InstructionInputPopup] Calling onSubmitCallback with:', trimmedInstruction);
+        this.onSubmitCallback(trimmedInstruction);
+
+        // Only close after successful submission
         this.close();
     }
 
@@ -485,6 +543,77 @@ export class InstructionInputPopup {
     }
 
     /**
+     * Apply preset to input field (clear value and update placeholder)
+     * Note: editInstruction stores the full template, not a short instruction,
+     * so we don't fill it into the input field. User inputs their own instruction.
+     */
+    private applyPresetToInput(presetId: string, input: HTMLInputElement): void {
+        const preset = this.presets.find(p => p.id === presetId);
+        if (!preset) return;
+
+        // Clear input value - user will type their own instruction
+        // The preset's editInstruction (full template) will be used when submitting
+        input.value = '';
+
+        // Update placeholder
+        if (preset.inputPlaceholder) {
+            input.placeholder = preset.inputPlaceholder;
+        } else {
+            input.placeholder = '输入编辑指令...';
+        }
+
+        // Focus input for user to type
+        input.focus();
+    }
+
+    /**
+     * Refresh active indicators on preset buttons
+     */
+    private refreshActiveIndicators(): void {
+        if (!this.element) return;
+
+        const buttons = this.element.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
+        buttons.forEach(btn => {
+            const presetId = btn.getAttribute('data-preset-id');
+            const preset = this.presets.find(p => p.id === presetId);
+
+            if (preset && this.isActivePreset(preset)) {
+                // Add active class
+                btn.classList.add('preset-btn--active');
+
+                // Add checkmark badge if not exists
+                if (!btn.querySelector('.preset-btn__badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'preset-btn__badge';
+                    badge.textContent = '✓';
+                    btn.appendChild(badge);
+                }
+            } else {
+                // Remove active class
+                btn.classList.remove('preset-btn--active');
+
+                // Remove checkmark badge if exists
+                const badge = btn.querySelector('.preset-btn__badge');
+                if (badge) {
+                    badge.remove();
+                }
+            }
+        });
+    }
+
+    /**
+     * Sync dropdown selection with current preset
+     */
+    private syncDropdownSelection(presetId: string): void {
+        if (!this.element) return;
+
+        const dropdown = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
+        if (dropdown && presetId !== 'custom') {
+            dropdown.value = presetId;
+        }
+    }
+
+    /**
      * Update presets list dynamically
      * Call this when presets are added/updated in settings
      */
@@ -494,32 +623,42 @@ export class InstructionInputPopup {
 
         // If popup is currently visible, update the preset selector
         if (this.isVisible && this.element) {
-            const selector = this.element.querySelector('#preset-select') as HTMLSelectElement;
+            const selector = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
             if (selector) {
                 const currentValue = selector.value;
 
-                // Rebuild options
-                selector.innerHTML = `
-                    <option value="custom">自定义</option>
-                    ${this.presets
-                        .filter(p => p.editInstruction)
-                        .map(preset => {
-                            const activeMarker = this.isActivePreset(preset) ? ' ⭐' : '';
-                            return `<option value="${this.escapeAttr(preset.id)}">${this.escapeHtml(preset.name)}${activeMarker}</option>`;
-                        })
-                        .join('')}
-                `;
+                // Rebuild options (simplified - no "custom" option)
+                const presetsWithEditInstruction = this.presets.filter(p => p.editInstruction && p.editInstruction.trim());
+                selector.innerHTML = presetsWithEditInstruction
+                    .map((preset, idx) => {
+                        const shortcut = idx < 9 ? ` [${idx + 1}]` : '';
+                        const selected = preset.id === currentValue ? ' selected' : '';
+                        return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}${shortcut}</option>`;
+                    })
+                    .join('');
 
                 // Restore selection if the preset still exists
                 const presetStillExists = this.presets.some(p => p.id === currentValue);
                 if (presetStillExists) {
                     selector.value = currentValue;
-                } else if (currentValue !== 'custom') {
-                    // Preset was deleted, reset to custom
-                    selector.value = 'custom';
-                    console.log('[InstructionInputPopup] Previously selected preset no longer exists, reset to custom');
+                } else {
+                    // Preset was deleted, select first preset if available
+                    if (presetsWithEditInstruction.length > 0) {
+                        selector.value = presetsWithEditInstruction[0].id;
+                    }
+                    console.log('[InstructionInputPopup] Previously selected preset no longer exists, reset to first preset');
                 }
             }
+
+            // Refresh button indicators
+            this.refreshActiveIndicators();
         }
+    }
+
+    /**
+     * Helper method to escape HTML attributes
+     */
+    private escapeAttr(text: string): string {
+        return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 }

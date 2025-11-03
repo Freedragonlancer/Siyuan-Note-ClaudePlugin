@@ -1238,6 +1238,13 @@ export class PromptEditorPanel {
                                 此预设在 AI 快速编辑弹窗中的编辑指令
                             </div>
                         </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px;">输入框提示文本</label>
+                            <input type="text" id="template-input-placeholder" class="b3-text-field" placeholder="例如: 输入编辑指令..." style="width: 100%;" value="${this.escapeHtml(template?.inputPlaceholder || '')}" />
+                            <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                                快速编辑输入框中显示的占位符提示文本
+                            </div>
+                        </div>
                         <div style="display: flex; align-items: center;">
                             <input type="checkbox" id="template-show-diff" ${template?.showDiff ? 'checked' : ''} style="margin-right: 8px;">
                             <label for="template-show-diff">启用差异对比显示</label>
@@ -1282,6 +1289,7 @@ export class PromptEditorPanel {
         const systemPromptTextarea = editDialog.element.querySelector('#template-system-prompt') as HTMLTextAreaElement;
         const appendedPromptTextarea = editDialog.element.querySelector('#template-appended-prompt') as HTMLTextAreaElement;
         const editInstructionTextarea = editDialog.element.querySelector('#template-edit-instruction') as HTMLTextAreaElement;
+        const inputPlaceholderInput = editDialog.element.querySelector('#template-input-placeholder') as HTMLInputElement;
         const showDiffCheckbox = editDialog.element.querySelector('#template-show-diff') as HTMLInputElement;
         const selectionQATemplateTextarea = editDialog.element.querySelector('#template-selection-qa-template') as HTMLTextAreaElement;
         const saveBtn = editDialog.element.querySelector('#template-save');
@@ -1295,6 +1303,7 @@ export class PromptEditorPanel {
             const systemPrompt = systemPromptTextarea?.value || '';
             const appendedPrompt = appendedPromptTextarea?.value || '';
             const editInstruction = editInstructionTextarea?.value.trim() || undefined;
+            const inputPlaceholder = inputPlaceholderInput?.value.trim() || undefined;
             const showDiff = showDiffCheckbox?.checked || false;
             const selectionQATemplate = selectionQATemplateTextarea?.value.trim() || undefined;
 
@@ -1318,6 +1327,7 @@ export class PromptEditorPanel {
                 appendedPrompt,
                 isBuiltIn: false,
                 editInstruction,
+                inputPlaceholder,
                 showDiff,
                 selectionQATemplate
             };
@@ -2722,6 +2732,19 @@ export class PromptEditorPanel {
                 rows="10"
                 style="width: 100%; font-family: Consolas, monospace; font-size: 13px; resize: vertical;"
                 placeholder="${this.escapeHtml(defaultTemplate)}">${this.escapeHtml(preset.editInstruction || '')}</textarea>
+            <div style="margin-top: 12px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">输入框提示文本</label>
+                <input
+                    type="text"
+                    id="input-placeholder-input"
+                    class="b3-text-field"
+                    placeholder="例如: 输入编辑指令..."
+                    style="width: 100%;"
+                    value="${this.escapeHtml(preset.inputPlaceholder || '')}" />
+                <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                    快速编辑输入框中显示的占位符提示文本
+                </div>
+            </div>
             <div style="margin-top: 8px;">
                 <label style="display: flex; align-items: center; gap: 8px;">
                     <input type="checkbox" id="show-diff-checkbox" ${preset.showDiff ? 'checked' : ''}>
@@ -2941,9 +2964,11 @@ export class PromptEditorPanel {
                 break;
             case "quickEdit":
                 const quickEditTextarea = container.querySelector('#quick-edit-template-textarea') as HTMLTextAreaElement;
+                const inputPlaceholderInput = container.querySelector('#input-placeholder-input') as HTMLInputElement;
                 const showDiffCheckbox = container.querySelector('#show-diff-checkbox') as HTMLInputElement;
                 if (quickEditTextarea) {
                     preset.editInstruction = quickEditTextarea.value;
+                    preset.inputPlaceholder = inputPlaceholderInput?.value.trim() || undefined;
                     preset.showDiff = showDiffCheckbox?.checked || false;
                 }
                 break;

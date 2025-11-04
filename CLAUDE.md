@@ -1,300 +1,237 @@
 # CLAUDE.md
 
-Essential development guide for Claude AI integration in SiYuan Note plugin.
-
-## Quick Reference
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 **Project**: SiYuan Note plugin with Claude AI (Chat + Quick Edit)
 **Tech Stack**: TypeScript, Svelte, Vite, Anthropic SDK
-**Key Features**: Streaming AI responses, inline editing, multi-profile configs, response filtering
+**Plugin Type**: Frontend plugin for SiYuan Note (思源笔记)
 
-## Build & Deploy
+---
 
+## Quick Start
+
+### Build & Deploy
 ```bash
-# One-command deploy (build + copy + restart SiYuan)
-npm run deploy
-
-# Manual steps
-npm run build              # Build to dist/
-npm run copy-plugin        # Copy to N:/Siyuan-Note/data/plugins/
-# Then restart SiYuan
+npm run deploy        # One-command: build + copy to SiYuan plugins folder
+npm run dev           # Watch mode for development
+npm run build         # Build only
 ```
 
-**Build Output**: `dist/` → `index.js`, `index.css`, `plugin.json`, `icon.png`, i18n files
-**Format**: CommonJS (required by SiYuan), externals: `siyuan`, `process`
+**Note**: Hot reload NOT supported - must restart SiYuan (F5) after each change.
 
-## Release & Versioning
+### Development Workflow
+1. Edit TypeScript/Svelte files in `src/`
+2. Run `npm run deploy`
+3. Restart SiYuan (F5)
+4. Test in plugin dock panel
+5. Check console (F12) for errors
 
-**Complete guide**: See [RELEASE.md](RELEASE.md) for comprehensive release documentation
+### Testing Checklist
+- [ ] Build succeeds without errors
+- [ ] Plugin loads without console errors
+- [ ] Quick Edit works with all presets
+- [ ] Filter rules apply correctly
+- [ ] Settings persist after restart
 
-**Quick Release** (automated):
-```bash
-npm run release  # Auto-bumps version based on commits, creates tag, triggers GitHub Actions
+---
+
+## Architecture Overview
+
+### Entry Point & Lifecycle
+```typescript
+// src/index.ts - ClaudeAssistantPlugin
+onload()           // Initialize plugin (NOT for dock/tab registration)
+  ↓
+onLayoutReady()    // Register dock, topbar (MUST be here)
+  ↓
+onunload()         // Cleanup resources
 ```
 
-**Version Management**:
-- **Versioning**: Semantic Versioning (MAJOR.MINOR.PATCH)
-- **Commits**: Conventional Commits format (`feat:`, `fix:`, etc.)
-- **Automation**: GitHub Actions handles build, packaging, GitHub Release, and SiYuan Bazaar submission
-
-**Key Commands**:
-```bash
-npm run bump-version          # Auto-detect version bump from commits
-npm run bump-version major    # Force major version bump
-npm run bump-version minor    # Force minor version bump
-npm run bump-version patch    # Force patch version bump
-```
-
-**Release Workflow**:
-1. Commit changes using Conventional Commits format
-2. Run `npm run release` (or manually create tag)
-3. GitHub Actions automatically:
-   - Validates version consistency
-   - Builds plugin
-   - Generates changelog from commits
-   - Creates GitHub Release with assets
-   - Submits to SiYuan Bazaar
-
-**Version Bump Rules** (Conventional Commits):
-- `feat:` commits → MINOR version bump (new features)
-- `fix:` commits → PATCH version bump (bug fixes)
-- `BREAKING CHANGE:` or `feat!:` → MAJOR version bump
-- Other commits (`docs:`, `chore:`, etc.) → no version bump
-
-**Files Updated**:
-- `package.json` - npm package version
-- `plugin.json` - SiYuan plugin version
-- Both must match for release to succeed
-
-See [RELEASE.md](RELEASE.md) for:
-- Complete automation setup
-- Manual release steps
-- SiYuan Bazaar integration
-- Release checklist
-- Rollback strategies
-
-## Architecture
-
-### Plugin Entry Points
-- **Main**: `src/index.ts` → `ClaudeAssistantPlugin`
-- **Lifecycle**: `onload()` → `onLayoutReady()` → `onunload()`
-- **Dock Init**: ⚠️ `addDock()` registers dock, but `init()` runs LATER when user opens it
+**Critical**: `addDock()` must be called in `onLayoutReady()`, not `onload()`. Dock's `init()` runs lazily when user opens it.
 
 ### Core Systems
 
-**1. Quick Edit** (`src/quick-edit/`)
-- `QuickEditManager.ts`: Main controller (selection → AI → review → apply)
-- `InlineEditRenderer.ts`: DOM rendering (comparison blocks, buttons)
-- `ContextExtractor.ts`: Context placeholder parsing (`{above=x}`, `{below_blocks=x}`)
-- `InstructionInputPopup.ts`: User input dialog with preset selection
-
-**2. Settings** (`src/settings/`)
-- `ConfigManager.ts`: Multi-profile management (CRUD, import/export)
-- `PromptEditorPanel.ts`: Preset editor with filterRules UI
-- `config-types.ts`: Types (ConfigProfile, PromptTemplate, FilterRule)
-
-**3. Claude Client** (`src/claude/`)
-- `ClaudeClient.ts`: Streaming/non-streaming API, response filtering
-- `ResponseFilter.ts`: Pattern-based content filtering with regex/keywords
-- Uses `dangerouslyAllowBrowser: true` for Electron environment
-
-## AI Request Pipeline (Quick Edit)
-
-### Flow Diagram
+**1. Configuration (Multi-Profile + Presets)**
 ```
-User Selection → Instruction Input → Build Prompt → Process Context →
-Apply Filters → Stream Response → Render Preview → User Review → Apply/Reject
+ConfigManager
+  ├── Profiles (Multiple configuration sets)
+  │   └── ConfigProfile { settings: ClaudeSettings }
+  └── Presets (Reusable prompt templates)
+      └── PromptTemplate { systemPrompt, appendedPrompt, editInstruction,
+                           inputPlaceholder, filterRules, ... }
 ```
 
-### Detailed Pipeline (QuickEditManager.processInlineEdit)
-
-**Step 1: Template Processing**
+**Key Types**:
 ```typescript
-// Get template from settings
-const template = claudeSettings.quickEditPromptTemplate || defaultTemplate;
-
-// Process context placeholders (ContextExtractor)
-if (hasPlaceholders(template)) {
-    template = await processTemplate(template, selectedBlockIds);
-    // Replaces: {above=5}, {below=3}, {above_blocks=2}, {below_blocks=4}
+PromptTemplate {
+  id: string;
+  name: string;
+  systemPrompt: string;           // AI role definition
+  appendedPrompt: string;         // Auto-appended to requests
+  editInstruction?: string;       // Quick Edit template with {instruction}, {original}
+  inputPlaceholder?: string;      // Placeholder text for input field
+  filterRules?: FilterRule[];     // Preset-specific filters
+  selectionQATemplate?: string;   // Selection Q&A template
 }
 ```
 
-**Step 2: Prompt Building**
-```typescript
-// Replace placeholders
-let userPrompt = template
-    .replace('{instruction}', userInstruction)
-    .replace('{original}', originalText);
-
-// Append unified prompt (from systemPrompt/appendedPrompt)
-if (appendedPrompt) {
-    userPrompt += '\n\n' + appendedPrompt;
-}
+**2. Quick Edit Pipeline**
+```
+User Selection → Input Popup → Preset Selection → Build Prompt →
+Context Extraction → AI Streaming → Response Filtering → Preview Render →
+User Review (Accept/Reject/Retry)
 ```
 
-**Step 3: Get FilterRules**
-```typescript
-// Get global filterRules from ClaudeSettings (always applied, not preset-dependent)
-const filterRules = claudeClient.getFilterRules() || [];
-```
+**Core Files**:
+- `QuickEditManager.ts` - Main controller (`trigger()` → `processInlineEdit()`)
+- `InstructionInputPopup.ts` - Preset selector + instruction input
+- `ContextExtractor.ts` - Placeholder parser (`{above=5}`, `{above_blocks=2}`)
+- `InlineEditRenderer.ts` - Comparison block rendering
 
-**Step 4: Send Request with Streaming**
-```typescript
-await claudeClient.sendMessage(
-    [{ role: 'user', content: userPrompt }],
-    onMessage,    // Chunk callback
-    onError,      // Error callback
-    onComplete,   // Completion callback
-    "QuickEdit",  // Feature name (for logging)
-    filterRules   // Response filtering rules
-);
-```
+**3. Claude Client & Filtering**
+- `ClaudeClient.ts` - API client with streaming support
+- `ResponseFilter.ts` - Regex-based content filtering
 
-**Step 5: Response Processing (ClaudeClient)**
-```typescript
-// Stream chunks
-for await (const chunk of stream) {
-    accumulatedResponse += chunk;
+**4. UI Panels**
+- `UnifiedAIPanel.ts` - Main chat interface (sidebar dock)
 
-    // Apply filterRules after each chunk
-    if (hasFilterRules) {
-        const filterResult = responseFilter.applyFilters(accumulatedResponse, filterRules);
-        if (filterResult.wasFiltered) {
-            // Send filtered content with marker
-            onMessage('[FILTERED_REPLACE]' + filterResult.filtered);
-            break; // Stop streaming
-        }
+---
+
+## Key Implementation Details
+
+### 1. InputPlaceholder System (Latest Feature)
+
+**Purpose**: Provide contextual placeholder text based on selected preset.
+
+**Implementation** (`InstructionInputPopup.ts`):
+```typescript
+// Line 229-236: Determine placeholder from preset
+let placeholderText = '输入编辑指令...'; // Default
+if (presetId !== 'custom') {
+    const preset = presets.find(p => p.id === presetId);
+    if (preset?.inputPlaceholder) {
+        placeholderText = preset.inputPlaceholder;
     }
+}
 
-    onMessage(chunk); // Normal chunk
+// Line 309: Apply to input field
+<input placeholder="${placeholderText}" />
+
+// Line 458-474: Use placeholder as instruction when user leaves input empty
+if (!trimmedInstruction) {
+    const input = element.querySelector('#instruction-input');
+    if (input?.placeholder && input.placeholder !== '输入编辑指令...') {
+        trimmedInstruction = input.placeholder.trim(); // Auto-fill from placeholder
+    }
 }
 ```
 
-**Step 6: Render Preview**
+**Usage in Presets**:
 ```typescript
-// InlineEditRenderer displays:
-// - Original text (red background on source blocks)
-// - AI suggestion (streaming with typing animation)
-// - Action buttons (Accept/Reject/Retry)
+// config-types.ts
+{
+    id: 'translate',
+    name: 'Translator',
+    inputPlaceholder: '输入目标语言 (e.g., English, 中文)...',
+    editInstruction: 'Translate to {instruction}:\n\n{original}',
+    // ...
+}
 ```
 
-**Step 7: User Action**
-- **Accept**: Insert AI text via `/api/block/insertBlock`, delete original blocks
-- **Reject**: Remove comparison block, restore original
-- **Retry**: Clear suggestion, re-run pipeline with same instruction
+**User Experience**:
+1. User selects preset → input placeholder updates
+2. User types custom instruction → used as-is
+3. User leaves input empty → placeholder text becomes instruction
 
-### Context Extractor Placeholders
+### 2. Context Extraction with Placeholders
 
-Supported patterns in prompt templates:
+**Supported Placeholders** (in `editInstruction` templates):
+- `{instruction}` - User input
+- `{original}` - Selected text
 - `{above=5}` - 5 lines of text above selection
 - `{below=3}` - 3 lines of text below selection
 - `{above_blocks=2}` - 2 SiYuan blocks above selection
 - `{below_blocks=4}` - 4 SiYuan blocks below selection
 
-Implementation: `ContextExtractor.ts` parses placeholders → fetches content from DOM → replaces in template
-
-### Response Filtering
-
-**FilterRule Structure**:
+**Implementation** (`ContextExtractor.ts`):
 ```typescript
-interface FilterRule {
-    id: string;             // Unique identifier
-    name: string;           // Display name
-    enabled: boolean;       // Whether rule is active
-    pattern: string;        // Regex or keyword
-    replacement: string;    // Replacement text
+// Parse placeholders
+const placeholders = parsePlaceholders(template);
+// Extract context from DOM
+const context = await extractContext(blockIds, placeholders);
+// Replace placeholders in template
+return applyPlaceholders(template, context);
+```
+
+### 3. Two-Level Filter System
+
+**Filter Application Order**:
+```typescript
+// ClaudeClient.getFilterRules(presetId)
+const allRules = [
+    ...globalRules,      // ClaudeSettings.filterRules (always applied)
+    ...presetRules       // PromptTemplate.filterRules (preset-specific)
+];
+```
+
+**Filter Rule Structure**:
+```typescript
+FilterRule {
+    pattern: string;        // Regex pattern
+    replacement: string;    // Replacement (supports $1, $2 capture groups)
     flags?: string;         // Regex flags (g, i, m, s)
+    enabled: boolean;
 }
 ```
 
-**Global Configuration** (ClaudeSettings):
-- `filterRules` is stored in `ClaudeSettings`, **not** in individual presets
-- Applied to **all** AI requests (Chat, Quick Edit, etc.)
-- Configured via Settings UI → Response Filters tab
-- Default rules: Remove `<think>` and `<thinking>` tags
-
-**Filter Application** (ResponseFilter.ts):
-1. Check if response matches any enabled rule's pattern
-2. If match found: apply replacement, return filtered content with `wasFiltered: true`
-3. ClaudeClient sends `[FILTERED_REPLACE]` marker + filtered content
-4. QuickEditManager replaces entire preview with filtered version
-
-**Critical Bug Fixes (2025-10-30)**:
-
-**Bug 1: Capture Group Replacement Failure**
-- **Problem**: Replace function format blocked `$1`, `$2` capture group references
-  ```typescript
-  // ❌ BAD: Returns literal "$1" string
-  text.replace(regex, () => rule.replacement)
-  ```
-- **Solution**: Use direct string replacement for native `$1` support
-  ```typescript
-  // ✅ GOOD: Captures groups work correctly
-  text.replace(regex, rule.replacement)
-  ```
-- **Impact**: All rules using capture groups (e.g., remove code blocks but keep content) now work
-
-**Bug 2: Change Detection Logic Error**
-- **Problem**: Compared against original text instead of previous iteration
-  ```typescript
-  // ❌ BAD: Wrong comparison
-  if (currentText !== text.substring(0, beforeLength))
-  ```
-- **Solution**: Compare before/after each rule application
-  ```typescript
-  // ✅ GOOD: Correct change detection
-  const beforeText = currentText;
-  currentText = applyRule(currentText, rule);
-  if (currentText !== beforeText) appliedCount++;
-  ```
-
-## Critical Performance Fixes
-
-**Streaming O(n²) → O(n)**: Use array accumulation instead of string concatenation
+**Application** (`ResponseFilter.ts`):
 ```typescript
-// ❌ BAD: O(n²) - creates new string each iteration
-fullResponse += chunk;
-
-// ✅ GOOD: O(n) - accumulate in array, join once at end
-fullResponseChunks.push(chunk);
-const fullResponse = fullResponseChunks.join('');
+// Apply each rule sequentially
+for (const rule of rules) {
+    if (!rule.enabled) continue;
+    currentText = currentText.replace(new RegExp(pattern, flags), replacement);
+}
 ```
 
-**DOM Query Optimization**: Batch queries with single `querySelectorAll`
-```typescript
-// ❌ BAD: O(N) separate queries
-blockIds.forEach(id => {
-    const el = document.querySelector(`[data-node-id="${id}"]`);
-    el.classList.add('class');
-});
+### 4. Quick Edit Core Flow
 
-// ✅ GOOD: O(1) single query
-const selector = blockIds.map(id => `[data-node-id="${id}"]`).join(',');
-const elements = document.querySelectorAll(selector);
-elements.forEach(el => el.classList.add('class'));
+**Trigger** (`QuickEditManager.trigger()`):
+```typescript
+1. Get current selection (text or blocks)
+2. Show InstructionInputPopup
+3. User selects preset + enters instruction
+4. Call processInlineEdit()
 ```
 
-## Common Development Tasks
-
-### Add New Setting
-1. Update `ClaudeSettings` or `EditSettings` in `src/claude/types.ts`
-2. Update `DEFAULT_SETTINGS` in `src/claude/index.ts`
-3. Add UI in `SettingsPanelV3.ts` (escape HTML with `escapeHtml()`)
-4. Handle in relevant component (`ClaudeClient.ts`, `QuickEditManager.ts`)
-
-### Modify Quick Edit Prompt
-1. Edit template in `QuickEditManager.processInlineEdit()` (line ~563)
-2. Or configure via Settings UI → Quick Edit Prompt Template
-3. Supports placeholders: `{instruction}`, `{original}`, `{above=x}`, etc.
-
-### Add FilterRule Template
-1. Update `BUILTIN_FILTER_RULE_TEMPLATES` in `config-types.ts`
-2. Or create via Settings UI → Filter Rules → Add from Template
-
-### Work with SiYuan API
+**Process** (`QuickEditManager.processInlineEdit()`):
 ```typescript
-// Insert block
+1. Get preset from ConfigManager
+2. Build prompt:
+   - Replace {instruction} and {original}
+   - Process context placeholders
+   - Append preset's appendedPrompt
+3. Get filter rules (global + preset)
+4. Stream AI response via ClaudeClient
+5. Apply filters to response
+6. Render comparison block (original vs AI suggestion)
+7. Wait for user action (Accept/Reject/Retry)
+```
+
+**Accept Action** (`handleAccept()`):
+```typescript
+1. Insert AI text via SiYuan API: /api/block/insertBlock
+2. Delete original blocks via: /api/block/deleteBlock
+3. Remove comparison block
+4. Record in edit history (for undo)
+```
+
+---
+
+## SiYuan Integration
+
+### Block API
+```typescript
+// Insert block after another block
 fetch('/api/block/insertBlock', {
     method: 'POST',
     body: JSON.stringify({
@@ -309,39 +246,288 @@ fetch('/api/block/deleteBlock', {
     method: 'POST',
     body: JSON.stringify({ id: blockId })
 });
+
+// Update block
+fetch('/api/block/updateBlock', {
+    method: 'POST',
+    body: JSON.stringify({
+        dataType: 'markdown',
+        data: newContent,
+        id: blockId
+    })
+});
 ```
 
-## Security & Data Safety
+### Event Bus
+```typescript
+// Block icon menu (right-click on block icon)
+this.eventBus.on("click-blockicon", ({ detail }) => {
+    const { blockElements, menu } = detail;
+    menu.addItem({ icon: "iconEdit", label: "Quick Edit", click: () => {} });
+});
+
+// Content menu (right-click on selected text)
+this.eventBus.on("open-menu-content", ({ detail }) => {
+    const { menu, range } = detail;
+    // Add custom menu items
+});
+```
+
+### Editor Access (Protyle)
+```typescript
+// Get text selection
+const range = protyle?.wysiwyg?.element?.ownerDocument?.getSelection()?.getRangeAt(0);
+const selectedText = range.toString().trim();
+
+// Find containing block
+let blockElement = range.startContainer.parentElement;
+while (blockElement && !blockElement.getAttribute('data-node-id')) {
+    blockElement = blockElement.parentElement;
+}
+const blockId = blockElement.getAttribute('data-node-id');
+```
+
+---
+
+## Common Development Tasks
+
+### Add New Preset
+
+**Via Settings UI**:
+1. Open Settings → Presets tab
+2. Click "Add Preset"
+3. Fill fields: name, systemPrompt, appendedPrompt, editInstruction, inputPlaceholder
+4. Optional: Add preset-specific filter rules
+5. Save
+
+**Via Code** (for built-in presets):
+```typescript
+// src/settings/config-types.ts - BUILTIN_TEMPLATES
+{
+    id: 'summarizer',
+    name: 'Summarizer',
+    systemPrompt: 'You are an expert at creating concise summaries.',
+    appendedPrompt: 'Keep the summary under 3 paragraphs.',
+    editInstruction: 'Summarize the following:\n\n{original}\n\nFocus: {instruction}',
+    inputPlaceholder: '输入摘要重点 (e.g., key findings, main arguments)...',
+    isBuiltIn: true,
+    category: 'writing'
+}
+```
+
+### Add Filter Rule
+
+**Via Settings UI**:
+1. Open Settings → Filter Rules tab
+2. Click "Add Rule" or "Add from Template"
+3. Fill: name, pattern (regex), replacement, flags
+4. Enable rule
+5. Save
+
+**Via Code** (for global rules):
+```typescript
+// src/settings/config-types.ts - BUILTIN_FILTER_RULE_TEMPLATES
+{
+    id: 'remove-thinking-tags',
+    name: 'Remove <thinking> tags',
+    pattern: '<thinking>.*?</thinking>',
+    replacement: '',
+    flags: 'gs',
+    category: 'content_extraction'
+}
+```
+
+### Add New Setting
+
+1. **Define type** (`src/claude/types.ts`):
+```typescript
+export interface ClaudeSettings {
+    // ... existing
+    newFeatureEnabled?: boolean;
+}
+```
+
+2. **Set default** (`src/claude/index.ts`):
+```typescript
+export const DEFAULT_SETTINGS: ClaudeSettings = {
+    // ... existing
+    newFeatureEnabled: true,
+};
+```
+
+3. **Add UI** (`src/settings/SettingsPanelV3.ts`):
+```typescript
+<label class="fn__flex b3-label">
+    <span>New Feature</span>
+    <input type="checkbox" id="newFeatureEnabled" ${settings.newFeatureEnabled ? 'checked' : ''}>
+</label>
+```
+
+4. **Use in code**:
+```typescript
+const settings = this.claudeClient.getSettings();
+if (settings.newFeatureEnabled) {
+    // Feature logic
+}
+```
+
+---
+
+## Performance Best Practices
+
+### String Concatenation in Loops
+```typescript
+// ❌ BAD: O(n²)
+let result = '';
+for (const chunk of chunks) {
+    result += chunk;
+}
+
+// ✅ GOOD: O(n)
+const chunks = [];
+for (const chunk of stream) {
+    chunks.push(chunk);
+}
+const result = chunks.join('');
+```
+
+### DOM Queries
+```typescript
+// ❌ BAD: Multiple queries
+blockIds.forEach(id => {
+    const el = document.querySelector(`[data-node-id="${id}"]`);
+});
+
+// ✅ GOOD: Single query
+const selector = blockIds.map(id => `[data-node-id="${id}"]`).join(',');
+const elements = document.querySelectorAll(selector);
+```
+
+---
+
+## Security
 
 - **XSS Protection**: Always use `escapeHtml()` before setting `innerHTML`
-- **Atomic Saves**: Settings use try-catch with rollback on failure
-- **API Keys**: Stored in localStorage (not encrypted - warn users)
-- **Filter Validation**: Regex patterns validated before saving
+- **API Keys**: Stored in localStorage (NOT encrypted - warn users)
+- **Filter Validation**: Regex patterns validated to prevent ReDoS attacks
+- **Timeout Protection**: `fetchWithTimeout()` prevents indefinite API hangs
+
+---
 
 ## Troubleshooting
 
-**Plugin not loading**: Verify `icon.png` exists (160x160, required)
-**Quick Edit error**: Check console (F12), verify preset has valid filterRules
-**Build fails**: Run `pnpm install`, check Node version compatibility
-**Changes not showing**: Ensure `npm run deploy` ran successfully, restart SiYuan
+| Issue | Solution |
+|-------|----------|
+| Plugin not loading | Check `icon.png` exists (160x160), verify `plugin.json` version matches `package.json` |
+| Quick Edit error | Check console, test with default preset, verify editInstruction is valid |
+| Build fails | Run `npm install`, check Node 18+, clear `dist/` folder |
+| Changes not showing | Ensure `npm run deploy` succeeded, restart SiYuan (not just F5) |
+| Streaming timeout | Check API key, network, Anthropic status; increase timeout in ClaudeClient.ts |
 
-## Key Files for Future Development
+---
 
-- `src/quick-edit/QuickEditManager.ts` - Main Quick Edit logic, AI pipeline
-- `src/claude/ClaudeClient.ts` - API client, streaming, filtering
-- `src/claude/ResponseFilter.ts` - Content filtering engine
-- `src/quick-edit/ContextExtractor.ts` - Context placeholder parser
+## Key Files Reference
+
+### Core Logic
+- `src/index.ts` - Plugin entry, lifecycle
+- `src/quick-edit/QuickEditManager.ts` - Quick Edit controller
+- `src/claude/ClaudeClient.ts` - API client, streaming
+- `src/filter/ResponseFilter.ts` - Content filtering
+
+### UI Components
+- `src/quick-edit/InstructionInputPopup.ts` - Preset selector + input (inputPlaceholder logic)
+- `src/quick-edit/InlineEditRenderer.ts` - Comparison block rendering
+- `src/sidebar/UnifiedAIPanel.ts` - Main chat interface
+
+### Configuration
 - `src/settings/ConfigManager.ts` - Profile/preset management
-- `src/settings/PromptEditorPanel.ts` - Settings UI with filter editor
+- `src/settings/PromptEditorPanel.ts` - Settings UI
+- `src/settings/config-types.ts` - Types (PromptTemplate, FilterRule)
 
-## Debug Logging
+### Context Processing
+- `src/quick-edit/ContextExtractor.ts` - Placeholder parser
 
-Console logs cleaned (only errors/warnings remain):
-- `console.error()` - Critical errors requiring attention
-- `console.warn()` - Non-critical issues, fallback behavior
-- `console.log()` - Removed from production code (streamlined output)
+### Types
+- `src/claude/types.ts` - ClaudeSettings, Message
+- `src/filter/types.ts` - FilterRule, FilterResult
+- `src/editor/types.ts` - EditSettings, TextSelection
 
-To debug, add temporary logs with clear prefixes:
-```typescript
-console.log('[QuickEdit] Debug:', data);
+---
+
+## Release & Versioning
+
+**Quick Release**:
+```bash
+npm run release  # Auto-bump version + create tag + trigger GitHub Actions
 ```
+
+**Commit Format**: Conventional Commits (`feat:`, `fix:`, `chore:`)
+**Version Bumps**: `feat:` → MINOR, `fix:` → PATCH, `BREAKING CHANGE:` → MAJOR
+
+See [RELEASE.md](RELEASE.md) for complete workflow.
+
+---
+
+## Using the SiYuan Plugin Skill
+
+Activate with: `/skill siyuan-plugin`
+
+**Provides**:
+- SiYuan Plugin API reference
+- Event handling examples
+- Dock/tab creation guides
+- Data storage patterns
+- Troubleshooting tips
+
+**Skill location**: `.claude/skills/siyuan-plugin/`
+
+---
+
+## Additional Resources
+
+- **SiYuan API**: https://github.com/siyuan-note/siyuan/tree/master/kernel/api
+- **Anthropic Docs**: https://docs.anthropic.com/
+- **Plugin Sample**: https://github.com/siyuan-note/plugin-sample
+- **Release Guide**: [RELEASE.md](RELEASE.md)
+
+---
+
+## Next Development Iteration
+
+### Recommended Enhancements
+
+1. **Enhanced InputPlaceholder**:
+   - Add support for dynamic placeholders (e.g., show detected language)
+   - Multi-step wizard for complex presets
+
+2. **Context Extraction**:
+   - Add support for semantic context (e.g., `{parent_section}`, `{related_notes}`)
+   - Cache extracted context to improve performance
+
+3. **Filter System**:
+   - Visual filter builder UI
+   - Filter testing/preview before saving
+   - Import/export filter rule sets
+
+4. **Quick Edit UX**:
+   - Inline preview with diff highlighting
+   - Keyboard-only workflow (no mouse required)
+   - Batch editing for multiple selections
+
+5. **Performance**:
+   - Lazy load presets (only fetch when dropdown opens)
+   - Debounce filter application during streaming
+   - Virtual scrolling for large comparison blocks
+
+### Current Limitations
+
+- Hot reload not supported (must restart SiYuan)
+- No undo for "Accept" action (only via edit history)
+- Context extraction limited to linear document structure
+- Filter rules applied sequentially (no parallel processing)
+- No offline mode (requires API connection)
+
+---
+
+**Last Updated**: 2025-11-04
+**Version**: 0.7.0

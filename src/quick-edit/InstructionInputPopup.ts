@@ -40,21 +40,16 @@ export class InstructionInputPopup {
         try {
             const plugin = (this.configManager as any).plugin;
             if (!plugin || typeof plugin.loadData !== 'function') {
-                console.log('[InstructionInputPopup] Plugin loadData not available, using localStorage only');
                 return;
             }
 
             const fileData = await plugin.loadData(InstructionInputPopup.LAST_PRESET_FILE);
             if (fileData && fileData.presetId) {
-                console.log('[InstructionInputPopup] [FILE READ] Loaded preset ID from file:', fileData.presetId);
                 // Sync to localStorage cache
                 localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, fileData.presetId);
-                console.log('[InstructionInputPopup] [SYNC] Synced file data to localStorage cache');
-            } else {
-                console.log('[InstructionInputPopup] No preset data in file storage');
             }
         } catch (error) {
-            console.log('[InstructionInputPopup] No file storage found (first time use)');
+            // First time use, no file storage yet
         }
     }
 
@@ -77,15 +72,6 @@ export class InstructionInputPopup {
 
         // Try to load last selected preset (now stored as ID, not index)
         const lastPresetId = this.getLastPresetIndex(); // method name kept for compatibility
-
-        // Debug: Log current state
-        console.log('[InstructionInputPopup] Opening popup with:', {
-            lastPresetId,
-            presetsCount: this.presets.length,
-            presetIds: this.presets.map(p => `${p.id} (${p.name})`),
-            presetsWithEditInstruction: this.presets.filter(p => p.editInstruction && p.editInstruction.trim()).map(p => `${p.id} (${p.name})`)
-        });
-
         let instructionToUse = defaultInstruction; // Keep empty - user will type instruction
         let presetIdToUse = 'custom';
 
@@ -106,16 +92,12 @@ export class InstructionInputPopup {
             // First time use: auto-select the first available preset
             const firstPreset = this.presets.find(p => p.editInstruction && p.editInstruction.trim());
             if (firstPreset) {
-                console.log('[InstructionInputPopup] First time use, auto-selecting first preset:', firstPreset.id);
                 presetIdToUse = firstPreset.id;
                 instructionToUse = ''; // Keep empty for user input
                 // Save to localStorage to remember for next time
                 this.savePresetIndex(firstPreset.id);
             }
         }
-
-        // Debug: Log final selected preset
-        console.log('[InstructionInputPopup] Final preset to use:', presetIdToUse);
 
         // Store the selected preset ID for button highlighting
         this.currentSelectedPresetId = presetIdToUse;
@@ -597,9 +579,7 @@ export class InstructionInputPopup {
      */
     private getLastPresetIndex(): string | null {
         try {
-            const value = localStorage.getItem(InstructionInputPopup.LAST_PRESET_KEY);
-            console.log('[InstructionInputPopup] [localStorage READ] Value:', value);
-            return value;
+            return localStorage.getItem(InstructionInputPopup.LAST_PRESET_KEY);
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to read last preset:', error);
             return null;
@@ -611,24 +591,16 @@ export class InstructionInputPopup {
      */
     private savePresetIndex(index: string): void {
         try {
-            console.log('[InstructionInputPopup] [SAVE] Saving preset ID:', index);
-
             // Save to localStorage immediately (fast)
             localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, index);
-            console.log('[InstructionInputPopup] [localStorage WRITE] ✅ Saved to cache');
 
             // Save to file storage async (persistent across restarts)
             const plugin = (this.configManager as any).plugin;
             if (plugin && typeof plugin.saveData === 'function') {
                 plugin.saveData(InstructionInputPopup.LAST_PRESET_FILE, { presetId: index })
-                    .then(() => {
-                        console.log('[InstructionInputPopup] [FILE WRITE] ✅ Saved to file storage');
-                    })
                     .catch((err: Error) => {
-                        console.warn('[InstructionInputPopup] Failed to save to file storage:', err);
+                        console.warn('[InstructionInputPopup] Failed to save preset to file storage:', err);
                     });
-            } else {
-                console.warn('[InstructionInputPopup] Plugin saveData not available');
             }
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to save last preset:', error);

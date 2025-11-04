@@ -335,6 +335,10 @@ export class QuickEditManager {
         // FIX 1.2: Store selection in instance property instead of window
         this.pendingSelection = selection;
 
+        // Refresh presets to ensure we have the latest data (including custom templates)
+        // This is critical for first-time load when ConfigManager is still loading templates
+        this.refreshPresets();
+
         // Show instruction input popup
         const rect = selection.range.getBoundingClientRect();
         const position = {

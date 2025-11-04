@@ -15,13 +15,47 @@ export class InstructionInputPopup {
     private onSubmitCallback?: (instruction: string) => void;
     private onCancelCallback?: () => void;
     private onPresetSwitchCallback?: (presetId: string) => void;
+    private currentSelectedPresetId: string = 'custom'; // Track currently selected preset in the popup
 
-    // localStorage key for remembering last selected preset
+    // localStorage key for remembering last selected preset (DEPRECATED - use file storage instead)
     private static readonly LAST_PRESET_KEY = 'claude-quick-edit-last-preset-index';
+    // File storage key for persistent preset selection across SiYuan restarts
+    private static readonly LAST_PRESET_FILE = 'quick-edit-last-preset.json';
 
     constructor(presets: PromptTemplate[], configManager: ConfigManager) {
         this.presets = presets;
         this.configManager = configManager;
+
+        // Load last preset from file storage to localStorage (async, non-blocking)
+        this.loadLastPresetFromFile().catch(err => {
+            console.warn('[InstructionInputPopup] Failed to load last preset from file:', err);
+        });
+    }
+
+    /**
+     * Load last preset ID from file storage to localStorage cache
+     * Called once during initialization
+     */
+    private async loadLastPresetFromFile(): Promise<void> {
+        try {
+            const plugin = (this.configManager as any).plugin;
+            if (!plugin || typeof plugin.loadData !== 'function') {
+                console.log('[InstructionInputPopup] Plugin loadData not available, using localStorage only');
+                return;
+            }
+
+            const fileData = await plugin.loadData(InstructionInputPopup.LAST_PRESET_FILE);
+            if (fileData && fileData.presetId) {
+                console.log('[InstructionInputPopup] [FILE READ] Loaded preset ID from file:', fileData.presetId);
+                // Sync to localStorage cache
+                localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, fileData.presetId);
+                console.log('[InstructionInputPopup] [SYNC] Synced file data to localStorage cache');
+            } else {
+                console.log('[InstructionInputPopup] No preset data in file storage');
+            }
+        } catch (error) {
+            console.log('[InstructionInputPopup] No file storage found (first time use)');
+        }
     }
 
     /**
@@ -43,6 +77,15 @@ export class InstructionInputPopup {
 
         // Try to load last selected preset (now stored as ID, not index)
         const lastPresetId = this.getLastPresetIndex(); // method name kept for compatibility
+
+        // Debug: Log current state
+        console.log('[InstructionInputPopup] Opening popup with:', {
+            lastPresetId,
+            presetsCount: this.presets.length,
+            presetIds: this.presets.map(p => `${p.id} (${p.name})`),
+            presetsWithEditInstruction: this.presets.filter(p => p.editInstruction && p.editInstruction.trim()).map(p => `${p.id} (${p.name})`)
+        });
+
         let instructionToUse = defaultInstruction; // Keep empty - user will type instruction
         let presetIdToUse = 'custom';
 
@@ -59,7 +102,23 @@ export class InstructionInputPopup {
                 // Clean up invalid preset ID
                 localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
             }
+        } else if (!lastPresetId) {
+            // First time use: auto-select the first available preset
+            const firstPreset = this.presets.find(p => p.editInstruction && p.editInstruction.trim());
+            if (firstPreset) {
+                console.log('[InstructionInputPopup] First time use, auto-selecting first preset:', firstPreset.id);
+                presetIdToUse = firstPreset.id;
+                instructionToUse = ''; // Keep empty for user input
+                // Save to localStorage to remember for next time
+                this.savePresetIndex(firstPreset.id);
+            }
         }
+
+        // Debug: Log final selected preset
+        console.log('[InstructionInputPopup] Final preset to use:', presetIdToUse);
+
+        // Store the selected preset ID for button highlighting
+        this.currentSelectedPresetId = presetIdToUse;
 
         this.element = this.createPopup(instructionToUse, presetIdToUse);
 
@@ -251,15 +310,20 @@ export class InstructionInputPopup {
             const quickAccessButtons = this.presets
                 .slice(0, 5)
                 .map((preset, idx) => {
-                    const isActive = this.isActivePreset(preset);
+                    // Check if this preset is the one currently selected in the popup
+                    const isSelected = preset.id === presetId;
+                    // Check if this preset is globally active (optional indicator)
+                    const isGloballyActive = this.isActivePreset(preset);
+
                     const shortText = preset.name.length > 12
                         ? preset.name.substring(0, 12) + '...'
                         : preset.name;
 
-                    const activeClass = isActive ? ' preset-btn--active' : '';
-                    const activeBadge = isActive ? '<span class="preset-btn__badge">✓</span>' : '';
-                    const activeStatus = isActive ? ' (当前使用)' : '';
-                    const tooltip = `${this.escapeHtml(preset.name)}${activeStatus}\n${preset.description || ''}\n\n点击切换到此配置`;
+                    // Use selected state for highlighting, not globally active
+                    const activeClass = isSelected ? ' preset-btn--active' : '';
+                    const activeBadge = isSelected ? '<span class="preset-btn__badge">✓</span>' : '';
+                    const globalActiveHint = isGloballyActive && !isSelected ? ' 🌍' : '';
+                    const tooltip = `${this.escapeHtml(preset.name)}${globalActiveHint}\n${preset.description || ''}\n\n点击切换到此配置`;
 
                     return `
                         <button class="preset-btn${activeClass}" data-preset-id="${preset.id}" title="${tooltip}" type="button">
@@ -344,6 +408,8 @@ export class InstructionInputPopup {
                 if (presetId) {
                     // Save selected preset
                     this.savePresetIndex(presetId);
+                    // Update current selected preset ID for button highlighting
+                    this.currentSelectedPresetId = presetId;
 
                     // Trigger global preset switch
                     if (this.onPresetSwitchCallback) {
@@ -369,6 +435,8 @@ export class InstructionInputPopup {
 
             // Save the selected preset ID
             this.savePresetIndex(value);
+            // Update current selected preset ID for button highlighting
+            this.currentSelectedPresetId = value;
 
             // Trigger preset switch (global config + fill instruction)
             if (this.onPresetSwitchCallback) {
@@ -420,6 +488,10 @@ export class InstructionInputPopup {
                     presetSelect.value = preset.id;
                     // Save the selected preset
                     this.savePresetIndex(preset.id);
+                    // Update current selected preset ID for button highlighting
+                    this.currentSelectedPresetId = preset.id;
+                    // Refresh button indicators
+                    this.refreshActiveIndicators();
                     input.value = preset.editInstruction!;
                     input.focus();
                     input.select();
@@ -520,25 +592,46 @@ export class InstructionInputPopup {
     }
 
     /**
-     * Get last selected preset index from localStorage
+     * Get last selected preset ID from localStorage cache (synchronous)
+     * File storage is loaded to localStorage in constructor
      */
     private getLastPresetIndex(): string | null {
         try {
-            return localStorage.getItem(InstructionInputPopup.LAST_PRESET_KEY);
+            const value = localStorage.getItem(InstructionInputPopup.LAST_PRESET_KEY);
+            console.log('[InstructionInputPopup] [localStorage READ] Value:', value);
+            return value;
         } catch (error) {
-            console.warn('[InstructionInputPopup] Failed to read last preset from localStorage:', error);
+            console.warn('[InstructionInputPopup] Failed to read last preset:', error);
             return null;
         }
     }
 
     /**
-     * Save selected preset index to localStorage
+     * Save selected preset ID to both localStorage (sync) and file storage (async)
      */
     private savePresetIndex(index: string): void {
         try {
+            console.log('[InstructionInputPopup] [SAVE] Saving preset ID:', index);
+
+            // Save to localStorage immediately (fast)
             localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, index);
+            console.log('[InstructionInputPopup] [localStorage WRITE] ✅ Saved to cache');
+
+            // Save to file storage async (persistent across restarts)
+            const plugin = (this.configManager as any).plugin;
+            if (plugin && typeof plugin.saveData === 'function') {
+                plugin.saveData(InstructionInputPopup.LAST_PRESET_FILE, { presetId: index })
+                    .then(() => {
+                        console.log('[InstructionInputPopup] [FILE WRITE] ✅ Saved to file storage');
+                    })
+                    .catch((err: Error) => {
+                        console.warn('[InstructionInputPopup] Failed to save to file storage:', err);
+                    });
+            } else {
+                console.warn('[InstructionInputPopup] Plugin saveData not available');
+            }
         } catch (error) {
-            console.warn('[InstructionInputPopup] Failed to save last preset to localStorage:', error);
+            console.warn('[InstructionInputPopup] Failed to save last preset:', error);
         }
     }
 
@@ -568,6 +661,7 @@ export class InstructionInputPopup {
 
     /**
      * Refresh active indicators on preset buttons
+     * Uses currentSelectedPresetId to determine which button should be highlighted
      */
     private refreshActiveIndicators(): void {
         if (!this.element) return;
@@ -575,9 +669,9 @@ export class InstructionInputPopup {
         const buttons = this.element.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
         buttons.forEach(btn => {
             const presetId = btn.getAttribute('data-preset-id');
-            const preset = this.presets.find(p => p.id === presetId);
 
-            if (preset && this.isActivePreset(preset)) {
+            // Check if this button matches the currently selected preset
+            if (presetId === this.currentSelectedPresetId) {
                 // Add active class
                 btn.classList.add('preset-btn--active');
 

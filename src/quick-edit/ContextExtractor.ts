@@ -204,7 +204,7 @@ export class ContextExtractor {
     }
 
     /**
-     * 获取相邻的块
+     * 获取相邻的块（稳健方案：优先使用 API，回退到 DOM）
      * @param blockId 起始块ID
      * @param direction 方向
      * @param count 数量
@@ -216,10 +216,21 @@ export class ContextExtractor {
         count: number
     ): Promise<Array<{ id: string; content: string; type: string }>> {
         try {
-            // 获取当前块的元素
+            // 策略1: 优先使用 SiYuan API（稳健，不依赖 DOM 可见性）
+            console.log(`[ContextExtractor] Attempting API retrieval for ${direction} blocks of ${blockId}`);
+            const apiResults = await this.getSiblingBlocksViaAPI(blockId, direction, count);
+
+            if (apiResults.length > 0) {
+                console.log(`[ContextExtractor] ✅ Successfully retrieved ${apiResults.length} blocks via API`);
+                return apiResults;
+            }
+
+            // 策略2: API 失败，回退到 DOM 查询（兼容本地块、临时块等）
+            console.log(`[ContextExtractor] API returned no results, falling back to DOM query`);
+
             const currentElement = document.querySelector(`[data-node-id="${blockId}"]`) as HTMLElement;
             if (!currentElement) {
-                console.warn(`[ContextExtractor] Block not found: ${blockId}`);
+                console.warn(`[ContextExtractor] Block not found in DOM: ${blockId}`);
                 return [];
             }
 
@@ -235,6 +246,7 @@ export class ContextExtractor {
             const currentIndex = allBlocks.findIndex(el => el.dataset.nodeId === blockId);
 
             if (currentIndex === -1) {
+                console.warn(`[ContextExtractor] Block ${blockId} not found in container`);
                 return [];
             }
 
@@ -261,6 +273,7 @@ export class ContextExtractor {
                 results.push({ id, content, type });
             }
 
+            console.log(`[ContextExtractor] ✅ DOM fallback found ${results.length} blocks`);
             return results;
         } catch (error) {
             console.error(`[ContextExtractor] Error getting sibling blocks:`, error);
@@ -292,6 +305,127 @@ export class ContextExtractor {
         } catch (error) {
             console.error(`[ContextExtractor] Error extracting block text:`, error);
             return '';
+        }
+    }
+
+    /**
+     * 通过 SiYuan API 获取块的 Kramdown 内容
+     * @param blockId 块ID
+     * @returns 块内容（markdown格式）
+     */
+    private async getBlockKramdownViaAPI(blockId: string): Promise<string> {
+        try {
+            const response = await fetch('/api/block/getBlockKramdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: blockId })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            if (result.code === 0 && result.data) {
+                // 返回 kramdown 格式（SiYuan 内部格式）或 markdown
+                return result.data.kramdown || result.data.markdown || '';
+            }
+
+            console.warn(`[ContextExtractor] API returned error for block ${blockId}:`, result);
+            return '';
+        } catch (error) {
+            console.error(`[ContextExtractor] API error for block ${blockId}:`, error);
+            return '';
+        }
+    }
+
+    /**
+     * 通过 SiYuan SQL API 获取兄弟块
+     * @param blockId 起始块ID
+     * @param direction 方向
+     * @param count 数量
+     * @returns 块信息数组
+     */
+    private async getSiblingBlocksViaAPI(
+        blockId: string,
+        direction: 'above' | 'below',
+        count: number
+    ): Promise<Array<{ id: string; content: string; type: string }>> {
+        try {
+            // 使用 SQL API 查询兄弟块
+            // 先获取当前块的信息（父块ID和排序位置）
+            const currentBlockSQL = `SELECT id, parent_id, box, path, sort FROM blocks WHERE id = '${blockId}'`;
+            const currentBlockResponse = await fetch('/api/query/sql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stmt: currentBlockSQL })
+            });
+
+            if (!currentBlockResponse.ok) {
+                throw new Error(`HTTP ${currentBlockResponse.status}`);
+            }
+
+            const currentBlockResult = await currentBlockResponse.json();
+            if (currentBlockResult.code !== 0 || !currentBlockResult.data || currentBlockResult.data.length === 0) {
+                console.warn(`[ContextExtractor] Cannot find current block ${blockId} via API`);
+                return [];
+            }
+
+            const currentBlock = currentBlockResult.data[0];
+            const parentId = currentBlock.parent_id;
+            const currentSort = currentBlock.sort;
+
+            // 查询兄弟块（相同父块，根据sort排序）
+            let siblingSQL: string;
+            if (direction === 'above') {
+                // 获取当前块之前的块（sort < currentSort），降序排列，取前count个
+                siblingSQL = `SELECT id, type, content FROM blocks
+                              WHERE parent_id = '${parentId}'
+                              AND sort < ${currentSort}
+                              ORDER BY sort DESC
+                              LIMIT ${count}`;
+            } else {
+                // 获取当前块之后的块（sort > currentSort），升序排列，取前count个
+                siblingSQL = `SELECT id, type, content FROM blocks
+                              WHERE parent_id = '${parentId}'
+                              AND sort > ${currentSort}
+                              ORDER BY sort ASC
+                              LIMIT ${count}`;
+            }
+
+            const siblingResponse = await fetch('/api/query/sql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stmt: siblingSQL })
+            });
+
+            if (!siblingResponse.ok) {
+                throw new Error(`HTTP ${siblingResponse.status}`);
+            }
+
+            const siblingResult = await siblingResponse.json();
+            if (siblingResult.code !== 0 || !siblingResult.data) {
+                return [];
+            }
+
+            // 处理结果
+            let siblings = siblingResult.data.map((row: any) => ({
+                id: row.id,
+                content: row.content || '',
+                type: row.type || 'paragraph'
+            }));
+
+            // 如果是向上获取，需要反转顺序（因为SQL是降序查询的）
+            if (direction === 'above') {
+                siblings.reverse();
+            }
+
+            console.log(`[ContextExtractor] API found ${siblings.length} ${direction} blocks for ${blockId}`);
+            return siblings;
+
+        } catch (error) {
+            console.error(`[ContextExtractor] API error getting sibling blocks:`, error);
+            return [];
         }
     }
 

@@ -76,6 +76,12 @@ export class QuickEditManager {
     private mutationObserver: MutationObserver | null = null;
     private observedContainers: Set<HTMLElement> = new Set();
 
+    // FIX: Preset persistence - file-based cache for first launch sync
+    private static readonly LAST_PRESET_FILE = 'quick-edit-last-preset.json';
+    private lastPresetFileCache: string | null = null;
+    private lastPresetFileLoaded: boolean = false;
+    private lastPresetFilePromise: Promise<void> | null = null;
+
     constructor(
         plugin: Plugin,
         claudeClient: ClaudeClient,
@@ -108,6 +114,13 @@ export class QuickEditManager {
 
         // FIX 1.5: Setup MutationObserver to detect DOM changes
         this.setupDOMObserver();
+
+        // FIX: Load last preset from file storage (async, non-blocking)
+        // This ensures UI and logic use the same preset on first launch
+        // Store promise to allow waiting for completion
+        this.lastPresetFilePromise = this.loadLastPresetFromFile().catch(() => {
+            // Silently handle - file not existing is expected on first use
+        });
     }
 
     /**
@@ -340,23 +353,65 @@ export class QuickEditManager {
         this.refreshPresets();
 
         // Show instruction input popup
-        const rect = selection.range.getBoundingClientRect();
-        const position = {
-            x: rect.left,
-            y: rect.bottom + 10,
-            placement: 'below' as const,
-            anchorRect: {
-                top: rect.top,
-                bottom: rect.bottom,
-                left: rect.left,
-                right: rect.right,
-                width: rect.width,
-                height: rect.height
+        // FIX: 使用块元素位置而非 Range.getBoundingClientRect()，避免滚动导致的位置错误
+        let popupPosition: { x: number; y: number; placement: 'below' | 'above'; anchorRect: DOMRect };
+
+        try {
+            // 优先使用块元素的位置（更稳定）
+            const blockRect = selection.blockElement.getBoundingClientRect();
+
+            // 如果块元素可见（在视口内），使用块元素位置
+            if (blockRect.top >= 0 && blockRect.top < window.innerHeight) {
+                popupPosition = {
+                    x: blockRect.left,
+                    y: blockRect.bottom + 10,
+                    placement: 'below' as const,
+                    anchorRect: {
+                        top: blockRect.top,
+                        bottom: blockRect.bottom,
+                        left: blockRect.left,
+                        right: blockRect.right,
+                        width: blockRect.width,
+                        height: blockRect.height
+                    } as DOMRect
+                };
+            } else {
+                // 块不可见，使用 Range 位置作为回退
+                const rect = selection.range.getBoundingClientRect();
+                popupPosition = {
+                    x: rect.left,
+                    y: rect.bottom + 10,
+                    placement: 'below' as const,
+                    anchorRect: {
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        left: rect.left,
+                        right: rect.right,
+                        width: rect.width,
+                        height: rect.height
+                    } as DOMRect
+                };
             }
-        };
+        } catch (error) {
+            console.error('[QuickEdit] Error calculating popup position:', error);
+            // 使用屏幕中心作为最后的回退
+            popupPosition = {
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2,
+                placement: 'below' as const,
+                anchorRect: {
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    width: 0,
+                    height: 0
+                } as DOMRect
+            };
+        }
 
         // Don't pass quickEditDefaultInstruction - let popup handle defaults via preset system
-        this.inputPopup.show(position, '');
+        this.inputPopup.show(popupPosition, '');
     }
 
     /**
@@ -468,12 +523,40 @@ export class QuickEditManager {
         // UNIFIED FIX: Insert comparison block after the LAST selected block
         // This ensures the preview appears at the end of the selection, not at the beginning
         const lastBlockId = selection.selectedBlockIds?.[selection.selectedBlockIds.length - 1] || selection.blockId;
-        const lastBlockElement = document.querySelector(`[data-node-id="${lastBlockId}"]`) as HTMLElement;
+
+        // FIX: 添加滚动定位和重试机制，确保块可见
+        let lastBlockElement: HTMLElement | null = null;
+
+        // 尝试查找目标块（最多重试3次）
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            lastBlockElement = document.querySelector(`[data-node-id="${lastBlockId}"]`) as HTMLElement;
+
+            if (lastBlockElement) {
+                break;
+            }
+
+            // 如果第一次查找失败，尝试滚动到选中的块元素
+            if (attempt === 1 && selection.blockElement && document.contains(selection.blockElement)) {
+                selection.blockElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+
+                // 等待滚动和渲染完成
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } else if (attempt === 2) {
+                // 第二次尝试：等待更长时间
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
 
         // FIX High 2.1: Add null safety checks for DOM elements
         if (!lastBlockElement && !selection.blockElement) {
-            console.error(`[QuickEdit] ❌ Cannot find block element for ${lastBlockId} or fallback, aborting`);
+            console.error(`[QuickEdit] ❌ Cannot find block element for ${lastBlockId} or fallback after 3 attempts, aborting`);
             this.activeBlocks.delete(blockId);
+            this.isProcessing = false;
+            this.activeRequestBlockId = null;
+            showMessage('❌ 无法定位目标块，请重试或刷新页面', 5000, 'error');
             return;
         }
 
@@ -561,14 +644,48 @@ export class QuickEditManager {
             let chunkCount = 0;
             let totalChars = 0;
 
-            // 构建请求：使用可配置的提示词模板（从 ClaudeClient 获取）
-            const claudeSettings = this.claudeClient.getSettings();
-            const template = claudeSettings.quickEditPromptTemplate || `{instruction}
+            // FIX: 构建请求模板 - 使用当前选中 preset 的 editInstruction
+            // 获取当前选中的 preset ID (await to ensure file loading completes)
+            const currentPresetId = await this.getCurrentPresetId();
+            let template: string;
+
+            // Get all presets for lookup
+            const allTemplates = this.configManager.getAllTemplates();
+
+            // FIX: 如果有选中的 preset，使用 preset 的完整配置（editInstruction + systemPrompt + appendedPrompt）
+            let presetSystemPrompt: string | undefined = undefined;
+            let presetAppendedPrompt: string | undefined = undefined;
+
+            if (currentPresetId) {
+                const currentPreset = allTemplates.find(t => t.id === currentPresetId);
+
+                if (currentPreset && currentPreset.editInstruction) {
+                    template = currentPreset.editInstruction;
+
+                    // FIX: 提取 preset 的 systemPrompt 和 appendedPrompt
+                    presetSystemPrompt = currentPreset.systemPrompt;
+                    presetAppendedPrompt = currentPreset.appendedPrompt;
+                } else {
+                    // 回退：preset 不存在或没有 editInstruction
+                    console.warn(`[QuickEdit] Preset ${currentPresetId} not found or has no editInstruction, using global template`);
+                    const claudeSettings = this.claudeClient.getSettings();
+                    template = claudeSettings.quickEditPromptTemplate || `{instruction}
 
 原文：
 {original}
 
 重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+                }
+            } else {
+                // 没有选中 preset，使用全局模板
+                const claudeSettings = this.claudeClient.getSettings();
+                template = claudeSettings.quickEditPromptTemplate || `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+            }
 
             // ✨ 处理上下文占位符 {above=x}, {below=x}, {above_blocks=x}, {below_blocks=x}
             let processedTemplate = template;
@@ -586,24 +703,14 @@ export class QuickEditManager {
                 .replace('{instruction}', block.instruction)
                 .replace('{original}', block.originalText);
 
-            // 统一提示词管线：自动附加 appendedPrompt
-            const appendedPrompt = this.claudeClient.getAppendedPrompt();
+            // FIX: 统一提示词管线：优先使用 preset 的 appendedPrompt，否则使用全局的
+            const appendedPrompt = presetAppendedPrompt || this.claudeClient.getAppendedPrompt();
             if (appendedPrompt && appendedPrompt.trim()) {
                 userPrompt += '\n\n' + appendedPrompt;
             }
 
-            // 获取当前预设 ID，用于获取预设级别的 filterRules
-            const currentPresetId = this.getCurrentPresetId();
-
             // 获取 filterRules（全局 + 预设）
             const filterRules: FilterRule[] = this.claudeClient.getFilterRules(currentPresetId) || [];
-
-            // DEBUG: 诊断过滤规则加载
-            console.log('[QuickEdit] DEBUG filterRules:', JSON.stringify(filterRules, null, 2));
-            console.log('[QuickEdit] DEBUG filterRules source:', currentPresetId
-                ? `Global + Preset (${currentPresetId})`
-                : 'Global only');
-            console.log('[QuickEdit] DEBUG preset ID:', currentPresetId);
 
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
@@ -733,8 +840,9 @@ export class QuickEditManager {
                     this.isProcessing = false;
                     this.activeRequestBlockId = null;
                 },
-                "QuickEdit",  // feature
-                filterRules    // filterRules
+                "QuickEdit",         // feature
+                filterRules,         // filterRules
+                presetSystemPrompt   // FIX: systemPrompt - 优先使用 preset 的 systemPrompt，否则使用全局的
             );
 
         } catch (error) {
@@ -1896,12 +2004,58 @@ export class QuickEditManager {
     }
 
     /**
-     * Get currently active preset ID from localStorage
-     * Used to fetch preset-level filterRules
+     * FIX: Load last preset ID from file storage to memory cache
+     * Called once during initialization, same as InstructionInputPopup
      */
-    private getCurrentPresetId(): string | undefined {
+    private async loadLastPresetFromFile(): Promise<void> {
         try {
-            const lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
+            if (typeof this.plugin.loadData !== 'function') {
+                console.warn('[QuickEditManager] Plugin loadData not available');
+                return;
+            }
+
+            const fileData = await this.plugin.loadData(QuickEditManager.LAST_PRESET_FILE);
+            if (fileData && fileData.presetId) {
+                this.lastPresetFileCache = fileData.presetId;
+                this.lastPresetFileLoaded = true;
+
+                // Sync to localStorage for immediate access
+                localStorage.setItem('claude-quick-edit-last-preset-index', fileData.presetId);
+            } else {
+                this.lastPresetFileLoaded = true;
+            }
+        } catch (error) {
+            // First time use, no file storage yet
+            this.lastPresetFileLoaded = true;
+        }
+    }
+
+    /**
+     * Get currently active preset ID
+     * FIX: Now uses file cache for first launch sync with UI
+     * Used to fetch preset-level filterRules and editInstruction
+     *
+     * IMPORTANT: This method will wait for file loading if it's still in progress
+     */
+    private async getCurrentPresetId(): Promise<string | undefined> {
+        // FIX Critical: Wait for file loading to complete before reading preset ID
+        // This ensures first request after restart uses correct preset
+        if (this.lastPresetFilePromise && !this.lastPresetFileLoaded) {
+            await this.lastPresetFilePromise;
+        }
+        try {
+            // FIX Critical: File is the source of truth, not localStorage!
+            // Strategy 1: Use file cache if available (most reliable)
+            let lastPresetId: string | null = null;
+
+            if (this.lastPresetFileCache) {
+                lastPresetId = this.lastPresetFileCache;
+            } else {
+                // Strategy 2: Fallback to localStorage only if file cache not available
+                lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
+            }
+
+            // Return undefined for empty or 'custom' preset
             if (!lastPresetId || lastPresetId === 'custom') {
                 return undefined;
             }
@@ -1910,7 +2064,12 @@ export class QuickEditManager {
             const allTemplates = this.configManager.getAllTemplates();
             const preset = allTemplates.find((t: any) => t.id === lastPresetId);
 
-            return preset ? lastPresetId : undefined;
+            if (!preset) {
+                console.warn(`[QuickEditManager] Preset ${lastPresetId} not found in ConfigManager`);
+                return undefined;
+            }
+
+            return lastPresetId;
         } catch (error) {
             console.warn('[QuickEdit] Failed to get current preset ID:', error);
             return undefined;

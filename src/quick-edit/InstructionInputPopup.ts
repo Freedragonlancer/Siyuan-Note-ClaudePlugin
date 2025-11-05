@@ -17,7 +17,7 @@ export class InstructionInputPopup {
     private onPresetSwitchCallback?: (presetId: string) => void;
     private currentSelectedPresetId: string = 'custom'; // Track currently selected preset in the popup
 
-    // localStorage key for remembering last selected preset (DEPRECATED - use file storage instead)
+    // localStorage key for fast synchronous access (synced from file storage)
     private static readonly LAST_PRESET_KEY = 'claude-quick-edit-last-preset-index';
     // File storage key for persistent preset selection across SiYuan restarts
     private static readonly LAST_PRESET_FILE = 'quick-edit-last-preset.json';
@@ -27,8 +27,8 @@ export class InstructionInputPopup {
         this.configManager = configManager;
 
         // Load last preset from file storage to localStorage (async, non-blocking)
-        this.loadLastPresetFromFile().catch(err => {
-            console.warn('[InstructionInputPopup] Failed to load last preset from file:', err);
+        this.loadLastPresetFromFile().catch(() => {
+            // Silently handle - file not existing is expected on first use
         });
     }
 
@@ -504,25 +504,18 @@ export class InstructionInputPopup {
      * Handle submit
      */
     private handleSubmit(instruction: string): void {
-        console.log('[InstructionInputPopup] handleSubmit called, instruction:', instruction, 'length:', instruction.length);
-
         let trimmedInstruction = instruction.trim();
-        console.log('[InstructionInputPopup] Trimmed instruction:', trimmedInstruction, 'length:', trimmedInstruction.length);
 
         // If input is empty, use the input's placeholder as default instruction
         if (!trimmedInstruction) {
-            console.log('[InstructionInputPopup] Input empty, checking input placeholder...');
-
             // Read placeholder directly from input element (already set during popup creation)
             const input = this.element?.querySelector('#instruction-input') as HTMLInputElement;
             if (input?.placeholder && input.placeholder !== '输入编辑指令...') {
                 trimmedInstruction = input.placeholder.trim();
-                console.log('[InstructionInputPopup] Using input placeholder as instruction:', trimmedInstruction);
             }
 
             // If still empty (default placeholder or no placeholder), show error
             if (!trimmedInstruction) {
-                console.warn('[InstructionInputPopup] No instruction and no custom placeholder, not submitting');
                 showMessage('请输入编辑指令或选择预设', 2000, 'info');
                 return;
             }
@@ -535,19 +528,13 @@ export class InstructionInputPopup {
             return;
         }
 
-        // Save the currently selected preset index before closing
-        if (this.element) {
-            const presetSelect = this.element.querySelector('#instruction-preset') as HTMLSelectElement;
-            if (presetSelect && presetSelect.value !== 'custom') {
-                this.savePresetIndex(presetSelect.value);
-            } else {
-                // Clear saved preset if "custom" is selected
-                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
-            }
+        // FIX: Save the currently selected preset ID before closing
+        // Use currentSelectedPresetId instead of dropdown (which may not exist if <=5 presets)
+        if (this.currentSelectedPresetId && this.currentSelectedPresetId !== 'custom') {
+            this.savePresetIndex(this.currentSelectedPresetId);
         }
 
         // Call callback with instruction (either user input or placeholder)
-        console.log('[InstructionInputPopup] Calling onSubmitCallback with:', trimmedInstruction);
         this.onSubmitCallback(trimmedInstruction);
 
         // Only close after successful submission
@@ -685,7 +672,6 @@ export class InstructionInputPopup {
      */
     public updatePresets(presets: PromptTemplate[]): void {
         this.presets = presets;
-        console.log('[InstructionInputPopup] Presets updated, count:', presets.length);
 
         // If popup is currently visible, update the preset selector
         if (this.isVisible && this.element) {
@@ -712,7 +698,6 @@ export class InstructionInputPopup {
                     if (presetsWithEditInstruction.length > 0) {
                         selector.value = presetsWithEditInstruction[0].id;
                     }
-                    console.log('[InstructionInputPopup] Previously selected preset no longer exists, reset to first preset');
                 }
             }
 

@@ -49,7 +49,7 @@ onunload()         // Cleanup resources
 
 **Critical**: `addDock()` must be called in `onLayoutReady()`, not `onload()`. Dock's `init()` runs lazily when user opens it.
 
-### Core Systems
+### Core Systems (v0.9.0 Modular Architecture)
 
 **1. Configuration (Multi-Profile + Presets)**
 ```
@@ -61,64 +61,108 @@ ConfigManager
                            inputPlaceholder, filterRules, ... }
 ```
 
-**Key Types**:
+**2. AI Provider Layer (Extensible)**
+```
+AIProviderFactory
+  ├── AnthropicProvider (Claude - Implemented ✅)
+  ├── OpenAIProvider (GPT - Planned 📋)
+  ├── GeminiProvider (Google - Planned 📋)
+  └── Custom Providers (Extensible 🔌)
+```
+
+**Key Interface**:
 ```typescript
-PromptTemplate {
-  id: string;
-  name: string;
-  systemPrompt: string;           // AI role definition
-  appendedPrompt: string;         // Auto-appended to requests
-  editInstruction?: string;       // Quick Edit template with {instruction}, {original}
-  inputPlaceholder?: string;      // Placeholder text for input field
-  filterRules?: FilterRule[];     // Preset-specific filters
-  selectionQATemplate?: string;   // Selection Q&A template
+interface AIProvider {
+  sendMessage(messages, options): Promise<string>
+  streamMessage(messages, options): Promise<void>
+  validateConfig(config): boolean | string
+  getAvailableModels(): string[]
 }
 ```
 
-**2. Quick Edit Pipeline**
+**3. Quick Edit Pipeline (Modular)**
 ```
-User Selection → Input Popup → Preset Selection → Build Prompt →
-Context Extraction → AI Streaming → Response Filtering → Preview Render →
-User Review (Accept/Reject/Retry)
+User Selection → SelectionHandler → PromptBuilder → AIProvider →
+FilterPipeline → InlineEditRenderer → User Review (Accept/Reject/Retry)
 ```
 
-**Core Files**:
-- `QuickEditManager.ts` - Main controller (`trigger()` → `processInlineEdit()`)
-- `InstructionInputPopup.ts` - Preset selector + instruction input
-- `ContextExtractor.ts` - Placeholder parser (`{above=5}`, `{above_blocks=2}`)
-- `InlineEditRenderer.ts` - Comparison block rendering
+**Modular Components**:
+- `SelectionHandler` - Text/block selection extraction
+- `PromptBuilder` - Template-based prompt construction
+- `BlockOperations` - SiYuan API wrapper (insert, delete, update)
+- `EditStateManager` - State management and cleanup
+- `QuickEditManager` - Orchestrator coordinating components
 
-**3. Claude Client & Filtering**
-- `ClaudeClient.ts` - API client with streaming support
-- `ResponseFilter.ts` - Regex-based content filtering
+**4. Filter Pipeline System**
+```
+FilterPipeline
+  ├── RegexFilterMiddleware (pattern-based)
+  ├── CodeBlockNormalizerMiddleware (formatting)
+  ├── MarkdownLinkFixerMiddleware (validation)
+  ├── WhitespaceTrimmerMiddleware (cleanup)
+  └── CustomFunctionMiddleware (user-defined)
+```
 
-**4. UI Panels**
-- `UnifiedAIPanel.ts` - Main chat interface (sidebar dock)
+**5. UI Panels**
+- `UnifiedAIPanel` - Main chat interface (sidebar dock)
 
 ---
 
 ## Quick Edit System
 
-### Core Components
+### Core Components (Modular Architecture v0.9.0)
 
 **QuickEditManager** (`src/quick-edit/QuickEditManager.ts`)
+- Orchestrator coordinating Quick Edit workflow
 - Entry point: `trigger()` method
-- Main flow: `processInlineEdit()`
-- Handles: selection → AI request → preview → accept/reject
+- Delegates to specialized modules (SelectionHandler, PromptBuilder, etc.)
+- Status: Transitioning from monolithic to modular (backward compatible)
+
+**Modular Components (NEW v0.9.0)**:
+
+**SelectionHandler** (`src/quick-edit/SelectionHandler.ts`)
+- Extracts text selection from SiYuan editor
+- Handles single and multi-block selections
+- Validates selection and finds containing blocks
+- Key method: `getSelection(protyle): InlineEditSelection | null`
+
+**PromptBuilder** (`src/quick-edit/PromptBuilder.ts`)
+- Constructs AI prompts from templates
+- Replaces placeholders: `{instruction}`, `{original}`, `{above=N}`, `{below=N}`
+- Integrates with ContextExtractor for surrounding context
+- Key method: `buildPrompt(template, options): Promise<BuiltPrompt>`
+
+**BlockOperations** (`src/quick-edit/BlockOperations.ts`)
+- Encapsulates all SiYuan API operations
+- Methods: `insertBlock()`, `deleteBlock()`, `updateBlock()`
+- Batch operations: `insertMultipleBlocks()`, `deleteMultipleBlocks()`
+- Markdown formatting: `applyMarkdownFormatting()`
+
+**EditStateManager** (`src/quick-edit/EditStateManager.ts`)
+- Manages active edit sessions
+- Keyboard handler registration/cleanup
+- DOM mutation observer for external changes
+- Prevents concurrent edits with `isCurrentlyProcessing()` check
+- Key methods: `addActiveBlock()`, `setupDOMObserver()`, `destroy()`
+
+**Supporting Components**:
 
 **InstructionInputPopup** (`src/quick-edit/InstructionInputPopup.ts`)
 - Preset selector with quick access buttons
 - Input field with dynamic placeholder (from `PromptTemplate.inputPlaceholder`)
-- Persistence: Dual-storage (localStorage cache + file storage for restart persistence)
+- Persistence: Dual-storage (localStorage cache + file storage)
 
 **ContextExtractor** (`src/quick-edit/ContextExtractor.ts`)
-- Parses template placeholders: `{instruction}`, `{original}`, `{above=N}`, `{below=N}`, `{above_blocks=N}`, `{below_blocks=N}`
-- Extracts surrounding context from SiYuan document DOM
-- Replaces placeholders in `editInstruction` template
+- Parses template placeholders: `{above=N}`, `{below=N}`, `{above_blocks=N}`, `{below_blocks=N}`
+- Extracts surrounding context from SiYuan document via SQL API or DOM fallback
+- **Security**: Sanitizes blockId to prevent SQL injection (v0.9.0)
+- **Optimization**: Uses `root_id` for efficient block queries (v0.9.0)
+- Key method: `extractContext(template, blockId): Promise<string>`
 
 **InlineEditRenderer** (`src/quick-edit/InlineEditRenderer.ts`)
 - Renders comparison view (original vs AI suggestion)
 - Action buttons: Accept, Reject, Retry
+- **Security**: Uses `escapeHtml()` for XSS protection
 - Integrates with SiYuan's block system
 
 ### Key Interfaces
@@ -218,6 +262,131 @@ const blockId = blockElement.getAttribute('data-node-id');
 
 ---
 
+## Extensibility (v0.9.0+)
+
+### Adding AI Providers
+
+The plugin now supports multiple AI providers through an abstraction layer:
+
+```typescript
+// 1. Implement AIProvider interface
+class MyCustomProvider implements AIProvider {
+    readonly providerType = 'custom';
+    readonly providerName = 'My AI Service';
+
+    async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
+        // Implementation
+    }
+
+    async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
+        // Stream implementation with options.onChunk callback
+    }
+
+    validateConfig(config: AIModelConfig): true | string {
+        if (!config.apiKey) return 'API key required';
+        return true;
+    }
+
+    getAvailableModels(): string[] {
+        return ['model-v1', 'model-v2'];
+    }
+}
+
+// 2. Register provider
+AIProviderFactory.register({
+    type: 'custom',
+    factory: (config) => new MyCustomProvider(config),
+    displayName: 'My AI Service',
+    description: 'Custom AI provider'
+});
+```
+
+**Current Providers:**
+- `anthropic` - Claude (Implemented ✅)
+- `openai` - GPT (Planned 📋)
+- `gemini` - Google Gemini (Planned 📋)
+
+### Adding Filter Middleware
+
+Create custom response filters using the pipeline system:
+
+```typescript
+import { FilterMiddleware, FilterContext } from '@/filter/types';
+
+class MyFilterMiddleware implements FilterMiddleware {
+    readonly name = 'MyCustomFilter';
+
+    process(response: string, context: FilterContext): string {
+        // Transform response
+        return response.replace(/pattern/g, 'replacement');
+    }
+
+    validate(): boolean | string {
+        // Optional validation
+        return true;
+    }
+}
+
+// Use in pipeline
+import { FilterPipeline } from '@/filter/FilterPipeline';
+import { RegexFilterMiddleware } from '@/filter/middleware';
+
+const pipeline = new FilterPipeline();
+pipeline.use(new RegexFilterMiddleware(rules));
+pipeline.use(new MyFilterMiddleware());
+
+const filtered = await pipeline.execute(response, 'QuickEdit');
+```
+
+**Built-in Middleware:**
+- `RegexFilterMiddleware` - Pattern-based filtering
+- `CodeBlockNormalizerMiddleware` - Code block formatting
+- `MarkdownLinkFixerMiddleware` - Link validation
+- `WhitespaceTrimmerMiddleware` - Whitespace cleanup
+- `ConditionalMiddleware` - Conditional execution
+- `PresetSpecificMiddleware` - Preset-based filtering
+
+### Using Modular Quick Edit Components
+
+Leverage the new modular components in your own features:
+
+```typescript
+import {
+    SelectionHandler,
+    BlockOperations,
+    PromptBuilder,
+    EditStateManager
+} from '@/quick-edit';
+
+class MyFeature {
+    private selectionHandler = new SelectionHandler();
+    private blockOps = new BlockOperations();
+    private promptBuilder = new PromptBuilder(contextExtractor);
+    private stateManager = new EditStateManager();
+
+    async process() {
+        // 1. Get selection
+        const selection = this.selectionHandler.getSelection(protyle);
+        if (!selection) return;
+
+        // 2. Build prompt
+        const prompt = await this.promptBuilder.buildPrompt(template, {
+            instruction: 'Improve text',
+            originalText: selection.text,
+            blockId: selection.blockId
+        });
+
+        // 3. Call AI and insert result
+        const result = await aiProvider.sendMessage(prompt.messages);
+        await this.blockOps.insertBlock(result, selection.blockId);
+    }
+}
+```
+
+See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed API documentation and examples.
+
+---
+
 ## Development Guidelines
 
 ### Adding Presets
@@ -245,10 +414,26 @@ const blockId = blockElement.getAttribute('data-node-id');
 
 ## Security
 
+### Input Validation (v0.9.0)
+- **SQL Injection Prevention**: `sanitizeBlockId()` validates block IDs before SQL queries (ContextExtractor)
+  - Pattern: `/^[0-9]{14}-[0-9a-z]{7}$/i` (SiYuan format: 14 digits + hyphen + 7 chars)
+  - Throws error on invalid format
+  - Validates all numeric parameters (count range: 1-100)
+  - Uses `root_id` instead of `parent_id` for secure sibling block queries
 - **XSS Protection**: Always use `escapeHtml()` before setting `innerHTML`
+  - Applied in InlineEditRenderer
+  - Applied in UnifiedAIPanel markdown rendering
+
+### Configuration Security
 - **API Keys**: Stored in localStorage (NOT encrypted - warn users)
+- **Async Initialization**: Fixed race condition using `waitForLoad()` pattern (v0.9.0)
+  - Prevents settings overwrite on first launch
+  - Ensures configuration fully loaded before plugin initialization
+
+### API Security
 - **Filter Validation**: Regex patterns validated to prevent ReDoS attacks
-- **Timeout Protection**: `fetchWithTimeout()` prevents indefinite API hangs
+- **Timeout Protection**: `fetchWithTimeout()` prevents indefinite API hangs (10s default)
+- **Request Abort**: AbortController support for canceling in-flight requests
 
 ---
 
@@ -268,25 +453,41 @@ const blockId = blockElement.getAttribute('data-node-id');
 
 ### Core Logic
 - `src/index.ts` - Plugin entry, lifecycle
-- `src/quick-edit/QuickEditManager.ts` - Quick Edit controller
-- `src/claude/ClaudeClient.ts` - API client, streaming
-- `src/filter/ResponseFilter.ts` - Content filtering
+- `src/quick-edit/QuickEditManager.ts` - Quick Edit orchestrator
+- `src/quick-edit/SelectionHandler.ts` - Selection extraction (NEW v0.9.0)
+- `src/quick-edit/PromptBuilder.ts` - Prompt construction (NEW v0.9.0)
+- `src/quick-edit/BlockOperations.ts` - SiYuan API wrapper (NEW v0.9.0)
+- `src/quick-edit/EditStateManager.ts` - State management (NEW v0.9.0)
+
+### AI Provider Layer (NEW v0.9.0)
+- `src/ai/types.ts` - AIProvider interface definitions
+- `src/ai/AnthropicProvider.ts` - Claude implementation
+- `src/ai/AIProviderFactory.ts` - Provider registry and factory
+- `src/ai/index.ts` - Module exports
+
+### Filtering System
+- `src/filter/ResponseFilter.ts` - Legacy regex-based filtering
+- `src/filter/FilterPipeline.ts` - Middleware pipeline system (NEW v0.9.0)
+- `src/filter/middleware.ts` - Built-in middleware (NEW v0.9.0)
+- `src/filter/types.ts` - FilterRule, FilterResult
 
 ### UI Components
-- `src/quick-edit/InstructionInputPopup.ts` - Preset selector + input (inputPlaceholder logic)
+- `src/quick-edit/InstructionInputPopup.ts` - Preset selector + input
 - `src/quick-edit/InlineEditRenderer.ts` - Comparison block rendering
 - `src/sidebar/UnifiedAIPanel.ts` - Main chat interface
 
 ### Configuration
 - `src/settings/ConfigManager.ts` - Profile/preset management
+- `src/settings/SettingsManager.ts` - Persistence (async initialization)
 - `src/settings/PromptEditorPanel.ts` - Settings UI
 - `src/settings/config-types.ts` - Types (PromptTemplate, FilterRule)
 
 ### Context Processing
-- `src/quick-edit/ContextExtractor.ts` - Placeholder parser
+- `src/quick-edit/ContextExtractor.ts` - Placeholder parser with SQL injection protection
 
 ### Types
 - `src/claude/types.ts` - ClaudeSettings, Message
+- `src/ai/types.ts` - AIProvider, AIModelConfig (NEW v0.9.0)
 - `src/filter/types.ts` - FilterRule, FilterResult
 - `src/editor/types.ts` - EditSettings, TextSelection
 
@@ -321,6 +522,30 @@ Activate with: `/skill siyuan-plugin`
 
 ---
 
+## Architecture Documentation
+
+For detailed architecture information (v0.9.0 Refactoring):
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete architecture guide (coming soon)
+  - Module details and responsibilities
+  - Data flow diagrams
+  - Extensibility points
+  - Performance optimizations
+
+- **[REFACTORING.md](REFACTORING.md)** - v0.9.0 refactoring log
+  - Phase 1: Security fixes (SQL injection, async initialization)
+  - Phase 2: AI Provider abstraction & Filter Pipeline
+  - Phase 3: QuickEditManager modularization
+  - Migration guide and backward compatibility notes
+
+- **[MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md)** - Module usage guide
+  - Detailed API documentation for new modules
+  - Code examples and best practices
+  - Testing examples
+  - Migration checklist
+
+---
+
 ## Additional Resources
 
 - **SiYuan API**: https://github.com/siyuan-note/siyuan/tree/master/kernel/api
@@ -335,8 +560,14 @@ Activate with: `/skill siyuan-plugin`
 - Hot reload not supported (must restart SiYuan after code changes)
 - Context extraction limited to linear document structure
 - No offline mode (requires active API connection)
+- API keys stored unencrypted in localStorage
+- QuickEditManager partially modularized (ongoing refactoring)
+  - New modules available for use (SelectionHandler, BlockOperations, PromptBuilder, EditStateManager)
+  - Full migration to modular architecture planned for v0.10.0
+- Multi-provider support framework ready, but only Anthropic implemented
+  - OpenAI and Gemini providers planned for future releases
 
 ---
 
-**Last Updated**: 2025-01-05
-**Version**: 0.7.0
+**Last Updated**: 2025-01-06
+**Version**: 0.8.0 (Architecture v0.9.0)

@@ -348,11 +348,12 @@ export class ContextExtractor {
      */
     /**
      * Validate and sanitize block ID to prevent SQL injection
-     * SiYuan block IDs are 14-22 character alphanumeric strings
+     * SiYuan block IDs format: 14-digit timestamp + hyphen + 7-char random string
+     * Example: 20251028234416-aw9bzvx
      */
     private sanitizeBlockId(blockId: string): string {
-        // SiYuan block IDs only contain digits and lowercase letters
-        if (!/^[0-9a-z]{14,22}$/i.test(blockId)) {
+        // SiYuan block IDs: 14 digits, hyphen, 7 lowercase alphanumeric chars
+        if (!/^[0-9]{14}-[0-9a-z]{7}$/i.test(blockId)) {
             throw new Error(`Invalid block ID format: ${blockId}`);
         }
         return blockId;
@@ -368,8 +369,8 @@ export class ContextExtractor {
             const safeBlockId = this.sanitizeBlockId(blockId);
 
             // 使用 SQL API 查询兄弟块
-            // 先获取当前块的信息（父块ID和排序位置）
-            const currentBlockSQL = `SELECT id, parent_id, box, path, sort FROM blocks WHERE id = '${safeBlockId}'`;
+            // 先获取当前块的信息（root_id和排序位置）
+            const currentBlockSQL = `SELECT id, parent_id, root_id, sort FROM blocks WHERE id = '${safeBlockId}'`;
             const currentBlockResponse = await fetch('/api/query/sql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -387,7 +388,7 @@ export class ContextExtractor {
             }
 
             const currentBlock = currentBlockResult.data[0];
-            const parentId = this.sanitizeBlockId(currentBlock.parent_id);
+            const rootId = this.sanitizeBlockId(currentBlock.root_id);
             const currentSort = parseInt(currentBlock.sort, 10);
             const safeCount = Math.max(1, Math.min(100, parseInt(String(count), 10))); // Limit to 1-100
 
@@ -396,19 +397,21 @@ export class ContextExtractor {
                 throw new Error(`Invalid sort value: ${currentBlock.sort}`);
             }
 
-            // 查询兄弟块（相同父块，根据sort排序）
+            // 查询兄弟块（同一文档内，根据sort排序）
             let siblingSQL: string;
             if (direction === 'above') {
                 // 获取当前块之前的块（sort < currentSort），降序排列，取前count个
                 siblingSQL = `SELECT id, type, content FROM blocks
-                              WHERE parent_id = '${parentId}'
+                              WHERE root_id = '${rootId}'
+                              AND id != '${safeBlockId}'
                               AND sort < ${currentSort}
                               ORDER BY sort DESC
                               LIMIT ${safeCount}`;
             } else {
                 // 获取当前块之后的块（sort > currentSort），升序排列，取前count个
                 siblingSQL = `SELECT id, type, content FROM blocks
-                              WHERE parent_id = '${parentId}'
+                              WHERE root_id = '${rootId}'
+                              AND id != '${safeBlockId}'
                               AND sort > ${currentSort}
                               ORDER BY sort ASC
                               LIMIT ${safeCount}`;

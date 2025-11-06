@@ -11,19 +11,31 @@ export class SettingsManager {
     private settings: ClaudeSettings;
     private plugin: any = null; // Reference to SiYuan plugin instance
     private onSettingsLoadedCallback?: (settings: ClaudeSettings) => void;
+    private loadPromise: Promise<void>;
 
     constructor(plugin?: any, onLoaded?: (settings: ClaudeSettings) => void) {
         this.plugin = plugin;
         this.onSettingsLoadedCallback = onLoaded;
         // Load synchronously from cache first
         this.settings = this.loadSettings();
-        
+
         // Then try to load from file asynchronously
         if (plugin) {
-            this.loadFromFileAsync().catch(error => {
+            this.loadPromise = this.loadFromFileAsync().catch(error => {
                 console.error("[SettingsManager] Async file load failed:", error);
             });
+        } else {
+            // No plugin, resolve immediately
+            this.loadPromise = Promise.resolve();
         }
+    }
+
+    /**
+     * Wait for async settings load to complete
+     * @returns Promise that resolves when settings are fully loaded from file
+     */
+    async waitForLoad(): Promise<void> {
+        return this.loadPromise;
     }
 
     /**

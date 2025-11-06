@@ -73,14 +73,13 @@ export default class ClaudeAssistantPlugin extends Plugin {
             }
         });
 
-        // FIX: Wait for async settings load to complete before proceeding
-        // The SettingsManager constructor starts an async file load that needs to complete
-        // before we access settings, otherwise we'll get defaults and overwrite saved data
+        // Wait for async settings load to complete before proceeding
+        // The SettingsManager exposes a waitForLoad() promise that ensures file loading is complete
         let settings: ClaudeSettings;
 
         try {
-            await new Promise<void>(resolve => setTimeout(resolve, 100));
-            console.log("[Plugin] Waited for settings async load");
+            await this.settingsManager.waitForLoad();
+            console.log("[Plugin] Settings async load complete");
 
             // Get settings from SettingsManager (which has now loaded from file)
             const loadedSettings = this.settingsManager.getSettings();

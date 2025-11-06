@@ -346,15 +346,30 @@ export class ContextExtractor {
      * @param count 数量
      * @returns 块信息数组
      */
+    /**
+     * Validate and sanitize block ID to prevent SQL injection
+     * SiYuan block IDs are 14-22 character alphanumeric strings
+     */
+    private sanitizeBlockId(blockId: string): string {
+        // SiYuan block IDs only contain digits and lowercase letters
+        if (!/^[0-9a-z]{14,22}$/i.test(blockId)) {
+            throw new Error(`Invalid block ID format: ${blockId}`);
+        }
+        return blockId;
+    }
+
     private async getSiblingBlocksViaAPI(
         blockId: string,
         direction: 'above' | 'below',
         count: number
     ): Promise<Array<{ id: string; content: string; type: string }>> {
         try {
+            // Sanitize block ID to prevent SQL injection
+            const safeBlockId = this.sanitizeBlockId(blockId);
+
             // 使用 SQL API 查询兄弟块
             // 先获取当前块的信息（父块ID和排序位置）
-            const currentBlockSQL = `SELECT id, parent_id, box, path, sort FROM blocks WHERE id = '${blockId}'`;
+            const currentBlockSQL = `SELECT id, parent_id, box, path, sort FROM blocks WHERE id = '${safeBlockId}'`;
             const currentBlockResponse = await fetch('/api/query/sql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -372,8 +387,14 @@ export class ContextExtractor {
             }
 
             const currentBlock = currentBlockResult.data[0];
-            const parentId = currentBlock.parent_id;
-            const currentSort = currentBlock.sort;
+            const parentId = this.sanitizeBlockId(currentBlock.parent_id);
+            const currentSort = parseInt(currentBlock.sort, 10);
+            const safeCount = Math.max(1, Math.min(100, parseInt(String(count), 10))); // Limit to 1-100
+
+            // Validate numeric values
+            if (isNaN(currentSort)) {
+                throw new Error(`Invalid sort value: ${currentBlock.sort}`);
+            }
 
             // 查询兄弟块（相同父块，根据sort排序）
             let siblingSQL: string;
@@ -383,14 +404,14 @@ export class ContextExtractor {
                               WHERE parent_id = '${parentId}'
                               AND sort < ${currentSort}
                               ORDER BY sort DESC
-                              LIMIT ${count}`;
+                              LIMIT ${safeCount}`;
             } else {
                 // 获取当前块之后的块（sort > currentSort），升序排列，取前count个
                 siblingSQL = `SELECT id, type, content FROM blocks
                               WHERE parent_id = '${parentId}'
                               AND sort > ${currentSort}
                               ORDER BY sort ASC
-                              LIMIT ${count}`;
+                              LIMIT ${safeCount}`;
             }
 
             const siblingResponse = await fetch('/api/query/sql', {

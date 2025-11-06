@@ -2,7 +2,7 @@
   "name": "siyuan-plugin-claude-assistant",
   "author": "Your Name",
   "url": "https://github.com/yourusername/siyuan-plugin-claude-assistant",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "minAppVersion": "2.12.0",
   "backends": [
     "all"

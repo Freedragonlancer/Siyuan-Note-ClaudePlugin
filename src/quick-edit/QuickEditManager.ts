@@ -21,6 +21,8 @@ import type { ConfigManager } from '@/settings/ConfigManager';
 import type { FilterRule } from '@/settings/config-types';
 import { ContextExtractor } from './ContextExtractor';
 import { EditorHelper } from '@/editor/EditorHelper';
+import { SimpleCache } from '@/utils/Performance';
+import { Logger } from '@/utils/Logger';
 
 /**
  * FIX Phase 5: Fetch with timeout protection
@@ -61,7 +63,7 @@ export class QuickEditManager {
 
     // Active inline edits
     private activeBlocks: Map<string, InlineEditBlock> = new Map();
-    
+
     // Request cancellation and concurrency control
     private activeRequestBlockId: string | null = null;
     private isProcessing: boolean = false;
@@ -82,6 +84,10 @@ export class QuickEditManager {
     private lastPresetFileLoaded: boolean = false;
     private lastPresetFilePromise: Promise<void> | null = null;
 
+    // FIX Critical 1.1: DOM query cache to reduce repeated queries
+    private domCache: SimpleCache<any>;
+    private logger = Logger.createScoped('QuickEdit');
+
     constructor(
         plugin: Plugin,
         claudeClient: ClaudeClient,
@@ -94,6 +100,9 @@ export class QuickEditManager {
         this.history = history;
         this.settings = editSettings;
         this.configManager = configManager;
+
+        // FIX Critical 1.1: Initialize DOM cache (1 second TTL, max 50 entries)
+        this.domCache = new SimpleCache(1000, 50);
 
         // Initialize components
         this.renderer = new InlineEditRenderer();
@@ -121,6 +130,8 @@ export class QuickEditManager {
         this.lastPresetFilePromise = this.loadLastPresetFromFile().catch(() => {
             // Silently handle - file not existing is expected on first use
         });
+
+        this.logger.info('QuickEditManager initialized');
     }
 
     /**
@@ -183,16 +194,24 @@ export class QuickEditManager {
     }
 
     /**
-     * FIX 1.5: Start observing a container for DOM changes
+     * FIX 1.5 + Critical 1.1: Start observing a container for DOM changes
+     * Improved to handle container removal and re-addition
      */
     private observeContainer(container: HTMLElement): void {
-        if (!this.mutationObserver || this.observedContainers.has(container)) {
+        if (!this.mutationObserver) {
+            this.logger.warn('Cannot observe container: observer not initialized');
             return;
         }
 
-        // FIX Critical 1.1: Verify container still exists in DOM before observing
+        // FIX Critical 1.1: Remove container from observed set if it's no longer in DOM
         if (!document.contains(container)) {
-            console.warn('[QuickEdit] Container no longer in DOM, skipping observation');
+            this.observedContainers.delete(container);
+            this.logger.debug('Container removed from observed set (no longer in DOM)');
+            return;
+        }
+
+        // Already observing this container
+        if (this.observedContainers.has(container)) {
             return;
         }
 
@@ -209,13 +228,16 @@ export class QuickEditManager {
             observeTarget = container.parentElement;
         }
 
-        if (observeTarget) {
+        if (observeTarget && document.contains(observeTarget)) {
             this.mutationObserver.observe(observeTarget, {
                 childList: true,
                 subtree: true
             });
 
             this.observedContainers.add(observeTarget);
+            this.logger.debug(`Now observing container, total: ${this.observedContainers.size}`);
+        } else {
+            this.logger.warn('No valid observe target found');
         }
     }
 
@@ -465,9 +487,16 @@ export class QuickEditManager {
             windowSelection.removeAllRanges();
         }
 
-        // 清除块选中状态
-        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select');
-        selectedBlocks.forEach(el => el.classList.remove('protyle-wysiwyg--select'));
+        // 清除块选中状态 - FIX Critical 1.1: Use cached query
+        const cacheKey = 'selected-blocks';
+        let selectedBlocks = this.domCache.get(cacheKey);
+        if (!selectedBlocks) {
+            selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select');
+            this.domCache.set(cacheKey, selectedBlocks);
+        }
+        selectedBlocks.forEach((el: Element) => el.classList.remove('protyle-wysiwyg--select'));
+        // Invalidate cache after modification
+        this.domCache.delete(cacheKey);
 
         // FIX Issue #1: Read original block type and subtype to preserve formatting
         const originalBlockType = selection.blockElement.getAttribute('data-type') || undefined;
@@ -537,13 +566,17 @@ export class QuickEditManager {
 
             // 如果第一次查找失败，尝试滚动到选中的块元素
             if (attempt === 1 && selection.blockElement && document.contains(selection.blockElement)) {
-                selection.blockElement.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center'
+                // FIX Performance: 使用 RAF 避免强制重排
+                await new Promise<void>(resolve => {
+                    requestAnimationFrame(() => {
+                        selection.blockElement.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center'
+                        });
+                        // 等待滚动和渲染完成
+                        setTimeout(resolve, 300);
+                    });
                 });
-
-                // 等待滚动和渲染完成
-                await new Promise(resolve => setTimeout(resolve, 300));
             } else if (attempt === 2) {
                 // 第二次尝试：等待更长时间
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -1977,13 +2010,24 @@ export class QuickEditManager {
         // Close popup
         this.inputPopup.close();
 
-        // Remove all keyboard handlers
+        // FIX Critical 1.1: Improved cleanup order to prevent memory leaks
+
+        // Step 1: Disconnect MutationObserver FIRST to stop new mutations
+        if (this.mutationObserver) {
+            this.mutationObserver.disconnect();
+            this.mutationObserver = null;
+        }
+
+        // Step 2: Clear observed containers (now safe after disconnect)
+        this.observedContainers.clear();
+
+        // Step 3: Remove all keyboard handlers
         this.keyboardHandlers.forEach((handler, blockId) => {
             document.removeEventListener('keydown', handler);
         });
         this.keyboardHandlers.clear();
 
-        // Remove all active blocks from DOM
+        // Step 4: Remove all active blocks from DOM
         this.activeBlocks.forEach((block) => {
             if (block.element) {
                 this.renderer.removeBlock(block.element);
@@ -1991,16 +2035,15 @@ export class QuickEditManager {
         });
         this.activeBlocks.clear();
 
-        // Clear pending selection
+        // Step 5: Clear pending selection
         this.pendingSelection = null;
 
-        // FIX 1.5: Disconnect MutationObserver
-        if (this.mutationObserver) {
-            this.mutationObserver.disconnect();
-            this.mutationObserver = null;
+        // Step 6: Destroy DOM cache
+        if (this.domCache) {
+            this.domCache.destroy();
         }
-        this.observedContainers.clear();
 
+        this.logger.info('QuickEditManager destroyed, all resources cleaned up');
     }
 
     /**
@@ -2033,17 +2076,27 @@ export class QuickEditManager {
     /**
      * Get currently active preset ID
      * FIX: Now uses file cache for first launch sync with UI
+     * FIX Critical 1.3: Added timeout protection to prevent indefinite waiting
      * Used to fetch preset-level filterRules and editInstruction
      *
      * IMPORTANT: This method will wait for file loading if it's still in progress
      */
-    private async getCurrentPresetId(): Promise<string | undefined> {
-        // FIX Critical: Wait for file loading to complete before reading preset ID
-        // This ensures first request after restart uses correct preset
-        if (this.lastPresetFilePromise && !this.lastPresetFileLoaded) {
-            await this.lastPresetFilePromise;
-        }
+    private async getCurrentPresetId(timeoutMs: number = 3000): Promise<string | undefined> {
         try {
+            // FIX Critical 1.3: Wait for file loading with timeout protection
+            if (this.lastPresetFilePromise && !this.lastPresetFileLoaded) {
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('Preset load timeout')), timeoutMs);
+                });
+
+                try {
+                    await Promise.race([this.lastPresetFilePromise, timeoutPromise]);
+                } catch (timeoutError) {
+                    this.logger.warn('Preset file load timeout, using localStorage fallback');
+                    this.lastPresetFileLoaded = true; // Mark as loaded to prevent future waits
+                }
+            }
+
             // FIX Critical: File is the source of truth, not localStorage!
             // Strategy 1: Use file cache if available (most reliable)
             let lastPresetId: string | null = null;
@@ -2065,13 +2118,13 @@ export class QuickEditManager {
             const preset = allTemplates.find((t: any) => t.id === lastPresetId);
 
             if (!preset) {
-                console.warn(`[QuickEditManager] Preset ${lastPresetId} not found in ConfigManager`);
+                this.logger.warn(`Preset ${lastPresetId} not found in ConfigManager`);
                 return undefined;
             }
 
             return lastPresetId;
         } catch (error) {
-            console.warn('[QuickEdit] Failed to get current preset ID:', error);
+            this.logger.error('Failed to get current preset ID:', error);
             return undefined;
         }
     }

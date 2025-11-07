@@ -1,5 +1,6 @@
 import type { ClaudeSettings } from "../claude";
 import { DEFAULT_SETTINGS } from "../claude";
+import type { ISiYuanPlugin } from "@/types/siyuan";
 
 const STORAGE_KEY = "claude-assistant-settings";
 const STORAGE_FILE = "settings.json";
@@ -9,11 +10,11 @@ const STORAGE_FILE = "settings.json";
  */
 export class SettingsManager {
     private settings: ClaudeSettings;
-    private plugin: any = null; // Reference to SiYuan plugin instance
+    private plugin: ISiYuanPlugin | null = null; // Reference to SiYuan plugin instance
     private onSettingsLoadedCallback?: (settings: ClaudeSettings) => void;
     private loadPromise: Promise<void>;
 
-    constructor(plugin?: any, onLoaded?: (settings: ClaudeSettings) => void) {
+    constructor(plugin?: ISiYuanPlugin, onLoaded?: (settings: ClaudeSettings) => void) {
         this.plugin = plugin;
         this.onSettingsLoadedCallback = onLoaded;
         // Load synchronously from cache first

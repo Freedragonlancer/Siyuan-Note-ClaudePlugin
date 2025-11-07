@@ -14,6 +14,8 @@ import type {
     PromptTemplate
 } from "./config-types";
 import { BUILTIN_TEMPLATES } from "./config-types";
+import { Logger } from "@/utils/Logger";
+import type { ISiYuanPlugin } from "@/types/siyuan";
 
 const PROFILES_STORAGE_KEY = "claude-assistant-profiles";
 const ACTIVE_PROFILE_KEY = "claude-assistant-active-profile";
@@ -24,14 +26,15 @@ const CONFIG_VERSION = "1.1.0"; // v1.1.0: Added preset-level filterRules suppor
  * Central manager for configuration profiles
  */
 export class ConfigManager {
-    private plugin: any = null; // Reference to SiYuan plugin instance
+    private plugin: ISiYuanPlugin | null = null; // Reference to SiYuan plugin instance
     private profiles: Map<string, ConfigProfile> = new Map();
     private activeProfileId: string = "";
     private promptTemplates: Map<string, PromptTemplate> = new Map();
     private templatesLoaded: boolean = false;
     private templatesLoadPromise: Promise<void> | null = null;
+    private logger = Logger.createScoped('ConfigManager');
 
-    constructor(plugin?: any) {
+    constructor(plugin?: ISiYuanPlugin) {
         this.plugin = plugin;
 
         // Initialize built-in templates
@@ -39,32 +42,54 @@ export class ConfigManager {
             this.promptTemplates.set(template.id, template);
         });
 
-        // Load custom templates from storage (async, but don't block constructor)
-        this.loadTemplates().catch(error => {
-            console.error('[ConfigManager] Failed to load templates in constructor:', error);
+        // FIX Critical 1.2: Improved error handling for template loading
+        // Store promise to allow waiting for completion
+        this.templatesLoadPromise = this.loadTemplates().catch(error => {
+            this.logger.error('CRITICAL: Failed to load templates in constructor:', error);
+            // Show notification to user about the critical failure
+            if (typeof window !== 'undefined' && window.siyuan && window.siyuan.showMessage) {
+                window.siyuan.showMessage('Failed to load custom templates', 3000, 'error');
+            }
+            // Re-throw to allow caller to handle if they're waiting
+            return Promise.reject(error);
         });
 
         // Load profiles from storage
         this.loadProfiles();
+
+        this.logger.info('ConfigManager initialized');
     }
 
     /**
      * Wait for async initialization to complete (if needed)
+     * FIX Critical 1.2: Added timeout protection to prevent indefinite waiting
      */
-    async waitForInit(): Promise<void> {
+    async waitForInit(timeoutMs: number = 5000): Promise<void> {
         // If templates are already loaded, return immediately
         if (this.templatesLoaded) {
             return;
         }
 
-        // If loading is in progress, wait for it
-        if (this.templatesLoadPromise) {
-            await this.templatesLoadPromise;
-            return;
-        }
+        // FIX Critical 1.2: Add timeout protection
+        const timeoutPromise = new Promise<void>((_, reject) => {
+            setTimeout(() => reject(new Error('Template loading timeout')), timeoutMs);
+        });
 
-        // Otherwise, start loading
-        await this.loadTemplates();
+        try {
+            // If loading is in progress, wait for it with timeout
+            if (this.templatesLoadPromise) {
+                await Promise.race([this.templatesLoadPromise, timeoutPromise]);
+                return;
+            }
+
+            // Otherwise, start loading with timeout
+            await Promise.race([this.loadTemplates(), timeoutPromise]);
+        } catch (error) {
+            this.logger.error('waitForInit failed:', error);
+            // Mark as loaded to prevent future waits from blocking
+            this.templatesLoaded = true;
+            throw error;
+        }
     }
 
     //#region Profile CRUD Operations

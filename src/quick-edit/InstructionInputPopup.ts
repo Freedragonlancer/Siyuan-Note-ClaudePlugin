@@ -110,24 +110,26 @@ export class InstructionInputPopup {
 
         document.body.appendChild(this.element);
 
-        // Force browser to calculate dimensions by accessing offsetHeight
-        // This ensures getBoundingClientRect() returns accurate values
-        void this.element.offsetHeight;
+        // FIX Performance: 使用 RAF 批处理布局读取和样式更新
+        requestAnimationFrame(() => {
+            // Force browser to calculate dimensions by accessing offsetHeight
+            // This ensures getBoundingClientRect() returns accurate values
+            void this.element.offsetHeight;
 
-        // Get popup dimensions for debugging
-        const popupRect = this.element.getBoundingClientRect();
+            // Get popup dimensions for debugging
+            const popupRect = this.element.getBoundingClientRect();
 
-        // Calculate safe position with boundary detection
-        const safePosition = this.calculateSafePosition(position, this.element);
+            // Calculate safe position with boundary detection
+            const safePosition = this.calculateSafePosition(position, this.element);
 
-        // Update position if adjusted
-        if (safePosition.x !== position.x || safePosition.y !== position.y) {
-            this.element.style.left = `${safePosition.x}px`;
-            this.element.style.top = `${safePosition.y}px`;
-        } else {
-        }
+            // Update position if adjusted
+            if (safePosition.x !== position.x || safePosition.y !== position.y) {
+                this.element.style.left = `${safePosition.x}px`;
+                this.element.style.top = `${safePosition.y}px`;
+            }
+        });
 
-        // Focus input
+        // Focus input (can happen immediately)
         const input = this.element.querySelector('#instruction-input') as HTMLInputElement;
         if (input) {
             input.focus();
@@ -621,36 +623,42 @@ export class InstructionInputPopup {
     /**
      * Refresh active indicators on preset buttons
      * Uses currentSelectedPresetId to determine which button should be highlighted
+     * FIX Performance: 使用 RAF 批处理 DOM 操作，避免强制重排
      */
     private refreshActiveIndicators(): void {
         if (!this.element) return;
 
-        const buttons = this.element.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
-        buttons.forEach(btn => {
-            const presetId = btn.getAttribute('data-preset-id');
+        // 使用 RAF 批处理所有 DOM 操作
+        requestAnimationFrame(() => {
+            if (!this.element) return;
 
-            // Check if this button matches the currently selected preset
-            if (presetId === this.currentSelectedPresetId) {
-                // Add active class
-                btn.classList.add('preset-btn--active');
+            const buttons = this.element.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
+            buttons.forEach(btn => {
+                const presetId = btn.getAttribute('data-preset-id');
 
-                // Add checkmark badge if not exists
-                if (!btn.querySelector('.preset-btn__badge')) {
-                    const badge = document.createElement('span');
-                    badge.className = 'preset-btn__badge';
-                    badge.textContent = '✓';
-                    btn.appendChild(badge);
+                // Check if this button matches the currently selected preset
+                if (presetId === this.currentSelectedPresetId) {
+                    // Add active class
+                    btn.classList.add('preset-btn--active');
+
+                    // Add checkmark badge if not exists
+                    if (!btn.querySelector('.preset-btn__badge')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'preset-btn__badge';
+                        badge.textContent = '✓';
+                        btn.appendChild(badge);
+                    }
+                } else {
+                    // Remove active class
+                    btn.classList.remove('preset-btn--active');
+
+                    // Remove checkmark badge if exists
+                    const badge = btn.querySelector('.preset-btn__badge');
+                    if (badge) {
+                        badge.remove();
+                    }
                 }
-            } else {
-                // Remove active class
-                btn.classList.remove('preset-btn--active');
-
-                // Remove checkmark badge if exists
-                const badge = btn.querySelector('.preset-btn__badge');
-                if (badge) {
-                    badge.remove();
-                }
-            }
+            });
         });
     }
 

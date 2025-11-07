@@ -19,6 +19,7 @@ import {
 } from "./editor";
 import type { TextSelection } from "./editor/types";
 import { QuickEditManager } from "./quick-edit";
+import type { DockModel } from "@/types/siyuan";
 
 const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
@@ -28,7 +29,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private claudeClient!: ClaudeClient;
     private unifiedPanel: UnifiedAIPanel | null = null;
     private dockElement: HTMLElement | null = null;
-    private dockModel: any = null;
+    private dockModel: DockModel | null = null;
 
     // AI Text Editing feature (initialized for UnifiedPanel)
     private textSelectionManager: TextSelectionManager | null = null;

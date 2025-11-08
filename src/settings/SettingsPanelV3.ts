@@ -14,11 +14,12 @@ import type { ClaudeSettings } from "../claude";
 import { AVAILABLE_MODELS } from "../claude";
 import { ClaudeClient } from "../claude/ClaudeClient";
 import type { ConfigManager } from "./ConfigManager";
-import type { ConfigProfile } from "./config-types";
+import type { ConfigProfile, PromptTemplate } from "./config-types";
 import { Dialog } from "siyuan";
 
 export class SettingsPanelV3 {
     private element: HTMLElement;
+    private container: HTMLElement | null = null;
     private onSave: (settings: Partial<ClaudeSettings>) => void;
     private onOpenPromptEditor: () => void;
     private configManager: ConfigManager;
@@ -26,6 +27,8 @@ export class SettingsPanelV3 {
     private testClient: ClaudeClient | null = null;
     private availableModels: { value: string; label: string }[] = AVAILABLE_MODELS;
     private dialog: Dialog | null = null;
+    private quickEditPreset: PromptTemplate | null = null;
+    private aiDockPreset: PromptTemplate | null = null;
 
     constructor(
         configManager: ConfigManager,
@@ -55,37 +58,50 @@ export class SettingsPanelV3 {
     private createPanel(): HTMLElement {
         console.log("[SettingsPanelV3] Creating panel...");
         const container = document.createElement("div");
-        container.className = "claude-settings-panel-v3";
-        container.style.cssText = "max-height: 70vh; overflow-y: auto; padding: 16px;";
+        container.className = "claude-settings-panel-v3-with-nav";
 
         console.log("[SettingsPanelV3] Current profile:", this.currentProfile);
 
+        const navigationBar = this.createNavigationBar();
         const profileSection = this.createProfileManagementSection();
         const connectionSection = this.createConnectionSection();
         const modelSection = this.createModelSection();
         const promptEditorSection = this.createPromptEditorSection();
+        const keyboardShortcutsSection = this.createKeyboardShortcutsSection();
         const loggingSection = this.createLoggingSection();
-        const actionsSection = this.createActionsSection();
 
         console.log("[SettingsPanelV3] Sections created, profile section length:", profileSection.length);
 
         container.innerHTML = `
-            <div class="b3-dialog__content">
-                ${profileSection}
-                <div class="fn__hr" style="margin: 20px 0;"></div>
-                ${connectionSection}
-                <div class="fn__hr" style="margin: 20px 0;"></div>
-                ${modelSection}
-                <div class="fn__hr" style="margin: 20px 0;"></div>
-                ${promptEditorSection}
-                <div class="fn__hr" style="margin: 20px 0;"></div>
-                ${loggingSection}
-                <div class="fn__hr" style="margin: 20px 0;"></div>
-                ${actionsSection}
+            ${navigationBar}
+            <div class="settings-content">
+                <div class="settings-content-scroll">
+                    <div class="settings-section active" id="section-profile">
+                        ${profileSection}
+                    </div>
+                    <div class="settings-section" id="section-connection">
+                        ${connectionSection}
+                    </div>
+                    <div class="settings-section" id="section-model">
+                        ${modelSection}
+                    </div>
+                    <div class="settings-section" id="section-prompt">
+                        ${promptEditorSection}
+                    </div>
+                    <div class="settings-section" id="section-shortcuts">
+                        ${keyboardShortcutsSection}
+                    </div>
+                    <div class="settings-section" id="section-logging">
+                        ${loggingSection}
+                    </div>
+                </div>
             </div>
         `;
 
         console.log("[SettingsPanelV3] HTML set, container innerHTML length:", container.innerHTML.length);
+
+        // Store container reference for triggerSave() method
+        this.container = container;
 
         this.attachEventListeners(container);
         console.log("[SettingsPanelV3] Event listeners attached");
@@ -94,20 +110,53 @@ export class SettingsPanelV3 {
 
     //#region HTML Sections
 
+    /**
+     * Create navigation sidebar for settings
+     */
+    private createNavigationBar(): string {
+        return `
+            <div class="settings-sidebar">
+                <div class="settings-nav-item active" data-section="profile">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconFiles"></use></svg>
+                    <span>配置文件管理</span>
+                </div>
+                <div class="settings-nav-item" data-section="connection">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconLink"></use></svg>
+                    <span>连接设置</span>
+                </div>
+                <div class="settings-nav-item" data-section="model">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconRobot"></use></svg>
+                    <span>模型设置</span>
+                </div>
+                <div class="settings-nav-item" data-section="prompt">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconEdit"></use></svg>
+                    <span>提示词设置</span>
+                </div>
+                <div class="settings-nav-item" data-section="shortcuts">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconKeymap"></use></svg>
+                    <span>快捷键设置</span>
+                </div>
+                <div class="settings-nav-item" data-section="logging">
+                    <svg class="settings-nav-icon"><use xlink:href="#iconLog"></use></svg>
+                    <span>日志配置</span>
+                </div>
+            </div>
+        `;
+    }
+
     private createProfileManagementSection(): string {
         const profiles = this.configManager.getAllProfiles();
         const activeProfileId = this.configManager.getActiveProfileId();
 
         return `
-            <div class="settings-section">
-                <div class="section-header" style="margin-bottom: 16px;">
-                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
-                        📁 配置文件管理
-                    </h3>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
-                        管理多个配置方案，快速切换不同的使用场景
-                    </div>
+            <div class="section-header" style="margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                    📁 配置文件管理
+                </h3>
+                <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                    管理多个配置方案，快速切换不同的使用场景
                 </div>
+            </div>
 
                 <!-- Profile Selector -->
                 <div class="setting-item" style="margin-bottom: 16px;">
@@ -164,7 +213,6 @@ export class SettingsPanelV3 {
                         💡 导入/导出配置文件，方便备份和分享
                     </div>
                 </div>
-            </div>
         `;
     }
 
@@ -173,11 +221,10 @@ export class SettingsPanelV3 {
         const hasProxy = !!settings.baseURL;
 
         return `
-            <div class="settings-section">
-                <div class="section-header" style="margin-bottom: 16px;">
-                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
-                        🔌 连接设置
-                    </h3>
+            <div class="section-header" style="margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                    🔌 连接设置
+                </h3>
                     <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
                         配置 Claude API 连接方式
                     </div>
@@ -246,7 +293,17 @@ export class SettingsPanelV3 {
                         💡 支持 OpenAI 兼容的 API 接口
                     </div>
                 </div>
-            </div>
+
+                <!-- Test Connection Button -->
+                <div class="setting-item" style="margin-top: 24px;">
+                    <button class="b3-button b3-button--outline" id="claude-test-connection" style="width: 100%;">
+                        <svg><use xlink:href="#iconRefresh"></use></svg>
+                        <span style="margin-left: 4px;">测试连接</span>
+                    </button>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px; text-align: center;">
+                        点击测试 API 连接是否正常
+                    </div>
+                </div>
         `;
     }
 
@@ -254,7 +311,6 @@ export class SettingsPanelV3 {
         const settings = this.currentProfile.settings;
 
         return `
-            <div class="settings-section">
                 <div class="settings-section-header">
                     <h3>
                         🤖 模型设置
@@ -322,36 +378,57 @@ export class SettingsPanelV3 {
                         <span class="ft__smaller ft__secondary">创造 (1.0)</span>
                     </div>
                 </div>
-            </div>
         `;
     }
 
     private createPromptEditorSection(): string {
         return `
-            <div class="settings-section">
-                <div class="section-header" style="margin-bottom: 16px;">
-                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
-                        📝 提示词设置
-                    </h3>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
-                        管理系统提示词、追加提示词、预设模板和AI编辑指令
+            <div class="section-header" style="margin-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                    📝 提示词设置
+                </h3>
+                <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                    管理系统提示词、追加提示词、预设模板和AI编辑指令
+                </div>
+            </div>
+
+            <!-- 功能说明 -->
+            <div class="prompt-feature-hint" style="margin-bottom: 12px;">
+                <div style="margin-bottom: 4px;">📝 <strong>编辑模板</strong>：自定义AI角色、系统指令和响应格式，创建适合不同场景的预设模板</div>
+                <div>🔍 <strong>过滤规则</strong>：使用正则表达式处理AI响应，支持全局规则和预设特定规则</div>
+            </div>
+
+            <!-- Preset列表 -->
+            <div class="preset-list" style="margin-bottom: 12px;">
+                <div class="preset-item" id="quick-edit-preset-item">
+                    <div class="preset-item-label">⚡ Quick Edit 当前激活</div>
+                    <div class="preset-item-content" id="quick-edit-preset-card">
+                        <svg class="fn__rotate" style="width: 14px; height: 14px;"><use xlink:href="#iconRefresh"></use></svg>
+                        <span style="margin-left: 6px;">加载中...</span>
                     </div>
                 </div>
-
-                <div class="setting-item">
-                    <button class="b3-button b3-button--outline" id="open-prompt-editor-btn" style="width: 100%; padding: 12px;">
-                        <svg style="width: 16px; height: 16px;"><use xlink:href="#iconEdit"></use></svg>
-                        <span style="margin-left: 8px; font-weight: 500;">编辑提示词和模板</span>
-                    </button>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 12px; padding: 8px; background: var(--b3-theme-surface); border-radius: 4px;">
-                        💡 在独立面板中编辑：<br>
-                        • 系统提示词（定义AI角色）<br>
-                        • 追加提示词（自动附加到请求）<br>
-                        • 预设模板管理（创建和编辑模板）<br>
-                        • AI编辑指令（文本编辑快捷指令）
+                <div class="preset-item" id="ai-dock-preset-item">
+                    <div class="preset-item-label">💬 AI Dock 当前激活</div>
+                    <div class="preset-item-content" id="ai-dock-preset-card">
+                        <svg class="fn__rotate" style="width: 14px; height: 14px;"><use xlink:href="#iconRefresh"></use></svg>
+                        <span style="margin-left: 6px;">加载中...</span>
                     </div>
                 </div>
             </div>
+
+            <!-- 过滤规则统计 -->
+            <div class="filter-stats-inline" id="filter-stats-inline" style="margin-bottom: 12px;">
+                📊 过滤规则:
+                <span class="stat-badge">全局 <strong>-</strong></span> ·
+                <span class="stat-badge">Quick Edit <strong>-</strong></span> ·
+                <span class="stat-badge">AI Dock <strong>-</strong></span>
+            </div>
+
+            <!-- 编辑按钮 -->
+            <button class="b3-button b3-button--outline" id="open-prompt-editor-btn" style="width: 100%; padding: 10px;">
+                <svg style="width: 16px; height: 16px;"><use xlink:href="#iconEdit"></use></svg>
+                <span style="margin-left: 8px; font-weight: 500;">编辑提示词和模板</span>
+            </button>
         `;
     }
 
@@ -362,7 +439,6 @@ export class SettingsPanelV3 {
         const includeResponse = settings.requestLogIncludeResponse ?? true;
 
         return `
-            <div class="settings-section">
                 <div class="section-header" style="margin-bottom: 16px;">
                     <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
                         🗂️ 日志配置
@@ -428,22 +504,112 @@ export class SettingsPanelV3 {
         `;
     }
 
-    private createActionsSection(): string {
+    private createKeyboardShortcutsSection(): string {
+        const settings = this.currentProfile.settings;
+        const shortcuts = settings.keyboardShortcuts || {};
+
         return `
-            <div class="settings-flex-between" style="padding-top: 16px;">
-                <button class="b3-button b3-button--outline" id="claude-test-connection" style="min-width: 120px;">
-                    <svg><use xlink:href="#iconRefresh"></use></svg>
-                    <span style="margin-left: 4px;">测试连接</span>
-                </button>
-                <div class="settings-button-group">
-                    <button class="b3-button b3-button--cancel" id="claude-cancel">
-                        取消
-                    </button>
-                    <button class="b3-button b3-button--text" id="claude-save" style="min-width: 100px;">
-                        保存设置
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                        ⌨️ 快捷键设置
+                    </h3>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                        自定义键盘快捷键，提升操作效率
+                    </div>
+                </div>
+
+                <!-- Quick Edit Shortcut -->
+                <div class="setting-item" style="margin-bottom: 16px;">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">AI 快速编辑</span>
+                    </div>
+                    <input
+                        class="b3-text-field"
+                        type="text"
+                        id="shortcut-quick-edit"
+                        placeholder="⌃⇧Q (Ctrl+Shift+Q)"
+                        value="${this.escapeHtml(shortcuts.quickEdit || '⌃⇧Q')}"
+                        style="width: 100%;"
+                    >
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        选中文本后快速调用 AI 编辑功能（默认：Ctrl+Shift+Q）
+                    </div>
+                </div>
+
+                <!-- AI Edit Shortcut -->
+                <div class="setting-item" style="margin-bottom: 16px;">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">发送到 AI 编辑</span>
+                    </div>
+                    <input
+                        class="b3-text-field"
+                        type="text"
+                        id="shortcut-ai-edit"
+                        placeholder="⌃⇧E (Ctrl+Shift+E)"
+                        value="${this.escapeHtml(shortcuts.aiEdit || '⌃⇧E')}"
+                        style="width: 100%;"
+                    >
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        将选中文本发送到侧边栏 AI 面板编辑（默认：Ctrl+Shift+E）
+                    </div>
+                </div>
+
+                <!-- Undo AI Edit Shortcut -->
+                <div class="setting-item" style="margin-bottom: 16px;">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">撤销 AI 编辑</span>
+                    </div>
+                    <input
+                        class="b3-text-field"
+                        type="text"
+                        id="shortcut-undo-ai-edit"
+                        placeholder="⌃⇧Z (Ctrl+Shift+Z)"
+                        value="${this.escapeHtml(shortcuts.undoAIEdit || '⌃⇧Z')}"
+                        style="width: 100%;"
+                    >
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        撤销上一次 AI 编辑操作（默认：Ctrl+Shift+Z）
+                    </div>
+                </div>
+
+                <!-- Open Claude Shortcut -->
+                <div class="setting-item" style="margin-bottom: 16px;">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">打开 Claude AI 面板</span>
+                    </div>
+                    <input
+                        class="b3-text-field"
+                        type="text"
+                        id="shortcut-open-claude"
+                        placeholder="⌥⇧C (Alt+Shift+C)"
+                        value="${this.escapeHtml(shortcuts.openClaude || '⌥⇧C')}"
+                        style="width: 100%;"
+                    >
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        打开侧边栏 Claude AI 聊天面板（默认：Alt+Shift+C）
+                    </div>
+                </div>
+
+                <!-- Restore Defaults Button -->
+                <div class="setting-item">
+                    <button class="b3-button b3-button--outline" id="restore-default-shortcuts" style="width: 100%;">
+                        <svg style="width: 14px; height: 14px;"><use xlink:href="#iconUndo"></use></svg>
+                        <span style="margin-left: 4px;">恢复默认快捷键</span>
                     </button>
                 </div>
-            </div>
+
+                <!-- Format Guide -->
+                <div style="margin-top: 16px; padding: 12px; background: var(--b3-theme-surface); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
+                    <div class="ft__smaller" style="line-height: 1.6;">
+                        <strong>⌨️ 快捷键格式说明：</strong><br>
+                        • ⌃ = Ctrl（Windows/Linux）或 ⌘ Command（macOS）<br>
+                        • ⌥ = Alt（Windows/Linux）或 ⌥ Option（macOS）<br>
+                        • ⇧ = Shift<br>
+                        • 示例：⌃⇧Q = Ctrl+Shift+Q，⌥⇧C = Alt+Shift+C<br>
+                        <br>
+                        <strong>💡 提示：</strong>修改后需要重启思源笔记才能生效
+                    </div>
+                </div>
         `;
     }
 
@@ -452,6 +618,9 @@ export class SettingsPanelV3 {
     //#region Event Listeners
 
     private attachEventListeners(container: HTMLElement) {
+        // Navigation sidebar
+        this.attachNavigationListeners(container);
+
         // Profile management
         this.attachProfileListeners(container);
 
@@ -542,14 +711,54 @@ export class SettingsPanelV3 {
             }
         });
 
-        // Action buttons
-        const saveBtn = container.querySelector("#claude-save");
-        const cancelBtn = container.querySelector("#claude-cancel");
-        const testBtn = container.querySelector("#claude-test-connection");
+        // Keyboard shortcuts
+        const restoreDefaultShortcutsBtn = container.querySelector("#restore-default-shortcuts");
+        restoreDefaultShortcutsBtn?.addEventListener("click", () => {
+            const quickEditInput = container.querySelector("#shortcut-quick-edit") as HTMLInputElement;
+            const aiEditInput = container.querySelector("#shortcut-ai-edit") as HTMLInputElement;
+            const undoAIEditInput = container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement;
+            const openClaudeInput = container.querySelector("#shortcut-open-claude") as HTMLInputElement;
 
-        saveBtn?.addEventListener("click", () => this.saveSettings(container));
-        cancelBtn?.addEventListener("click", () => this.close());
+            if (quickEditInput) quickEditInput.value = "⌃⇧Q";
+            if (aiEditInput) aiEditInput.value = "⌃⇧E";
+            if (undoAIEditInput) undoAIEditInput.value = "⌃⇧Z";
+            if (openClaudeInput) openClaudeInput.value = "⌥⇧C";
+        });
+
+        // Test connection button (in connection section)
+        const testBtn = container.querySelector("#claude-test-connection");
         testBtn?.addEventListener("click", () => this.testConnection(container));
+
+        // Load preset information asynchronously
+        this.loadPresetInfo(container);
+    }
+
+    /**
+     * Attach navigation sidebar event listeners
+     */
+    private attachNavigationListeners(container: HTMLElement) {
+        const navItems = container.querySelectorAll('.settings-nav-item');
+        const sections = container.querySelectorAll('.settings-section');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const sectionId = item.getAttribute('data-section');
+
+                // Update navigation active state
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+
+                // Update section visibility
+                sections.forEach(section => {
+                    section.classList.remove('active');
+                });
+
+                const targetSection = container.querySelector(`#section-${sectionId}`);
+                if (targetSection) {
+                    targetSection.classList.add('active');
+                }
+            });
+        });
     }
 
     private attachProfileListeners(container: HTMLElement) {
@@ -865,6 +1074,12 @@ export class SettingsPanelV3 {
             enableRequestLogging: (container.querySelector("#enable-request-logging") as HTMLInputElement)?.checked ?? false,
             requestLogPath: (container.querySelector("#request-log-path") as HTMLInputElement)?.value || "",
             requestLogIncludeResponse: (container.querySelector("#log-include-response") as HTMLInputElement)?.checked ?? true,
+            keyboardShortcuts: {
+                quickEdit: (container.querySelector("#shortcut-quick-edit") as HTMLInputElement)?.value || "⌃⇧Q",
+                aiEdit: (container.querySelector("#shortcut-ai-edit") as HTMLInputElement)?.value || "⌃⇧E",
+                undoAIEdit: (container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement)?.value || "⌃⇧Z",
+                openClaude: (container.querySelector("#shortcut-open-claude") as HTMLInputElement)?.value || "⌥⇧C",
+            },
         };
 
         // Update current profile
@@ -926,6 +1141,120 @@ export class SettingsPanelV3 {
         }
     }
 
+    /**
+     * Load preset information asynchronously
+     * This method fetches the current active presets for Quick Edit and AI Dock,
+     * then updates the UI cards with preset details
+     */
+    private async loadPresetInfo(container: HTMLElement) {
+        try {
+            // Get Quick Edit preset from localStorage (PresetSelectionManager uses it)
+            // Since we can't easily access the plugin instance here, we'll read from localStorage directly
+            const lastPresetIndex = localStorage.getItem('claude-quick-edit-last-preset-index');
+            const allPresets = this.configManager.getAllTemplates();
+
+            // Get Quick Edit preset
+            let quickEditPresetId = 'default';
+            if (lastPresetIndex !== null) {
+                const index = parseInt(lastPresetIndex, 10);
+                if (!isNaN(index) && index >= 0 && index < allPresets.length) {
+                    quickEditPresetId = allPresets[index].id;
+                }
+            }
+            this.quickEditPreset = this.configManager.getTemplateById(quickEditPresetId);
+
+            // Get AI Dock preset (default to 'default' since it's not persisted)
+            // TODO: When AI Dock preset persistence is implemented, read from settings
+            const aiDockPresetId = this.currentProfile.settings.aiDockPresetId || 'default';
+            this.aiDockPreset = this.configManager.getTemplateById(aiDockPresetId);
+
+            // Update the UI
+            this.updatePresetCards(container);
+        } catch (error) {
+            console.error("[SettingsPanelV3] Failed to load preset info:", error);
+            // Display error in cards
+            const quickEditCard = container.querySelector("#quick-edit-preset-card");
+            const aiDockCard = container.querySelector("#ai-dock-preset-card");
+
+            if (quickEditCard) {
+                quickEditCard.innerHTML = `
+                    <div class="preset-label" style="font-size: 12px; color: var(--b3-theme-on-surface-light); margin-bottom: 8px;">⚡ Quick Edit 当前激活</div>
+                    <div style="color: var(--b3-theme-error);">加载失败</div>
+                `;
+            }
+            if (aiDockCard) {
+                aiDockCard.innerHTML = `
+                    <div class="preset-label" style="font-size: 12px; color: var(--b3-theme-on-surface-light); margin-bottom: 8px;">💬 AI 对话当前激活</div>
+                    <div style="color: var(--b3-theme-error);">加载失败</div>
+                `;
+            }
+        }
+    }
+
+    /**
+     * Update preset info with loaded preset data (List version)
+     */
+    private updatePresetCards(container: HTMLElement) {
+        // Update Quick Edit content
+        const quickEditContent = container.querySelector("#quick-edit-preset-card");
+        if (quickEditContent && this.quickEditPreset) {
+            const preset = this.quickEditPreset;
+            const icon = preset.icon || '📝';
+            const name = this.escapeHtml(preset.name);
+            const filterCount = (preset.filterRules || []).filter(r => r.enabled).length;
+
+            quickEditContent.innerHTML = `
+                <span style="font-size: 18px; margin-right: 8px;">${icon}</span>
+                <span style="font-weight: 500;">${name}</span>
+                ${filterCount > 0 ? `<span style="margin-left: 8px; font-size: 11px; color: var(--b3-theme-primary); background: var(--b3-theme-primary-lightest); padding: 2px 6px; border-radius: 3px;">🔧 ${filterCount}</span>` : ''}
+            `;
+        }
+
+        // Update AI Dock content
+        const aiDockContent = container.querySelector("#ai-dock-preset-card");
+        if (aiDockContent && this.aiDockPreset) {
+            const preset = this.aiDockPreset;
+            const icon = preset.icon || '💬';
+            const name = this.escapeHtml(preset.name);
+            const filterCount = (preset.filterRules || []).filter(r => r.enabled).length;
+
+            aiDockContent.innerHTML = `
+                <span style="font-size: 18px; margin-right: 8px;">${icon}</span>
+                <span style="font-weight: 500;">${name}</span>
+                ${filterCount > 0 ? `<span style="margin-left: 8px; font-size: 11px; color: var(--b3-theme-primary); background: var(--b3-theme-primary-lightest); padding: 2px 6px; border-radius: 3px;">🔧 ${filterCount}</span>` : ''}
+            `;
+        }
+
+        // Update filter stats
+        const stats = this.getFilterRuleStats();
+        const statsInline = container.querySelector("#filter-stats-inline");
+        if (statsInline) {
+            statsInline.innerHTML = `
+                📊 过滤规则:
+                <span class="stat-badge">全局 <strong>${stats.enabledGlobalCount}</strong></span> ·
+                <span class="stat-badge">Quick Edit <strong>${stats.enabledQuickEditCount}</strong></span> ·
+                <span class="stat-badge">AI Dock <strong>${stats.enabledAIDockCount}</strong></span>
+            `;
+        }
+    }
+
+    /**
+     * Get filter rule statistics
+     * Returns count of enabled rules for global, Quick Edit, and AI Dock
+     */
+    private getFilterRuleStats() {
+        const globalRules = this.currentProfile.settings.filterRules || [];
+        const enabledGlobalCount = globalRules.filter(r => r.enabled).length;
+
+        const quickEditRules = this.quickEditPreset?.filterRules || [];
+        const enabledQuickEditCount = quickEditRules.filter(r => r.enabled).length;
+
+        const aiDockRules = this.aiDockPreset?.filterRules || [];
+        const enabledAIDockCount = aiDockRules.filter(r => r.enabled).length;
+
+        return { enabledGlobalCount, enabledQuickEditCount, enabledAIDockCount };
+    }
+
     //#endregion
 
     //#region Helper Methods
@@ -961,6 +1290,18 @@ export class SettingsPanelV3 {
         if (this.dialog) {
             this.dialog.destroy();
             this.dialog = null;
+        }
+    }
+
+    /**
+     * Trigger save action from external components (e.g., title bar button)
+     * This allows the title bar Save button to trigger the save workflow
+     */
+    triggerSave() {
+        if (this.container) {
+            this.saveSettings(this.container);
+        } else {
+            console.error("[SettingsPanelV3] Cannot save: container not initialized");
         }
     }
 

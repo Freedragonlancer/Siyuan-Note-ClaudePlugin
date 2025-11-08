@@ -1,6 +1,6 @@
 {
   "name": "siyuan-plugin-claude-assistant",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "description": "🤖 Claude AI Assistant plugin for SiYuan Note - Unified Chat & AI Text Editing with streaming responses",
   "repository": {
@@ -30,6 +30,10 @@
     "build": "vite build",
     "deploy": "npm run build && npm run copy-plugin",
     "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\"",
+    "clean-cache": "node scripts/clean-cache.cjs",
+    "clean-siyuan-cache": "node scripts/clean-siyuan-cache.cjs",
+    "clean-deploy": "node scripts/clean-deploy.cjs",
+    "clean-deploy:auto-start": "node scripts/clean-deploy.cjs --auto-start",
     "make-link": "node scripts/make_dev_link.cjs",
     "make-link-win": "node scripts/make_dev_link.cjs",
     "bump-version": "node scripts/bump-version.cjs",

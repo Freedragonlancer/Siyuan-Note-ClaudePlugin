@@ -15,6 +15,10 @@ export class InlineEditRenderer {
     private dmp: DiffMatchPatch.diff_match_patch;
     private typingTimers: Map<string, number> = new Map();
 
+    // PERFORMANCE: Cache DOM elements to avoid repeated queries
+    private suggestionContentCache: WeakMap<HTMLElement, HTMLElement> = new WeakMap();
+    private progressThrottle: Map<string, number> = new Map();
+
     constructor() {
         this.dmp = new DiffMatchPatch.diff_match_patch();
     }
@@ -142,13 +146,20 @@ export class InlineEditRenderer {
         enableTyping: boolean,
         typingSpeed: number = 20
     ): void {
-        const suggestionContent = blockElement.querySelector(
-            '[data-content-type="suggestion"]'
-        ) as HTMLElement;
-
+        // PERFORMANCE: Cache DOM element to avoid repeated queries
+        let suggestionContent = this.suggestionContentCache.get(blockElement);
         if (!suggestionContent) {
-            console.error('[InlineEditRenderer] Suggestion content element not found - chunk may be lost!');
-            return;
+            suggestionContent = blockElement.querySelector(
+                '[data-content-type="suggestion"]'
+            ) as HTMLElement;
+
+            if (!suggestionContent) {
+                console.error('[InlineEditRenderer] Suggestion content element not found - chunk may be lost!');
+                return;
+            }
+
+            // Cache for future chunks
+            this.suggestionContentCache.set(blockElement, suggestionContent);
         }
 
         // 智能处理第一个chunk：只移除开头的换行符，保留缩进（空格和制表符）
@@ -162,7 +173,7 @@ export class InlineEditRenderer {
         }
 
         // Streaming完整性验证：记录每个chunk
-        const blockId = blockElement.getAttribute('data-inline-edit-id');
+        const blockId = blockElement.getAttribute('data-inline-edit-id') || '';
 
         // CRITICAL FIX: 禁用打字动画以避免chunk丢失
         // 打字动画在streaming场景下会导致chunk冲突，因为新chunk到达时
@@ -187,8 +198,13 @@ export class InlineEditRenderer {
             }
         }
 
-        // Update progress
-        this.updateProgress(blockElement, suggestionContent.textContent?.length || 0);
+        // PERFORMANCE: Throttle progress updates (every 100ms instead of every chunk)
+        const lastUpdate = this.progressThrottle.get(blockId) || 0;
+        const now = Date.now();
+        if (now - lastUpdate > 100) {
+            this.updateProgress(blockElement, suggestionContent.textContent?.length || 0);
+            this.progressThrottle.set(blockId, now);
+        }
     }
 
     /**

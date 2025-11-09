@@ -23,6 +23,65 @@ export interface BlockUpdateResult {
 }
 
 export class BlockOperations {
+    private siyuanVersion: string | null = null;
+    private versionChecked: boolean = false;
+
+    /**
+     * Detect SiYuan version for API capability detection
+     * @returns SiYuan version string (e.g., "3.2.1")
+     */
+    async detectSiyuanVersion(): Promise<string> {
+        if (this.siyuanVersion) {
+            return this.siyuanVersion;
+        }
+
+        try {
+            const response = await fetch('/api/system/version');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            this.siyuanVersion = data.data || 'unknown';
+            this.versionChecked = true;
+            console.log(`[BlockOperations] Detected SiYuan version: ${this.siyuanVersion}`);
+            return this.siyuanVersion;
+        } catch (error) {
+            console.warn('[BlockOperations] Failed to detect SiYuan version, assuming older version:', error);
+            this.siyuanVersion = 'unknown';
+            this.versionChecked = true;
+            return 'unknown';
+        }
+    }
+
+    /**
+     * Check if SiYuan version supports batch insert API
+     * @returns true if batch insert is supported (v3.2.1+)
+     */
+    async supportsBatchInsert(): Promise<boolean> {
+        if (!this.versionChecked) {
+            await this.detectSiyuanVersion();
+        }
+
+        if (!this.siyuanVersion || this.siyuanVersion === 'unknown') {
+            return false;
+        }
+
+        try {
+            const versionParts = this.siyuanVersion.split('.').map(Number);
+            const [major, minor, patch] = versionParts;
+
+            // Check if version >= 3.2.1
+            if (major > 3) return true;
+            if (major === 3 && minor > 2) return true;
+            if (major === 3 && minor === 2 && patch >= 1) return true;
+
+            return false;
+        } catch (error) {
+            console.warn('[BlockOperations] Failed to parse version, assuming batch API not available');
+            return false;
+        }
+    }
+
     /**
      * Insert a new block after a specified block
      * @param content Block content (markdown)
@@ -68,12 +127,73 @@ export class BlockOperations {
     }
 
     /**
-     * Insert multiple blocks in sequence
+     * Insert multiple blocks using batch API (SiYuan v3.2.1+)
      * @param paragraphs Array of paragraph content
      * @param afterBlockId ID of the block to insert after
      * @returns Array of insert results
      */
-    async insertMultipleBlocks(
+    private async batchInsertBlocks(
+        paragraphs: string[],
+        afterBlockId: string
+    ): Promise<BlockInsertResult[]> {
+        try {
+            const response = await fetch('/api/block/insertBlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dataType: 'markdown',
+                    data: paragraphs.join('\n\n'), // Join with double newline for paragraph separation
+                    previousID: afterBlockId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.code === 0 && result.data) {
+                // Extract all inserted block IDs from the result
+                const insertedBlocks: BlockInsertResult[] = [];
+
+                if (result.data[0]?.doOperations) {
+                    result.data[0].doOperations.forEach((op: any, index: number) => {
+                        if (op.id) {
+                            insertedBlocks.push({
+                                success: true,
+                                blockId: op.id,
+                                index
+                            });
+                        }
+                    });
+                }
+
+                // If we got results, return them
+                if (insertedBlocks.length > 0) {
+                    console.log(`[BlockOperations] Batch inserted ${insertedBlocks.length} blocks`);
+                    return insertedBlocks;
+                }
+
+                // Fallback if parsing failed
+                throw new Error('Failed to parse batch insert results');
+            } else {
+                throw new Error(result.msg || 'Batch insert failed');
+            }
+        } catch (error) {
+            console.error('[BlockOperations] Batch insert failed, falling back to sequential:', error);
+            // Fall back to sequential insertion
+            return this.sequentialInsertBlocks(paragraphs, afterBlockId);
+        }
+    }
+
+    /**
+     * Insert multiple blocks sequentially (fallback for older SiYuan versions)
+     * @param paragraphs Array of paragraph content
+     * @param afterBlockId ID of the block to insert after
+     * @returns Array of insert results
+     */
+    private async sequentialInsertBlocks(
         paragraphs: string[],
         afterBlockId: string
     ): Promise<BlockInsertResult[]> {
@@ -106,6 +226,34 @@ export class BlockOperations {
         }
 
         return results;
+    }
+
+    /**
+     * Insert multiple blocks in sequence (auto-detects best method)
+     * @param paragraphs Array of paragraph content
+     * @param afterBlockId ID of the block to insert after
+     * @returns Array of insert results
+     */
+    async insertMultipleBlocks(
+        paragraphs: string[],
+        afterBlockId: string
+    ): Promise<BlockInsertResult[]> {
+        // Check if batch API is available
+        const supportsBatch = await this.supportsBatchInsert();
+
+        if (supportsBatch && paragraphs.length > 10) {
+            // Use batch API for better performance (only for 10+ blocks to avoid overhead)
+            console.log(`[BlockOperations] Using batch insert API for ${paragraphs.length} blocks`);
+            return this.batchInsertBlocks(paragraphs, afterBlockId);
+        } else {
+            // Fall back to sequential insertion
+            if (!supportsBatch) {
+                console.log(`[BlockOperations] Batch API not available, using sequential insert for ${paragraphs.length} blocks`);
+            } else {
+                console.log(`[BlockOperations] Using sequential insert for ${paragraphs.length} blocks (< 10 blocks)`);
+            }
+            return this.sequentialInsertBlocks(paragraphs, afterBlockId);
+        }
     }
 
     /**
@@ -143,13 +291,78 @@ export class BlockOperations {
     }
 
     /**
-     * Delete multiple blocks
+     * Delete multiple blocks using transactions API (batch delete)
+     * @param blockIds Array of block IDs to delete
+     * @returns Array of delete results
+     */
+    private async batchDeleteBlocks(blockIds: string[]): Promise<BlockDeleteResult[]> {
+        try {
+            // Use transactions API for batch delete
+            const transactions = blockIds.map(id => ({
+                action: 'delete',
+                id: id
+            }));
+
+            const response = await fetch('/api/transactions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session: Date.now().toString(),
+                    transactions: transactions
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.code === 0) {
+                // All deletions successful
+                console.log(`[BlockOperations] Batch deleted ${blockIds.length} blocks`);
+                return blockIds.map(blockId => ({
+                    success: true,
+                    blockId
+                }));
+            } else {
+                throw new Error(result.msg || 'Batch delete failed');
+            }
+        } catch (error) {
+            console.error('[BlockOperations] Batch delete failed, falling back to parallel delete:', error);
+            // Fall back to parallel deletion
+            return this.parallelDeleteBlocks(blockIds);
+        }
+    }
+
+    /**
+     * Delete multiple blocks in parallel (fallback)
+     * @param blockIds Array of block IDs to delete
+     * @returns Array of delete results
+     */
+    private async parallelDeleteBlocks(blockIds: string[]): Promise<BlockDeleteResult[]> {
+        const deletePromises = blockIds.map(id => this.deleteBlock(id));
+        return await Promise.all(deletePromises);
+    }
+
+    /**
+     * Delete multiple blocks (auto-detects best method)
      * @param blockIds Array of block IDs to delete
      * @returns Array of delete results
      */
     async deleteMultipleBlocks(blockIds: string[]): Promise<BlockDeleteResult[]> {
-        const deletePromises = blockIds.map(id => this.deleteBlock(id));
-        return await Promise.all(deletePromises);
+        if (blockIds.length === 0) {
+            return [];
+        }
+
+        // Use batch delete for 10+ blocks
+        if (blockIds.length > 10) {
+            console.log(`[BlockOperations] Using batch delete for ${blockIds.length} blocks`);
+            return this.batchDeleteBlocks(blockIds);
+        } else {
+            console.log(`[BlockOperations] Using parallel delete for ${blockIds.length} blocks`);
+            return this.parallelDeleteBlocks(blockIds);
+        }
     }
 
     /**

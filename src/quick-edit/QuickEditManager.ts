@@ -23,6 +23,9 @@ import { ContextExtractor } from './ContextExtractor';
 import { EditorHelper } from '@/editor/EditorHelper';
 import { SimpleCache } from '@/utils/Performance';
 import { Logger } from '@/utils/Logger';
+import { PresetSelectionManager } from '@/settings/PresetSelectionManager';
+import type { PresetEvent } from '@/settings/PresetEventBus';
+import { BlockOperations } from './BlockOperations';
 
 /**
  * FIX Phase 5: Fetch with timeout protection
@@ -60,6 +63,7 @@ export class QuickEditManager {
     private inputPopup: InstructionInputPopup;
     private processor: AIEditProcessor;
     private contextExtractor: ContextExtractor;
+    private blockOps: BlockOperations;
 
     // Active inline edits
     private activeBlocks: Map<string, InlineEditBlock> = new Map();
@@ -78,11 +82,9 @@ export class QuickEditManager {
     private mutationObserver: MutationObserver | null = null;
     private observedContainers: Set<HTMLElement> = new Set();
 
-    // FIX: Preset persistence - file-based cache for first launch sync
-    private static readonly LAST_PRESET_FILE = 'quick-edit-last-preset.json';
-    private lastPresetFileCache: string | null = null;
-    private lastPresetFileLoaded: boolean = false;
-    private lastPresetFilePromise: Promise<void> | null = null;
+    // Preset selection management (NEW v0.9.0 - unified preset selection)
+    private presetSelectionManager: PresetSelectionManager;
+    private presetEventUnsubscribe: (() => void) | null = null;
 
     // FIX Critical 1.1: DOM query cache to reduce repeated queries
     private domCache: SimpleCache<any>;
@@ -104,11 +106,22 @@ export class QuickEditManager {
         // FIX Critical 1.1: Initialize DOM cache (1 second TTL, max 50 entries)
         this.domCache = new SimpleCache(1000, 50);
 
+        // Initialize BlockOperations for optimized bulk operations
+        this.blockOps = new BlockOperations();
+
+        // NEW v0.9.0: Initialize PresetSelectionManager
+        this.presetSelectionManager = new PresetSelectionManager(plugin, configManager);
+        // Initialize asynchronously (non-blocking)
+        this.presetSelectionManager.init().catch((error) => {
+            this.logger.warn('Failed to initialize PresetSelectionManager:', error);
+        });
+
         // Initialize components
         this.renderer = new InlineEditRenderer();
         // Use unified presets from ConfigManager (Tab 1)
         const presets = this.configManager.getAllTemplates();
-        this.inputPopup = new InstructionInputPopup(presets, this.configManager);
+        // NEW v0.9.0: Pass PresetSelectionManager to InstructionInputPopup
+        this.inputPopup = new InstructionInputPopup(presets, this.configManager, this.presetSelectionManager);
         this.processor = new AIEditProcessor(claudeClient);
         this.contextExtractor = new ContextExtractor(new EditorHelper());
 
@@ -124,12 +137,8 @@ export class QuickEditManager {
         // FIX 1.5: Setup MutationObserver to detect DOM changes
         this.setupDOMObserver();
 
-        // FIX: Load last preset from file storage (async, non-blocking)
-        // This ensures UI and logic use the same preset on first launch
-        // Store promise to allow waiting for completion
-        this.lastPresetFilePromise = this.loadLastPresetFromFile().catch(() => {
-            // Silently handle - file not existing is expected on first use
-        });
+        // NEW v0.9.0: Subscribe to preset events for automatic UI refresh
+        this.subscribeToPresetEvents();
 
         this.logger.info('QuickEditManager initialized');
     }
@@ -256,6 +265,36 @@ export class QuickEditManager {
 
         // Optionally notify user
         showMessage('⚠️ AI 编辑已被撤销操作移除', 2000, 'info');
+    }
+
+    /**
+     * NEW v0.9.0: Subscribe to preset events for automatic UI synchronization
+     * Eliminates manual refresh requirements
+     */
+    private subscribeToPresetEvents(): void {
+        const eventBus = this.configManager.getEventBus();
+
+        // Subscribe to all preset change events
+        this.presetEventUnsubscribe = eventBus.subscribeAll((event: PresetEvent) => {
+            this.logger.debug(`Preset event received: ${event.type} (${event.presetId})`);
+
+            // Auto-refresh presets in UI when any change occurs
+            switch (event.type) {
+                case 'created':
+                case 'updated':
+                case 'deleted':
+                case 'imported':
+                    this.refreshPresets();
+                    this.logger.debug(`Auto-refreshed presets after ${event.type} event`);
+                    break;
+                case 'selected':
+                    // Selection changes don't require preset list refresh
+                    this.logger.debug(`Preset selection changed to: ${event.presetId}`);
+                    break;
+            }
+        });
+
+        this.logger.info('Subscribed to preset events for automatic UI sync');
     }
 
     /**
@@ -433,7 +472,10 @@ export class QuickEditManager {
         }
 
         // Don't pass quickEditDefaultInstruction - let popup handle defaults via preset system
-        this.inputPopup.show(popupPosition, '');
+        // NEW v0.9.0: show() is now async, but fire-and-forget for UI responsiveness
+        this.inputPopup.show(popupPosition, '').catch((error) => {
+            this.logger.error('Failed to show instruction popup:', error);
+        });
     }
 
     /**
@@ -682,15 +724,13 @@ export class QuickEditManager {
             const currentPresetId = await this.getCurrentPresetId();
             let template: string;
 
-            // Get all presets for lookup
-            const allTemplates = this.configManager.getAllTemplates();
-
             // FIX: 如果有选中的 preset，使用 preset 的完整配置（editInstruction + systemPrompt + appendedPrompt）
             let presetSystemPrompt: string | undefined = undefined;
             let presetAppendedPrompt: string | undefined = undefined;
 
             if (currentPresetId) {
-                const currentPreset = allTemplates.find(t => t.id === currentPresetId);
+                // NEW v0.9.0: Use getTemplateById() instead of find() for better performance
+                const currentPreset = this.configManager.getTemplateById(currentPresetId);
 
                 if (currentPreset && currentPreset.editInstruction) {
                     template = currentPreset.editInstruction;
@@ -698,9 +738,12 @@ export class QuickEditManager {
                     // FIX: 提取 preset 的 systemPrompt 和 appendedPrompt
                     presetSystemPrompt = currentPreset.systemPrompt;
                     presetAppendedPrompt = currentPreset.appendedPrompt;
+
+                    this.logger.debug(`Using preset: ${currentPreset.name} (${currentPresetId})`);
+                    this.logger.debug(`SystemPrompt length: ${presetSystemPrompt?.length ?? 0}, AppendedPrompt length: ${presetAppendedPrompt?.length ?? 0}`);
                 } else {
                     // 回退：preset 不存在或没有 editInstruction
-                    console.warn(`[QuickEdit] Preset ${currentPresetId} not found or has no editInstruction, using global template`);
+                    this.logger.warn(`Preset ${currentPresetId} not found or has no editInstruction, using global template`);
                     const claudeSettings = this.claudeClient.getSettings();
                     template = claudeSettings.quickEditPromptTemplate || `{instruction}
 
@@ -744,6 +787,9 @@ export class QuickEditManager {
 
             // 获取 filterRules（全局 + 预设）
             const filterRules: FilterRule[] = this.claudeClient.getFilterRules(currentPresetId) || [];
+
+            // Diagnostic logging for request parameters
+            this.logger.debug(`Request params - UserPrompt: ${userPrompt.length} chars, FilterRules: ${filterRules.length}, SystemPrompt: ${presetSystemPrompt ? 'preset' : 'global'}`);
 
             await this.claudeClient.sendMessage(
                 [{ role: 'user', content: userPrompt }],
@@ -1058,45 +1104,11 @@ export class QuickEditManager {
                 .filter(p => p.length > 0);  // Remove empty paragraphs
 
             // Step 1: Insert ALL paragraphs as new blocks after the last selected block
-            // This unified approach uses only insertBlock API for consistency
+            // PERFORMANCE: Use BlockOperations for optimized batch insertion
             const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
-            let previousID = lastOriginalBlockId;
 
-            // FIX High 2.3: Track insertion results for better error handling
-            const insertionResults: Array<{ success: boolean; index: number; error?: any }> = [];
-
-            for (let i = 0; i < paragraphs.length; i++) {
-                const paragraph = paragraphs[i];
-
-                try {
-                    const insertResponse = await fetchWithTimeout('/api/block/insertBlock', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            dataType: 'markdown',
-                            data: paragraph,
-                            previousID: previousID  // Insert after previous block
-                        })
-                    });
-
-                    // FIX High 2.3: Check response status before parsing JSON
-                    if (!insertResponse.ok) {
-                        throw new Error(`HTTP ${insertResponse.status}: ${insertResponse.statusText}`);
-                    }
-
-                    const insertResult = await insertResponse.json();
-                    if (insertResult.code === 0) {
-                        previousID = insertResult.data[0].doOperations[0].id;
-                        insertionResults.push({ success: true, index: i });
-                    } else {
-                        console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
-                        insertionResults.push({ success: false, index: i, error: insertResult });
-                    }
-                } catch (error) {
-                    console.error(`[QuickEdit] Error inserting paragraph ${i + 1}:`, error);
-                    insertionResults.push({ success: false, index: i, error });
-                }
-            }
+            // Use BlockOperations for batch insert (auto-detects best method)
+            const insertionResults = await this.blockOps.insertMultipleBlocks(paragraphs, lastOriginalBlockId);
 
             // FIX High 2.3: Report results with detailed feedback
             const successCount = insertionResults.filter(r => r.success).length;
@@ -1108,7 +1120,9 @@ export class QuickEditManager {
             }
 
             // Step 2: Wait for SiYuan to render all new content
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // PERFORMANCE: Adaptive delay based on block count (100ms base + 2ms per block, max 1s)
+            const renderDelay = Math.min(100 + (paragraphs.length * 2), 1000);
+            await new Promise(resolve => setTimeout(resolve, renderDelay));
 
             // Step 3: Pause observer before UI cleanup
             this.pauseObserver();
@@ -1136,32 +1150,8 @@ export class QuickEditManager {
             // This unified approach treats all blocks equally
             // FIX Critical 1.2: Use Promise.all for safer concurrent deletion with error handling
             if (block.selectedBlockIds && block.selectedBlockIds.length > 0) {
-                // Delete all blocks concurrently with individual error handling
-                const deletePromises = block.selectedBlockIds.map(async (blockIdToDelete, i) => {
-                    try {
-                        const deleteResponse = await fetchWithTimeout('/api/block/deleteBlock', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                id: blockIdToDelete
-                            })
-                        });
-
-                        const deleteResult = await deleteResponse.json();
-                        if (deleteResult.code === 0) {
-                            return { success: true, blockId: blockIdToDelete };
-                        } else {
-                            console.warn(`[QuickEdit] Failed to delete block ${blockIdToDelete}:`, deleteResult);
-                            return { success: false, blockId: blockIdToDelete, error: deleteResult };
-                        }
-                    } catch (error) {
-                        console.error(`[QuickEdit] Error deleting block ${blockIdToDelete}:`, error);
-                        return { success: false, blockId: blockIdToDelete, error };
-                    }
-                });
-
-                // Wait for all deletions to complete
-                const results = await Promise.all(deletePromises);
+                // PERFORMANCE: Use BlockOperations for optimized batch deletion
+                const results = await this.blockOps.deleteMultipleBlocks(block.selectedBlockIds);
                 const failed = results.filter(r => !r.success);
 
                 if (failed.length > 0) {
@@ -1171,7 +1161,10 @@ export class QuickEditManager {
             }
 
             // Step 7: Wait longer for SiYuan to complete all async operations
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // PERFORMANCE: Adaptive delay based on block count
+            const deleteCount = block.selectedBlockIds?.length || 0;
+            const deleteDelay = Math.min(200 + (deleteCount * 2), 1000);
+            await new Promise(resolve => setTimeout(resolve, deleteDelay));
 
             // No marked span to clean up anymore (we disabled marking to avoid DOM conflicts)
             block.markedSpan = null;
@@ -1242,42 +1235,11 @@ export class QuickEditManager {
                 .filter(p => p.length > 0);
 
             // Insert all paragraphs after the last selected block
+            // PERFORMANCE: Use BlockOperations for optimized batch insertion
             const lastOriginalBlockId = block.selectedBlockIds?.[block.selectedBlockIds.length - 1] || block.blockId;
-            let previousID = lastOriginalBlockId;
 
-            const insertionResults: Array<{ success: boolean; index: number; error?: any }> = [];
-
-            for (let i = 0; i < paragraphs.length; i++) {
-                const paragraph = paragraphs[i];
-
-                try {
-                    const insertResponse = await fetchWithTimeout('/api/block/insertBlock', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            dataType: 'markdown',
-                            data: paragraph,
-                            previousID: previousID
-                        })
-                    });
-
-                    if (!insertResponse.ok) {
-                        throw new Error(`HTTP ${insertResponse.status}: ${insertResponse.statusText}`);
-                    }
-
-                    const insertResult = await insertResponse.json();
-                    if (insertResult.code === 0) {
-                        previousID = insertResult.data[0].doOperations[0].id;
-                        insertionResults.push({ success: true, index: i });
-                    } else {
-                        console.warn(`[QuickEdit] Failed to insert paragraph ${i + 1}:`, insertResult);
-                        insertionResults.push({ success: false, index: i, error: insertResult });
-                    }
-                } catch (error) {
-                    console.error(`[QuickEdit] Error inserting paragraph ${i + 1}:`, error);
-                    insertionResults.push({ success: false, index: i, error });
-                }
-            }
+            // Use BlockOperations for batch insert (auto-detects best method)
+            const insertionResults = await this.blockOps.insertMultipleBlocks(paragraphs, lastOriginalBlockId);
 
             // Report results
             const successCount = insertionResults.filter(r => r.success).length;
@@ -1289,7 +1251,9 @@ export class QuickEditManager {
             }
 
             // Wait for SiYuan to render
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // PERFORMANCE: Adaptive delay based on block count
+            const renderDelay2 = Math.min(100 + (paragraphs.length * 2), 1000);
+            await new Promise(resolve => setTimeout(resolve, renderDelay2));
 
             // Pause observer before UI cleanup
             this.pauseObserver();
@@ -1313,7 +1277,9 @@ export class QuickEditManager {
             // ✨ KEY DIFFERENCE: Do NOT delete original blocks in INSERT mode
 
             // Wait for SiYuan to complete operations
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // PERFORMANCE: Adaptive delay
+            const completeDelay = Math.min(200 + (paragraphs.length * 2), 1000);
+            await new Promise(resolve => setTimeout(resolve, completeDelay));
 
             block.markedSpan = null;
 
@@ -1953,15 +1919,20 @@ export class QuickEditManager {
 
     /**
      * Handle preset switch (global configuration change)
+     * NEW v0.9.0: Now uses PresetSelectionManager
      */
     private handlePresetSwitch(presetId: string): void {
-
-        const preset = this.configManager.getAllTemplates().find(t => t.id === presetId);
+        const preset = this.configManager.getTemplateById(presetId);
         if (!preset) {
-            console.error(`[QuickEdit] Preset ${presetId} not found`);
+            this.logger.error(`Preset ${presetId} not found`);
             showMessage('❌ 预设不存在', 2000, 'error');
             return;
         }
+
+        // Save preset selection (async, but fire-and-forget for UI responsiveness)
+        this.presetSelectionManager.setCurrentPreset(presetId).catch((error) => {
+            this.logger.error('Failed to save preset selection:', error);
+        });
 
         // Apply preset to current configuration (global switch)
         const activeProfile = this.configManager.getActiveProfile();
@@ -1986,7 +1957,8 @@ export class QuickEditManager {
         this.settings = settings;
         // Use unified presets from ConfigManager (Tab 1)
         const presets = this.configManager.getAllTemplates();
-        this.inputPopup = new InstructionInputPopup(presets, this.configManager);
+        // NEW v0.9.0: Pass PresetSelectionManager to InstructionInputPopup
+        this.inputPopup = new InstructionInputPopup(presets, this.configManager, this.presetSelectionManager);
     }
 
     /**
@@ -2043,86 +2015,26 @@ export class QuickEditManager {
             this.domCache.destroy();
         }
 
+        // Step 7: Unsubscribe from preset events (NEW v0.9.0)
+        if (this.presetEventUnsubscribe) {
+            this.presetEventUnsubscribe();
+            this.presetEventUnsubscribe = null;
+        }
+
         this.logger.info('QuickEditManager destroyed, all resources cleaned up');
     }
 
-    /**
-     * FIX: Load last preset ID from file storage to memory cache
-     * Called once during initialization, same as InstructionInputPopup
-     */
-    private async loadLastPresetFromFile(): Promise<void> {
-        try {
-            if (typeof this.plugin.loadData !== 'function') {
-                console.warn('[QuickEditManager] Plugin loadData not available');
-                return;
-            }
-
-            const fileData = await this.plugin.loadData(QuickEditManager.LAST_PRESET_FILE);
-            if (fileData && fileData.presetId) {
-                this.lastPresetFileCache = fileData.presetId;
-                this.lastPresetFileLoaded = true;
-
-                // Sync to localStorage for immediate access
-                localStorage.setItem('claude-quick-edit-last-preset-index', fileData.presetId);
-            } else {
-                this.lastPresetFileLoaded = true;
-            }
-        } catch (error) {
-            // First time use, no file storage yet
-            this.lastPresetFileLoaded = true;
-        }
-    }
 
     /**
      * Get currently active preset ID
-     * FIX: Now uses file cache for first launch sync with UI
-     * FIX Critical 1.3: Added timeout protection to prevent indefinite waiting
-     * Used to fetch preset-level filterRules and editInstruction
+     * NEW v0.9.0: Simplified using PresetSelectionManager
      *
-     * IMPORTANT: This method will wait for file loading if it's still in progress
+     * @returns Current preset ID or undefined if no preset selected
      */
-    private async getCurrentPresetId(timeoutMs: number = 3000): Promise<string | undefined> {
+    private async getCurrentPresetId(): Promise<string | undefined> {
         try {
-            // FIX Critical 1.3: Wait for file loading with timeout protection
-            if (this.lastPresetFilePromise && !this.lastPresetFileLoaded) {
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(() => reject(new Error('Preset load timeout')), timeoutMs);
-                });
-
-                try {
-                    await Promise.race([this.lastPresetFilePromise, timeoutPromise]);
-                } catch (timeoutError) {
-                    this.logger.warn('Preset file load timeout, using localStorage fallback');
-                    this.lastPresetFileLoaded = true; // Mark as loaded to prevent future waits
-                }
-            }
-
-            // FIX Critical: File is the source of truth, not localStorage!
-            // Strategy 1: Use file cache if available (most reliable)
-            let lastPresetId: string | null = null;
-
-            if (this.lastPresetFileCache) {
-                lastPresetId = this.lastPresetFileCache;
-            } else {
-                // Strategy 2: Fallback to localStorage only if file cache not available
-                lastPresetId = localStorage.getItem('claude-quick-edit-last-preset-index');
-            }
-
-            // Return undefined for empty or 'custom' preset
-            if (!lastPresetId || lastPresetId === 'custom') {
-                return undefined;
-            }
-
-            // Verify preset exists in ConfigManager
-            const allTemplates = this.configManager.getAllTemplates();
-            const preset = allTemplates.find((t: any) => t.id === lastPresetId);
-
-            if (!preset) {
-                this.logger.warn(`Preset ${lastPresetId} not found in ConfigManager`);
-                return undefined;
-            }
-
-            return lastPresetId;
+            const presetId = await this.presetSelectionManager.getCurrentPresetId();
+            return presetId ?? undefined;
         } catch (error) {
             this.logger.error('Failed to get current preset ID:', error);
             return undefined;

@@ -30,6 +30,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private unifiedPanel: UnifiedAIPanel | null = null;
     private dockElement: HTMLElement | null = null;
     private dockModel: DockModel | null = null;
+    private topbarElement: HTMLElement | null = null;
 
     // AI Text Editing feature (initialized for UnifiedPanel)
     private textSelectionManager: TextSelectionManager | null = null;
@@ -40,6 +41,10 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
     // Quick Edit Mode
     private quickEditManager: QuickEditManager | null = null;
+
+    // Event handlers for cleanup
+    private blockIconHandler: ((event: any) => void) | null = null;
+    private contentMenuHandler: ((event: any) => void) | null = null;
 
     // Initialization promise to track when onload completes
     private initializationComplete: Promise<void> | null = null;
@@ -139,7 +144,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add commands (non-UI initialization)
         this.addCommand({
             langKey: "openClaude",
-            hotkey: "⌥⇧C",
+            hotkey: settings.keyboardShortcuts?.openClaude || "⌥⇧C",
             callback: () => {
                 this.toggleDock();
             },
@@ -165,7 +170,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // AI Text Edit command
         this.addCommand({
             langKey: "aiEdit",
-            hotkey: "⌃⇧E",
+            hotkey: settings.keyboardShortcuts?.aiEdit || "⌃⇧E",
             editorCallback: (protyle) => {
                 this.sendToAIEdit(protyle);
             },
@@ -174,7 +179,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Undo last AI edit command
         this.addCommand({
             langKey: "undoAIEdit",
-            hotkey: "⌃⇧Z",
+            hotkey: settings.keyboardShortcuts?.undoAIEdit || "⌃⇧Z",
             callback: () => {
                 this.undoLastAIEdit();
             },
@@ -183,7 +188,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Quick Edit command
         this.addCommand({
             langKey: "quickEdit",
-            hotkey: "⌃⇧Q",
+            hotkey: settings.keyboardShortcuts?.quickEdit || "⌃⇧Q",
             callback: () => {
                 this.triggerQuickEdit();
             },
@@ -274,7 +279,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         console.log("Claude AI dock registered successfully");
 
         // Add topbar icon - 必须在 onLayoutReady 中调用
-        this.addTopBar({
+        this.topbarElement = this.addTopBar({
             icon: "iconClaudeCode",
             title: "Claude AI Assistant",
             position: "right",
@@ -289,10 +294,76 @@ export default class ClaudeAssistantPlugin extends Plugin {
     async onunload() {
         console.log("Unloading Claude Assistant Plugin");
 
-        this.unifiedPanel?.destroy();
+        // Clean up event listeners to prevent memory leaks
+        if (this.blockIconHandler) {
+            this.eventBus.off("click-blockicon", this.blockIconHandler);
+            this.blockIconHandler = null;
+        }
+        if (this.contentMenuHandler) {
+            this.eventBus.off("open-menu-content", this.contentMenuHandler);
+            this.contentMenuHandler = null;
+        }
+
+        // Clean up topbar icon to prevent duplicates on reload (enhanced with fallback)
+        if (this.topbarElement) {
+            try {
+                // Try direct removal first
+                this.topbarElement.remove();
+                console.log("[Plugin] Topbar icon removed via element.remove()");
+            } catch (error) {
+                console.warn("[Plugin] Direct topbar removal failed, trying DOM query fallback:", error);
+
+                // Fallback: find and remove via DOM query
+                try {
+                    // Try multiple selectors to find the topbar icon
+                    const selectors = [
+                        '.toolbar__item[aria-label="Claude AI Assistant"]',
+                        '.toolbar__item[aria-label="Claude AI 助手"]',
+                        '.toolbar__item[data-type="claude-ai-assistant"]',
+                        '.toolbar__item svg[data-icon="iconClaudeCode"]'
+                    ];
+
+                    let removed = false;
+                    for (const selector of selectors) {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements.length > 0) {
+                            elements.forEach(el => el.remove());
+                            console.log(`[Plugin] Topbar icon removed via DOM query (${selector}), count: ${elements.length}`);
+                            removed = true;
+                        }
+                    }
+
+                    if (!removed) {
+                        console.warn("[Plugin] Could not find topbar icon via DOM queries");
+                    }
+                } catch (fallbackError) {
+                    console.error("[Plugin] Fallback removal also failed:", fallbackError);
+                }
+            }
+            this.topbarElement = null;
+        }
+
+        // Cleanup UI components
+        if (this.unifiedPanel) {
+            try {
+                this.unifiedPanel.destroy();
+                console.log("[Plugin] Unified panel destroyed");
+            } catch (error) {
+                console.error("[Plugin] Error destroying unified panel:", error);
+            }
+        }
 
         // Cancel any ongoing edit requests
-        this.editQueue?.cancelAll();
+        if (this.editQueue) {
+            try {
+                this.editQueue.cancelAll();
+                console.log("[Plugin] Edit queue cancelled");
+            } catch (error) {
+                console.error("[Plugin] Error cancelling edit queue:", error);
+            }
+        }
+
+        console.log("[Plugin] Cleanup complete");
     }
 
     uninstall() {
@@ -326,14 +397,39 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     private openSettings() {
+        // Create custom content with header and settings container
+        const customContent = `
+            <div class="claude-settings-dialog-wrapper">
+                <div class="claude-settings-dialog-header">
+                    <div class="dialog-header-title">
+                        <svg class="dialog-header-icon" style="width: 18px; height: 18px;"><use xlink:href="#iconSettings"></use></svg>
+                        <span>Claude AI 设置</span>
+                    </div>
+                    <div class="dialog-header-actions">
+                        <button class="b3-button b3-button--cancel" id="claude-settings-cancel">
+                            取消
+                        </button>
+                        <button class="b3-button b3-button--text" id="claude-settings-save">
+                            保存设置
+                        </button>
+                    </div>
+                </div>
+                <div id="claude-settings-container"></div>
+            </div>
+        `;
+
         const dialog = new Dialog({
-            title: "⚙️ Claude AI 设置",
-            content: `<div id="claude-settings-container"></div>`,
-            width: "720px",
-            height: "auto",
+            title: "", // Use custom header instead
+            content: customContent,
+            width: "900px",
+            height: "70vh",
+            disableClose: false,
         });
 
         const container = dialog.element.querySelector("#claude-settings-container");
+        const cancelButton = dialog.element.querySelector("#claude-settings-cancel");
+        const saveButton = dialog.element.querySelector("#claude-settings-save");
+
         if (container) {
             const settingsPanel = new SettingsPanelV3(
                 this.configManager,
@@ -363,8 +459,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
                         console.log("[ClaudePlugin] Updating Claude client");
                         this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
-                        // Show success message
+                        // Show success message and close dialog
                         showMessage("✅ 设置已保存", 2000, "info");
+                        dialog.destroy();
                     } catch (error) {
                         console.error("[ClaudePlugin] Failed to save settings:", error);
                         showMessage("❌ 保存设置失败", 3000, "error");
@@ -378,6 +475,22 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
             settingsPanel.open(dialog);
             container.appendChild(settingsPanel.getElement());
+
+            // Attach event listeners to header buttons
+            if (cancelButton) {
+                cancelButton.addEventListener("click", () => {
+                    console.log("[ClaudePlugin] Cancel button clicked");
+                    dialog.destroy();
+                });
+            }
+
+            if (saveButton) {
+                saveButton.addEventListener("click", async () => {
+                    console.log("[ClaudePlugin] Save button clicked");
+                    // Trigger the save functionality from settings panel
+                    settingsPanel.triggerSave();
+                });
+            }
         }
     }
 
@@ -610,37 +723,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         };
     }
 
-    /**
-     * Get block selection information
-     */
-    private getBlockSelection(blockElement: HTMLElement): {
-        blockId: string;
-        startLine: number;
-        endLine: number;
-        selectedText: string;
-        fullBlockContent: string;
-    } | null {
-        const blockId = blockElement.getAttribute('data-node-id');
-        if (!blockId) {
-            showMessage("无法获取块 ID", 3000, "error");
-            return null;
-        }
-
-        const textContent = blockElement.textContent?.trim();
-        if (!textContent) {
-            showMessage("块内容为空", 3000, "info");
-            return null;
-        }
-
-        const lines = textContent.split('\n');
-        return {
-            blockId,
-            startLine: 0,
-            endLine: lines.length - 1,
-            selectedText: textContent,
-            fullBlockContent: textContent
-        };
-    }
+    // [REMOVED] getBlockSelection() - 仅被已删除的块菜单功能使用
 
     /**
      * Unified AI edit request method
@@ -699,16 +782,19 @@ export default class ClaudeAssistantPlugin extends Plugin {
         console.log("[AIEdit] Setting up context menu");
 
         // Register event handlers with arrow functions to preserve 'this' context
+        // Store references for cleanup in onunload()
 
         // Block icon click - for block-level operations
-        this.eventBus.on("click-blockicon", (event) => {
+        this.blockIconHandler = (event) => {
             this.onBlockIconClick(event);
-        });
+        };
+        this.eventBus.on("click-blockicon", this.blockIconHandler);
 
         // Editor content menu - for text selection operations
-        this.eventBus.on("open-menu-content", (event) => {
+        this.contentMenuHandler = (event) => {
             this.onEditorContentMenu(event);
-        });
+        };
+        this.eventBus.on("open-menu-content", this.contentMenuHandler);
 
         console.log("[AIEdit] Context menu setup complete");
     }
@@ -744,48 +830,33 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         console.log("[AIEdit] Block text content (first 100 chars):", textContent.substring(0, 100));
 
+        // Check if there is text selection - if yes, defer to content menu
+        // (Content menu provides better UX with keyboard shortcut hint)
+        const selection = protyle?.wysiwyg?.element?.ownerDocument?.getSelection();
+        if (selection && !selection.isCollapsed && selection.toString().trim()) {
+            console.log("[AIEdit] Text selected, deferring to content menu");
+            return;
+        }
+
         // Add separator
         menu.addSeparator();
 
-        // Add "Quick Edit" menu item
+        // Add "Quick Edit" menu item (without accelerator to avoid visual duplication)
+        // Note: Content Menu also has Quick Edit but with accelerator hint
+        // These two menus won't show simultaneously due to SiYuan's event mechanism
         menu.addItem({
             icon: "iconFlash",
-            label: this.i18n.quickEdit || "AI 快速编辑",
+            label: (this.i18n && typeof this.i18n.quickEdit === 'string' && this.i18n.quickEdit.trim())
+                ? this.i18n.quickEdit
+                : "AI 快速编辑",
             click: () => {
                 console.log("[QuickEdit] 'Quick Edit' clicked from block menu");
                 this.triggerQuickEdit();
             }
         });
 
-        // Add AI Edit menu item
-        menu.addItem({
-            icon: "iconEdit",
-            label: this.i18n.aiEditBlock,
-            click: () => {
-                console.log("[AIEdit] Edit block menu item clicked");
-                this.sendBlockToAIEdit(protyle, blockElement);
-            }
-        });
-
-        // Add custom instruction submenu
-        const editSettings = this.settingsManager.getSettings().editSettings;
-        if (editSettings?.customInstructions && editSettings.customInstructions.length > 0) {
-            const submenus = editSettings.customInstructions.map((instr: any) => ({
-                icon: instr.icon || "iconEdit",
-                label: instr.text,
-                click: () => {
-                    console.log("[AIEdit] Block preset instruction clicked:", instr.text);
-                    this.sendBlockToAIEditWithPreset(protyle, blockElement, instr);
-                }
-            }));
-
-            menu.addItem({
-                icon: "iconList",
-                label: this.i18n.aiEditPresets,
-                type: "submenu",
-                submenu: submenus
-            });
-        }
+        // [REMOVED] "编辑整个块" menu item - 功能与 dock 的"已选中X个块"重复
+        // [REMOVED] Custom instruction submenu - 默认不显示且功能未启用
 
         console.log("[AIEdit] Menu items added");
     }
@@ -816,10 +887,18 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add separator
         menu.addSeparator();
 
-        // Add "Quick Edit" menu item
+        // Add "Quick Edit" menu item with keyboard shortcut hint
+        // Note: Block Icon Menu also has Quick Edit but without accelerator
+        // These two menus are for different scenarios and won't show simultaneously:
+        // - Block Icon Menu: Right-click on block icon (no text selection required)
+        // - Content Menu: Right-click on selected text (with shortcut hint)
+        const quickEditShortcut = this.settingsManager.getSettings().keyboardShortcuts?.quickEdit || "⌃⇧Q";
         menu.addItem({
             icon: "iconFlash",
-            label: this.i18n.quickEdit || "AI 快速编辑",
+            label: (this.i18n && typeof this.i18n.quickEdit === 'string' && this.i18n.quickEdit.trim())
+                ? this.i18n.quickEdit
+                : "AI 快速编辑",
+            accelerator: quickEditShortcut,
             click: () => {
                 console.log("[QuickEdit] 'Quick Edit' clicked from context menu");
                 this.triggerQuickEdit();
@@ -905,53 +984,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
         }
     }
 
-    /**
-     * Send entire block to AI edit (when text selection is not available)
-     */
-    private sendBlockToAIEdit(protyle: any, blockElement: HTMLElement): void {
-        console.log('[AIEdit] sendBlockToAIEdit called');
-        const blockSelection = this.getBlockSelection(blockElement);
-        if (!blockSelection) {
-            console.log('[AIEdit] getBlockSelection returned null');
-            return;
-        }
-
-        console.log('[AIEdit] Block selection:', blockSelection);
-        const textSelection = this.createTextSelection(blockSelection);
-        console.log('[AIEdit] Text selection created:', textSelection);
-        this.requestAIEdit(textSelection);  // No instruction → edit mode
-    }
-
-    /**
-     * Send entire block to AI edit with preset instruction
-     */
-    private sendBlockToAIEditWithPreset(protyle: any, blockElement: HTMLElement, preset: any): void {
-        const blockSelection = this.getBlockSelection(blockElement);
-        if (!blockSelection) return;
-
-        const textSelection = this.createTextSelection(blockSelection);
-
-        if (preset.showDiff) {
-            // Has instruction and showDiff → process directly
-            this.requestAIEdit(textSelection, preset.text, true);
-        } else {
-            // No showDiff → enter edit mode with pre-filled instruction
-            if (!this.unifiedPanel) return;
-            
-            this.toggleDock();
-            this.unifiedPanel.enterEditMode(textSelection, false);
-            
-            // Pre-fill the instruction in textarea
-            setTimeout(() => {
-                const textarea = document.querySelector('#claude-input') as HTMLTextAreaElement;
-                if (textarea) {
-                    textarea.value = preset.text;
-                }
-            }, 100);
-
-            showMessage(`${this.i18n.enterEditMode}: ${preset.text}`, 2000, "info");
-        }
-    }
+    // [REMOVED] sendBlockToAIEdit() - 功能与 dock 的"已选中X个块"重复
+    // [REMOVED] sendBlockToAIEditWithPreset() - Custom instruction 功能未启用
 
     /**
      * Migrate old settings to new config system

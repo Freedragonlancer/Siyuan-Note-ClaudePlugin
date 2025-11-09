@@ -5,6 +5,8 @@
 import type { PopupPosition } from './inline-types';
 import type { PromptTemplate } from '@/settings/config-types';
 import type { ConfigManager } from '@/settings/ConfigManager';
+import type { PresetSelectionManager } from '@/settings/PresetSelectionManager';
+import { InstructionHistoryManager } from './InstructionHistoryManager';
 import { showMessage } from 'siyuan';
 
 export class InstructionInputPopup {
@@ -12,51 +14,36 @@ export class InstructionInputPopup {
     private isVisible: boolean = false;  // FIX Phase 6: Track visibility to prevent duplicate opens
     private presets: PromptTemplate[];
     private configManager: ConfigManager;
+    private presetSelectionManager: PresetSelectionManager | null = null; // NEW v0.9.0
     private onSubmitCallback?: (instruction: string) => void;
     private onCancelCallback?: () => void;
     private onPresetSwitchCallback?: (presetId: string) => void;
     private currentSelectedPresetId: string = 'custom'; // Track currently selected preset in the popup
 
-    // localStorage key for fast synchronous access (synced from file storage)
-    private static readonly LAST_PRESET_KEY = 'claude-quick-edit-last-preset-index';
-    // File storage key for persistent preset selection across SiYuan restarts
-    private static readonly LAST_PRESET_FILE = 'quick-edit-last-preset.json';
+    // History navigation (terminal-style command history)
+    private historyManager: InstructionHistoryManager | null = null;
+    private historyIndex: number = -1; // -1 = not browsing, 0+ = browsing at index
+    private tempInput: string = ''; // Saved user input before browsing
+    private historyMode: 'normal' | 'browsing' = 'normal';
 
-    constructor(presets: PromptTemplate[], configManager: ConfigManager) {
+    constructor(
+        presets: PromptTemplate[],
+        configManager: ConfigManager,
+        presetSelectionManager?: PresetSelectionManager,
+        historyManager?: InstructionHistoryManager
+    ) {
         this.presets = presets;
         this.configManager = configManager;
-
-        // Load last preset from file storage to localStorage (async, non-blocking)
-        this.loadLastPresetFromFile().catch(() => {
-            // Silently handle - file not existing is expected on first use
-        });
+        this.presetSelectionManager = presetSelectionManager ?? null; // NEW v0.9.0
+        this.historyManager = historyManager ?? null;
     }
 
-    /**
-     * Load last preset ID from file storage to localStorage cache
-     * Called once during initialization
-     */
-    private async loadLastPresetFromFile(): Promise<void> {
-        try {
-            const plugin = (this.configManager as any).plugin;
-            if (!plugin || typeof plugin.loadData !== 'function') {
-                return;
-            }
-
-            const fileData = await plugin.loadData(InstructionInputPopup.LAST_PRESET_FILE);
-            if (fileData && fileData.presetId) {
-                // Sync to localStorage cache
-                localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, fileData.presetId);
-            }
-        } catch (error) {
-            // First time use, no file storage yet
-        }
-    }
 
     /**
      * Show popup at position
+     * NEW v0.9.0: Now async to support PresetSelectionManager
      */
-    public show(position: PopupPosition, defaultInstruction: string = ''): void {
+    public async show(position: PopupPosition, defaultInstruction: string = ''): Promise<void> {
 
         // FIX Phase 6: Prevent duplicate opens
         if (this.isVisible) {
@@ -71,7 +58,7 @@ export class InstructionInputPopup {
         this.isVisible = true;
 
         // Try to load last selected preset (now stored as ID, not index)
-        const lastPresetId = this.getLastPresetIndex(); // method name kept for compatibility
+        const lastPresetId = await this.getLastPresetIndex(); // NEW v0.9.0: Now async
         let instructionToUse = defaultInstruction; // Keep empty - user will type instruction
         let presetIdToUse = 'custom';
 
@@ -85,8 +72,10 @@ export class InstructionInputPopup {
                 instructionToUse = ''; // Keep empty for user input
             } else {
                 console.warn(`[InstructionInputPopup] Preset ${lastPresetId} not found, clearing saved preset`);
-                // Clean up invalid preset ID
-                localStorage.removeItem(InstructionInputPopup.LAST_PRESET_KEY);
+                // Clean up invalid preset ID (localStorage fallback)
+                if (!this.presetSelectionManager) {
+                    localStorage.removeItem('claude-quick-edit-last-preset-index');
+                }
             }
         } else if (!lastPresetId) {
             // First time use: auto-select the first available preset
@@ -94,7 +83,7 @@ export class InstructionInputPopup {
             if (firstPreset) {
                 presetIdToUse = firstPreset.id;
                 instructionToUse = ''; // Keep empty for user input
-                // Save to localStorage to remember for next time
+                // Save to remember for next time
                 this.savePresetIndex(firstPreset.id);
             }
         }
@@ -146,6 +135,11 @@ export class InstructionInputPopup {
             this.element = null;
         }
         this.isVisible = false;  // FIX Phase 6: Reset visibility flag
+
+        // Reset history navigation state
+        this.historyIndex = -1;
+        this.tempInput = '';
+        this.historyMode = 'normal';
     }
 
     /**
@@ -433,12 +427,31 @@ export class InstructionInputPopup {
         });
 
         input?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // Up/Down arrow keys for history navigation
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this.navigateHistory('up', input);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.navigateHistory('down', input);
+            }
+            // Enter to submit
+            else if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.handleSubmit(input.value);
-            } else if (e.key === 'Escape') {
+            }
+            // Escape to cancel
+            else if (e.key === 'Escape') {
                 e.preventDefault();
                 this.handleCancel();
+            }
+        });
+
+        // Exit browsing mode when user starts typing
+        input?.addEventListener('input', () => {
+            if (this.historyMode === 'browsing') {
+                this.historyMode = 'normal';
+                this.historyIndex = -1;
             }
         });
 
@@ -536,6 +549,13 @@ export class InstructionInputPopup {
             this.savePresetIndex(this.currentSelectedPresetId);
         }
 
+        // Add to history (async, non-blocking)
+        if (this.historyManager) {
+            this.historyManager.addEntry(trimmedInstruction).catch((err) => {
+                console.warn('[InstructionInputPopup] Failed to save to history:', err);
+            });
+        }
+
         // Call callback with instruction (either user input or placeholder)
         this.onSubmitCallback(trimmedInstruction);
 
@@ -563,12 +583,58 @@ export class InstructionInputPopup {
     }
 
     /**
-     * Get last selected preset ID from localStorage cache (synchronous)
-     * File storage is loaded to localStorage in constructor
+     * Navigate through command history (terminal-style Up/Down arrow keys)
      */
-    private getLastPresetIndex(): string | null {
+    private navigateHistory(direction: 'up' | 'down', input: HTMLInputElement): void {
+        if (!this.historyManager) {
+            return; // History not available
+        }
+
+        // Save current input before starting to browse
+        if (this.historyMode === 'normal') {
+            this.tempInput = input.value;
+            this.historyMode = 'browsing';
+        }
+
+        // Navigate history
+        const result = this.historyManager.navigate(this.historyIndex, direction);
+
+        if (result) {
+            // Successfully navigated to a history entry
+            this.historyIndex = result.index;
+            input.value = result.text;
+            input.select(); // Select all text for easy editing/replacement
+        } else {
+            // Reached boundary
+            if (direction === 'down' && this.historyIndex !== -1) {
+                // Reached newest (end of history), restore user's original input
+                this.historyMode = 'normal';
+                this.historyIndex = -1;
+                input.value = this.tempInput;
+                input.select();
+            }
+            // For 'up' at oldest entry, do nothing (stay at oldest)
+        }
+    }
+
+    /**
+     * Get last selected preset ID
+     * NEW v0.9.0: Uses PresetSelectionManager if available, with localStorage fallback
+     */
+    private async getLastPresetIndex(): Promise<string | null> {
+        // NEW v0.9.0: Use PresetSelectionManager if available
+        if (this.presetSelectionManager) {
+            try {
+                const presetId = await this.presetSelectionManager.getCurrentPresetId(false); // Don't wait for init
+                return presetId;
+            } catch (error) {
+                console.warn('[InstructionInputPopup] Failed to get preset from manager:', error);
+            }
+        }
+
+        // Fallback to localStorage (for backward compatibility during migration)
         try {
-            return localStorage.getItem(InstructionInputPopup.LAST_PRESET_KEY);
+            return localStorage.getItem('claude-quick-edit-last-preset-index');
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to read last preset:', error);
             return null;
@@ -576,17 +642,26 @@ export class InstructionInputPopup {
     }
 
     /**
-     * Save selected preset ID to both localStorage (sync) and file storage (async)
+     * Save selected preset ID
+     * NEW v0.9.0: Uses PresetSelectionManager if available, with localStorage fallback
      */
     private savePresetIndex(index: string): void {
-        try {
-            // Save to localStorage immediately (fast)
-            localStorage.setItem(InstructionInputPopup.LAST_PRESET_KEY, index);
+        // NEW v0.9.0: Use PresetSelectionManager if available
+        if (this.presetSelectionManager) {
+            this.presetSelectionManager.setCurrentPreset(index, false).catch((err: Error) => {
+                console.warn('[InstructionInputPopup] Failed to save preset via manager:', err);
+            });
+            return;
+        }
 
-            // Save to file storage async (persistent across restarts)
+        // Fallback to localStorage (for backward compatibility during migration)
+        try {
+            localStorage.setItem('claude-quick-edit-last-preset-index', index);
+
+            // Save to file storage async if plugin available
             const plugin = (this.configManager as any).plugin;
             if (plugin && typeof plugin.saveData === 'function') {
-                plugin.saveData(InstructionInputPopup.LAST_PRESET_FILE, { presetId: index })
+                plugin.saveData('quick-edit-last-preset.json', { presetId: index })
                     .catch((err: Error) => {
                         console.warn('[InstructionInputPopup] Failed to save preset to file storage:', err);
                     });

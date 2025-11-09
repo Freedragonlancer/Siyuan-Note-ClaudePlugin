@@ -14,6 +14,7 @@ import type {
 } from './inline-types';
 import { InlineEditRenderer } from './InlineEditRenderer';
 import { InstructionInputPopup } from './InstructionInputPopup';
+import { InstructionHistoryManager } from './InstructionHistoryManager';
 import { AIEditProcessor } from '@/editor/AIEditProcessor';
 import { EditHistory } from '@/editor/EditHistory';
 import { ClaudeClient } from '@/claude';
@@ -61,6 +62,7 @@ export class QuickEditManager {
     // Inline edit components
     private renderer: InlineEditRenderer;
     private inputPopup: InstructionInputPopup;
+    private historyManager: InstructionHistoryManager;
     private processor: AIEditProcessor;
     private contextExtractor: ContextExtractor;
     private blockOps: BlockOperations;
@@ -116,12 +118,19 @@ export class QuickEditManager {
             this.logger.warn('Failed to initialize PresetSelectionManager:', error);
         });
 
+        // Initialize instruction history manager
+        this.historyManager = new InstructionHistoryManager(plugin);
+        // Initialize asynchronously (non-blocking)
+        this.historyManager.init().catch((error) => {
+            this.logger.warn('Failed to initialize InstructionHistoryManager:', error);
+        });
+
         // Initialize components
         this.renderer = new InlineEditRenderer();
         // Use unified presets from ConfigManager (Tab 1)
         const presets = this.configManager.getAllTemplates();
-        // NEW v0.9.0: Pass PresetSelectionManager to InstructionInputPopup
-        this.inputPopup = new InstructionInputPopup(presets, this.configManager, this.presetSelectionManager);
+        // NEW v0.9.0: Pass PresetSelectionManager and InstructionHistoryManager to InstructionInputPopup
+        this.inputPopup = new InstructionInputPopup(presets, this.configManager, this.presetSelectionManager, this.historyManager);
         this.processor = new AIEditProcessor(claudeClient);
         this.contextExtractor = new ContextExtractor(new EditorHelper());
 
@@ -2019,6 +2028,11 @@ export class QuickEditManager {
         if (this.presetEventUnsubscribe) {
             this.presetEventUnsubscribe();
             this.presetEventUnsubscribe = null;
+        }
+
+        // Step 8: Cleanup history manager
+        if (this.historyManager) {
+            this.historyManager.destroy();
         }
 
         this.logger.info('QuickEditManager destroyed, all resources cleaned up');

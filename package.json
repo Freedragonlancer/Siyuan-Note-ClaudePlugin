@@ -1,6 +1,6 @@
 {
   "name": "siyuan-plugin-claude-assistant",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "type": "module",
   "description": "🤖 Claude AI Assistant plugin for SiYuan Note - Unified Chat & AI Text Editing with streaming responses",
   "repository": {

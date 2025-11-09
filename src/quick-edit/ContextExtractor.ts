@@ -17,7 +17,8 @@ export enum PlaceholderType {
     ABOVE_LINES = 'above',
     BELOW_LINES = 'below',
     ABOVE_BLOCKS = 'above_blocks',
-    BELOW_BLOCKS = 'below_blocks'
+    BELOW_BLOCKS = 'below_blocks',
+    CUSTOM_BLOCK = 'custom'
 }
 
 /**
@@ -61,6 +62,9 @@ export class ContextExtractor {
     // 占位符正则表达式 (不带 g flag，避免状态问题)
     private static readonly PLACEHOLDER_REGEX = /\{(above|below|above_blocks|below_blocks)=(\d+)\}/;
 
+    // 自定义块引用占位符正则表达式 - 匹配 {custom=((blockid 'name'))} 格式
+    private static readonly CUSTOM_BLOCK_REGEX = /\{custom=\(\(([0-9]{14}-[0-9a-z]{7})\s*(?:'([^']*)')?\)\)\}/gi;
+
     constructor(editorHelper: EditorHelper) {
         this.editorHelper = editorHelper;
     }
@@ -100,6 +104,37 @@ export class ContextExtractor {
     }
 
     /**
+     * 解析自定义块引用占位符 {custom=((blockid 'name'))}
+     * @param template 模板字符串
+     * @returns 块引用占位符数组
+     */
+    public parseCustomBlockPlaceholders(template: string): Array<{
+        original: string;
+        blockId: string;
+        displayName?: string;
+    }> {
+        const placeholders: Array<{
+            original: string;
+            blockId: string;
+            displayName?: string;
+        }> = [];
+
+        // 创建新的正则实例以避免状态问题
+        const regex = new RegExp(ContextExtractor.CUSTOM_BLOCK_REGEX.source, 'gi');
+        let match: RegExpExecArray | null;
+
+        while ((match = regex.exec(template)) !== null) {
+            placeholders.push({
+                original: match[0],      // 完整匹配 {custom=((...))}
+                blockId: match[1],       // 块ID
+                displayName: match[2] || undefined  // 可选的显示名称
+            });
+        }
+
+        return placeholders;
+    }
+
+    /**
      * 提取上下文内容
      * @param blockIds 选中的块ID数组
      * @param placeholders 解析后的占位符数组
@@ -115,6 +150,7 @@ export class ContextExtractor {
         };
 
         if (blockIds.length === 0 || placeholders.length === 0) {
+            console.warn(`[ContextExtractor] Empty blockIds (${blockIds.length}) or placeholders (${placeholders.length})`);
             return context;
         }
 
@@ -196,7 +232,8 @@ export class ContextExtractor {
     private async getContextBlocks(blockId: string, direction: 'above' | 'below', count: number): Promise<string> {
         try {
             const blocks = await this.getSiblingBlocks(blockId, direction, count);
-            return blocks.map(block => block.content).join('\n\n');
+            const result = blocks.map(block => block.content).join('\n\n');
+            return result;
         } catch (error) {
             console.error(`[ContextExtractor] Error getting context blocks:`, error);
             return '';
@@ -217,16 +254,13 @@ export class ContextExtractor {
     ): Promise<Array<{ id: string; content: string; type: string }>> {
         try {
             // 策略1: 优先使用 SiYuan API（稳健，不依赖 DOM 可见性）
-            console.log(`[ContextExtractor] Attempting API retrieval for ${direction} blocks of ${blockId}`);
             const apiResults = await this.getSiblingBlocksViaAPI(blockId, direction, count);
 
             if (apiResults.length > 0) {
-                console.log(`[ContextExtractor] ✅ Successfully retrieved ${apiResults.length} blocks via API`);
                 return apiResults;
             }
 
             // 策略2: API 失败，回退到 DOM 查询（兼容本地块、临时块等）
-            console.log(`[ContextExtractor] API returned no results, falling back to DOM query`);
 
             const currentElement = document.querySelector(`[data-node-id="${blockId}"]`) as HTMLElement;
             if (!currentElement) {
@@ -273,7 +307,6 @@ export class ContextExtractor {
                 results.push({ id, content, type });
             }
 
-            console.log(`[ContextExtractor] ✅ DOM fallback found ${results.length} blocks`);
             return results;
         } catch (error) {
             console.error(`[ContextExtractor] Error getting sibling blocks:`, error);
@@ -313,6 +346,29 @@ export class ContextExtractor {
      * @param blockId 块ID
      * @returns 块内容（markdown格式）
      */
+    /**
+     * 清理 Kramdown 格式的元数据属性（IAL）
+     * 移除 {: id="..." updated="..." ...} 这样的元数据行
+     * @param content Kramdown 格式内容
+     * @returns 清理后的纯文本内容
+     */
+    private cleanKramdownMetadata(content: string): string {
+        if (!content) return '';
+
+        // 移除 Kramdown IAL (Inline Attribute Lists)
+        // 格式：{: id="..." updated="..." ...}
+        // 这些通常在段落末尾，单独占一行或紧跟内容
+        let cleaned = content.replace(/\n\{:.*?\}/g, '');
+
+        // 移除行首的 IAL（某些情况下可能出现）
+        cleaned = cleaned.replace(/^\{:.*?\}\n/gm, '');
+
+        // 清理多余的连续空行（最多保留两个换行，即一个空行）
+        cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+        return cleaned.trim();
+    }
+
     private async getBlockKramdownViaAPI(blockId: string): Promise<string> {
         try {
             const response = await fetch('/api/block/getBlockKramdown', {
@@ -327,8 +383,13 @@ export class ContextExtractor {
 
             const result = await response.json();
             if (result.code === 0 && result.data) {
-                // 返回 kramdown 格式（SiYuan 内部格式）或 markdown
-                return result.data.kramdown || result.data.markdown || '';
+                // 获取 kramdown 或 markdown 格式
+                const rawContent = result.data.kramdown || result.data.markdown || '';
+
+                // 清理元数据，返回纯文本
+                const cleanedContent = this.cleanKramdownMetadata(rawContent);
+
+                return cleanedContent;
             }
 
             console.warn(`[ContextExtractor] API returned error for block ${blockId}:`, result);
@@ -357,6 +418,32 @@ export class ContextExtractor {
             throw new Error(`Invalid block ID format: ${blockId}`);
         }
         return blockId;
+    }
+
+    /**
+     * 获取引用块的完整内容（用于自定义块引用占位符）
+     * @param blockId 块ID
+     * @returns 块内容（Markdown 格式）
+     */
+    private async getReferencedBlockContent(blockId: string): Promise<string> {
+        try {
+            // 安全验证（防止 SQL 注入）
+            const safeBlockId = this.sanitizeBlockId(blockId);
+
+            // 使用现有 API 获取块内容
+            const content = await this.getBlockKramdownViaAPI(safeBlockId);
+
+            if (content) {
+                return content;
+            }
+
+            // 如果失败，记录警告并返回空字符串
+            console.warn(`[ContextExtractor] Block ${blockId} not found or empty`);
+            return '';
+        } catch (error) {
+            console.error(`[ContextExtractor] Error getting referenced block ${blockId}:`, error);
+            return `[Error: Cannot fetch block ${blockId}]`;
+        }
     }
 
     private async getSiblingBlocksViaAPI(
@@ -390,7 +477,7 @@ export class ContextExtractor {
             const currentBlock = currentBlockResult.data[0];
             const rootId = this.sanitizeBlockId(currentBlock.root_id);
             const currentSort = parseInt(currentBlock.sort, 10);
-            const safeCount = Math.max(1, Math.min(100, parseInt(String(count), 10))); // Limit to 1-100
+            const safeCount = Math.max(1, parseInt(String(count), 10)); // Ensure positive, no upper limit
 
             // Validate numeric values
             if (isNaN(currentSort)) {
@@ -432,19 +519,46 @@ export class ContextExtractor {
                 return [];
             }
 
-            // 处理结果
-            let siblings = siblingResult.data.map((row: any) => ({
-                id: row.id,
-                content: row.content || '',
-                type: row.type || 'paragraph'
-            }));
+            // 处理结果：获取每个块的完整内容
+            // 注意：SQL的content字段只是标题/摘要，需要用API获取完整内容
+            const blockIds = siblingResult.data.map((row: any) => row.id);
+
+            // 分批并行获取完整内容（控制并发数，避免浏览器/服务器过载）
+            const BATCH_SIZE = 10; // 每批处理10个请求
+            const siblings: Array<{ id: string; content: string; type: string }> = [];
+
+            for (let i = 0; i < blockIds.length; i += BATCH_SIZE) {
+                const batchIds = blockIds.slice(i, i + BATCH_SIZE);
+
+                const batchPromises = batchIds.map(async (id: string) => {
+                    try {
+                        const fullContent = await this.getBlockKramdownViaAPI(id);
+                        return {
+                            id: id,
+                            content: fullContent || '',
+                            type: siblingResult.data.find((r: any) => r.id === id)?.type || 'paragraph'
+                        };
+                    } catch (error) {
+                        console.warn(`[ContextExtractor] Failed to fetch content for block ${id}:`, error);
+                        // Fallback to SQL content (title/summary)
+                        const row = siblingResult.data.find((r: any) => r.id === id);
+                        return {
+                            id: id,
+                            content: row?.content || '',
+                            type: row?.type || 'paragraph'
+                        };
+                    }
+                });
+
+                const batchResults = await Promise.all(batchPromises);
+                siblings.push(...batchResults);
+            }
 
             // 如果是向上获取，需要反转顺序（因为SQL是降序查询的）
             if (direction === 'above') {
                 siblings.reverse();
             }
 
-            console.log(`[ContextExtractor] API found ${siblings.length} ${direction} blocks for ${blockId}`);
             return siblings;
 
         } catch (error) {
@@ -462,19 +576,15 @@ export class ContextExtractor {
     public applyPlaceholders(template: string, context: ContextInfo): string {
         let result = template;
 
-        // 替换上文占位符（直接替换为内容，不添加标签）
-        if (context.aboveContent) {
-            const aboveType = context.isBlockMode ? 'above_blocks' : 'above';
-            const aboveRegex = new RegExp(`\\{${aboveType}=\\d+\\}`, 'g');
-            result = result.replace(aboveRegex, context.aboveContent);
-        }
+        // 替换上文占位符（始终替换，即使内容为空）
+        const aboveType = context.isBlockMode ? 'above_blocks' : 'above';
+        const aboveRegex = new RegExp(`\\{${aboveType}=\\d+\\}`, 'g');
+        result = result.replace(aboveRegex, context.aboveContent || '');
 
-        // 替换下文占位符（直接替换为内容，不添加标签）
-        if (context.belowContent) {
-            const belowType = context.isBlockMode ? 'below_blocks' : 'below';
-            const belowRegex = new RegExp(`\\{${belowType}=\\d+\\}`, 'g');
-            result = result.replace(belowRegex, context.belowContent);
-        }
+        // 替换下文占位符（始终替换，即使内容为空）
+        const belowType = context.isBlockMode ? 'below_blocks' : 'below';
+        const belowRegex = new RegExp(`\\{${belowType}=\\d+\\}`, 'g');
+        result = result.replace(belowRegex, context.belowContent || '');
 
         return result;
     }
@@ -486,22 +596,34 @@ export class ContextExtractor {
      * @returns 替换后的模板
      */
     public async processTemplate(template: string, blockIds: string[]): Promise<string> {
-        // 检查是否包含占位符
-        if (!this.hasPlaceholders(template)) {
-            return template;
+        let result = template;
+
+        // 1. 处理现有占位符（{above=N}, {below=N}, {above_blocks=N}, {below_blocks=N}）
+        if (this.hasPlaceholders(result)) {
+            const placeholders = this.parsePlaceholders(result);
+
+            if (placeholders.length > 0) {
+                const context = await this.extractContext(blockIds, placeholders);
+                result = this.applyPlaceholders(result, context);
+            }
         }
 
-        // 解析占位符
-        const placeholders = this.parsePlaceholders(template);
-        if (placeholders.length === 0) {
-            return template;
+        // 2. 处理自定义块引用占位符 {custom=((blockid 'name'))}
+        const customPlaceholders = this.parseCustomBlockPlaceholders(result);
+        if (customPlaceholders.length > 0) {
+            // 并行获取所有引用块内容（性能优化）
+            const contentPromises = customPlaceholders.map(p =>
+                this.getReferencedBlockContent(p.blockId)
+            );
+            const contents = await Promise.all(contentPromises);
+
+            // 替换占位符为实际内容
+            customPlaceholders.forEach((placeholder, index) => {
+                result = result.replace(placeholder.original, contents[index]);
+            });
         }
 
-        // 提取上下文
-        const context = await this.extractContext(blockIds, placeholders);
-
-        // 应用替换
-        return this.applyPlaceholders(template, context);
+        return result;
     }
 
     /**

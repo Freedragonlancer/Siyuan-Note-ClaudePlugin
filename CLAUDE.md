@@ -32,6 +32,85 @@ npm run build         # Build only
 - [ ] Quick Edit works with all presets
 - [ ] Filter rules apply correctly
 - [ ] Settings persist after restart
+- [ ] Command history navigation works (Up/Down arrows)
+- [ ] Batch operations perform well (200+ blocks)
+
+---
+
+## Automated Deployment Workflow
+
+### Available Commands
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `npm run deploy` | Standard deployment | Normal development - incremental changes |
+| `npm run clean-cache` | Clear SiYuan cache only | UI not updating, cached resources |
+| `npm run clean-deploy` | Full clean deployment | Major issues, multiple topbar icons, complete refresh |
+| `npm run clean-deploy:auto-start` | Clean deploy + auto-start SiYuan | Automated workflow, save time |
+
+### Deployment Scenarios
+
+**Scenario 1: Normal Development (Incremental Changes)**
+```bash
+# Standard workflow - fastest
+npm run deploy
+# Then: Restart SiYuan (F5)
+```
+
+**Scenario 2: Cache Issues (UI Not Updating)**
+```bash
+# 1. Clear cache only (SiYuan must be closed)
+npm run clean-cache
+
+# 2. Restart SiYuan manually
+```
+
+**Scenario 3: Major Issues or Clean Start**
+```bash
+# Full clean deployment (closes SiYuan automatically)
+npm run clean-deploy
+
+# Or with auto-start
+npm run clean-deploy:auto-start
+```
+
+### What Each Script Does
+
+**`npm run clean-deploy`** performs:
+1. ✓ Closes SiYuan application
+2. ✓ Removes SiYuan cache (`N:/Siyuan-Note/temp`)
+3. ✓ Deletes old plugin directory
+4. ✓ Cleans dist folder
+5. ✓ Rebuilds plugin from source
+6. ✓ Copies all files (js, css, json, icon, readme)
+7. ✓ Verifies deployment (file existence check)
+
+**`npm run clean-cache`** performs:
+1. ✓ Removes SiYuan cache only
+2. ✓ Does NOT delete plugin files
+3. ✓ Does NOT rebuild
+4. ⚠ Requires manual SiYuan restart
+
+### When to Use Clean Deploy
+
+Use `npm run clean-deploy` when encountering:
+- **Multiple topbar icons** (3+ duplicate icons)
+- **Settings UI not rendering** (blank panels)
+- **CSS changes not applying** (old styles persist)
+- **JavaScript errors after refactoring** (stale code)
+- **Plugin behavior inconsistent** (cache conflicts)
+
+### Configuration
+
+Edit `scripts/clean-deploy.cjs` to customize paths:
+
+```javascript
+const CONFIG = {
+    siyuanPath: 'N:/Siyuan-Note',
+    pluginName: 'siyuan-plugin-claude-assistant',
+    siyuanExe: 'N:/Siyuan-Note/SiYuan.exe',
+};
+```
 
 ---
 
@@ -116,9 +195,9 @@ FilterPipeline
 - Orchestrator coordinating Quick Edit workflow
 - Entry point: `trigger()` method
 - Delegates to specialized modules (SelectionHandler, PromptBuilder, etc.)
-- Status: Transitioning from monolithic to modular (backward compatible)
+- Hybrid architecture: legacy monolithic + new modular components (backward compatible)
 
-**Modular Components (NEW v0.9.0)**:
+**Modular Components** (v0.9.0+):
 
 **SelectionHandler** (`src/quick-edit/SelectionHandler.ts`)
 - Extracts text selection from SiYuan editor
@@ -135,7 +214,11 @@ FilterPipeline
 **BlockOperations** (`src/quick-edit/BlockOperations.ts`)
 - Encapsulates all SiYuan API operations
 - Methods: `insertBlock()`, `deleteBlock()`, `updateBlock()`
-- Batch operations: `insertMultipleBlocks()`, `deleteMultipleBlocks()`
+- **Batch operations** (v0.9.3 - Performance optimized):
+  - `insertMultipleBlocks()` - Auto-selects batch/sequential based on count (10+ uses batch API)
+  - `deleteMultipleBlocks()` - Uses `/api/transactions` for batch deletion
+  - Version detection with graceful fallback for older SiYuan versions
+  - **Performance**: 96% faster for 200+ blocks (20s → 2s)
 - Markdown formatting: `applyMarkdownFormatting()`
 
 **EditStateManager** (`src/quick-edit/EditStateManager.ts`)
@@ -151,12 +234,27 @@ FilterPipeline
 - Preset selector with quick access buttons
 - Input field with dynamic placeholder (from `PromptTemplate.inputPlaceholder`)
 - Persistence: Dual-storage (localStorage cache + file storage)
+- **Terminal-style command history** (v0.10.0):
+  - Up/Down arrow keys to browse last 30 commands
+  - Auto-saves submitted instructions
+  - Smart deduplication (skips consecutive duplicates)
+  - State machine: normal → browsing → exit on edit
+
+**InstructionHistoryManager** (`src/quick-edit/InstructionHistoryManager.ts`)
+- FIFO queue with max 30 entries (auto-removes oldest)
+- Dual-layer persistence (localStorage + file storage)
+- Storage path: `/data/storage/siyuan-plugin-claude-assistant/instruction-history.json`
+- Navigation API: `navigate(currentIndex, 'up'|'down')`
+- Key methods: `addEntry()`, `getHistory()`, `navigate()`, `clearHistory()`
 
 **ContextExtractor** (`src/quick-edit/ContextExtractor.ts`)
-- Parses template placeholders: `{above=N}`, `{below=N}`, `{above_blocks=N}`, `{below_blocks=N}`
+- Parses template placeholders: `{above=N}`, `{below=N}`, `{above_blocks=N}`, `{below_blocks=N}`, `{custom=((blockid 'name'))}`
 - Extracts surrounding context from SiYuan document via SQL API or DOM fallback
-- **Security**: Sanitizes blockId to prevent SQL injection (v0.9.0)
-- **Optimization**: Uses `root_id` for efficient block queries (v0.9.0)
+- **Custom block reference** (v0.9.3): `{custom=((blockid 'name'))}` - fetches referenced block content
+- **Security** (v0.9.0): Sanitizes blockId to prevent SQL injection
+- **Optimization** (v0.9.0): Uses `root_id` for efficient block queries
+- **Performance** (v0.9.2): Batch processing for large context (10 blocks per batch, removes 100-block limit)
+- **Metadata cleaning** (v0.9.2): Removes Kramdown IAL attributes for clean text output
 - Key method: `extractContext(template, blockId): Promise<string>`
 
 **InlineEditRenderer** (`src/quick-edit/InlineEditRenderer.ts`)
@@ -193,10 +291,92 @@ interface FilterRule {
 ### Quick Edit Flow
 
 1. **Trigger**: User selects text/blocks → Right-click menu or keyboard shortcut
-2. **Input**: Popup shows preset buttons + instruction input (with dynamic placeholder)
+2. **Input**: Popup shows preset buttons + instruction input (with dynamic placeholder and command history)
 3. **Process**: Build prompt with template + context → Stream AI response → Apply filters
 4. **Preview**: Render comparison block in document
 5. **Action**: User accepts (replace blocks) or rejects (restore original)
+
+### Command History (v0.10.0)
+
+The instruction input popup supports terminal-style command history:
+
+**Navigation**:
+- **Up Arrow** (↑): Browse to previous (older) command
+- **Down Arrow** (↓): Browse to next (newer) command
+- **Down at newest**: Restores your original input before browsing
+- **Start typing**: Exits browsing mode, returns to normal editing
+
+**Features**:
+- Automatically saves up to 30 recent commands (FIFO)
+- Smart deduplication (skips consecutive identical entries)
+- Persistent storage (survives SiYuan restart)
+- Dual-layer: localStorage (fast) + file storage (reliable)
+
+**Storage Location**:
+`N:/Siyuan-Note/data/storage/siyuan-plugin-claude-assistant/instruction-history.json`
+
+### Template Placeholders
+
+Quick Edit templates support the following placeholders:
+
+#### Context Placeholders
+- `{above=N}` - Get N lines of text above the selection
+- `{below=N}` - Get N lines of text below the selection
+- `{above_blocks=N}` - Get N SiYuan blocks above the selection
+- `{below_blocks=N}` - Get N SiYuan blocks below the selection
+
+#### Custom Block Reference Placeholder (v0.9.3+)
+- `{custom=((blockid 'name'))}` - Fetch content from a referenced SiYuan block
+
+**Syntax**: `{custom=((20251028231736-h1436a9 '第二章'))}`
+- `((blockid 'name'))` - SiYuan block reference format
+- The plugin automatically fetches the referenced block's complete content
+- Multiple `{custom=...}` placeholders can be used in the same template
+- Can be combined with other placeholders
+
+**Example 1: Reference Documentation**
+```markdown
+editInstruction: |
+  参考以下API文档：
+
+  {custom=((20251028231736-h1436a9 'API文档'))}
+
+  基于上述文档，{instruction}
+
+  原始代码：
+  {original}
+```
+
+**Example 2: Combine Multiple References**
+```markdown
+editInstruction: |
+  背景知识：
+  {custom=((20251028231736-h1436a9 '第一章：基础'))}
+
+  进阶内容：
+  {custom=((20251029142530-x8k2p4m '第二章：实战'))}
+
+  任务：{instruction}
+
+  待处理内容：
+  {original}
+```
+
+**Example 3: Mix with Context Placeholders**
+```markdown
+editInstruction: |
+  上文参考：
+  {above_blocks=2}
+
+  参考文档：
+  {custom=((20251028231736-h1436a9 '技术规范'))}
+
+  任务：{instruction}
+  原文：{original}
+
+  下文参考：
+  {below_blocks=1}
+```
 
 ---
 
@@ -408,6 +588,10 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 ### Performance Notes
 - **Streaming**: Use array accumulation + join() instead of string concatenation (O(n) vs O(n²))
 - **DOM Queries**: Batch with single `querySelectorAll()` using comma-separated selectors
+- **DOM Caching** (v0.9.3): Use WeakMap to cache frequently accessed elements (InlineEditRenderer)
+- **Progress Throttling** (v0.9.3): Update progress indicators every 100ms instead of per-chunk
+- **Batch Operations** (v0.9.3): Use BlockOperations for bulk insert/delete (10+ blocks)
+- **Adaptive Delays** (v0.9.3): Dynamic timeout calculation based on operation size
 - **XSS Protection**: Always use `escapeHtml()` before setting `innerHTML`
 
 ---
@@ -446,6 +630,30 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 | Build fails | Run `npm install`, check Node 18+, clear `dist/` folder |
 | Changes not showing | Ensure `npm run deploy` succeeded, restart SiYuan (not just F5) |
 | Streaming timeout | Check API key, network, Anthropic status; increase timeout in ClaudeClient.ts |
+| **Multiple topbar icons (3+)** | **Run `npm run clean-deploy` - removes duplicates caused by improper cleanup** |
+| **Settings panel blank/invisible** | **Run `npm run clean-cache` then restart SiYuan - clears cached HTML/CSS** |
+| **CSS changes not applying** | **Run `npm run clean-cache` - forces fresh CSS load** |
+| **UI glitches after update** | **Run `npm run clean-deploy` - complete fresh start** |
+
+### Cache-Related Issues
+
+**Symptoms of cache problems:**
+- Multiple duplicate topbar icons (indicates plugin loaded multiple times)
+- Settings panel shows navigation but no content
+- CSS styling doesn't match code changes
+- JavaScript behaving inconsistently
+
+**Quick diagnosis:**
+1. Open SiYuan DevTools (F12)
+2. Check console for errors
+3. Inspect element to see actual HTML structure
+4. Compare with expected structure in source code
+
+**Solutions (in order of escalation):**
+1. **Simple restart**: Close SiYuan → Reopen (F5)
+2. **Cache clear**: `npm run clean-cache` → Restart SiYuan
+3. **Clean deploy**: `npm run clean-deploy` (closes SiYuan, full rebuild)
+4. **Manual cleanup**: Delete `N:/Siyuan-Note/temp` + plugin folder manually
 
 ---
 
@@ -454,12 +662,13 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 ### Core Logic
 - `src/index.ts` - Plugin entry, lifecycle
 - `src/quick-edit/QuickEditManager.ts` - Quick Edit orchestrator
-- `src/quick-edit/SelectionHandler.ts` - Selection extraction (NEW v0.9.0)
-- `src/quick-edit/PromptBuilder.ts` - Prompt construction (NEW v0.9.0)
-- `src/quick-edit/BlockOperations.ts` - SiYuan API wrapper (NEW v0.9.0)
-- `src/quick-edit/EditStateManager.ts` - State management (NEW v0.9.0)
+- `src/quick-edit/SelectionHandler.ts` - Selection extraction (v0.9.0)
+- `src/quick-edit/PromptBuilder.ts` - Prompt construction (v0.9.0)
+- `src/quick-edit/BlockOperations.ts` - SiYuan API wrapper with batch operations (v0.9.0, optimized v0.9.3)
+- `src/quick-edit/EditStateManager.ts` - State management (v0.9.0)
+- `src/quick-edit/InstructionHistoryManager.ts` - Command history manager (v0.10.0)
 
-### AI Provider Layer (NEW v0.9.0)
+### AI Provider Layer (v0.9.0)
 - `src/ai/types.ts` - AIProvider interface definitions
 - `src/ai/AnthropicProvider.ts` - Claude implementation
 - `src/ai/AIProviderFactory.ts` - Provider registry and factory
@@ -467,13 +676,13 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 
 ### Filtering System
 - `src/filter/ResponseFilter.ts` - Legacy regex-based filtering
-- `src/filter/FilterPipeline.ts` - Middleware pipeline system (NEW v0.9.0)
-- `src/filter/middleware.ts` - Built-in middleware (NEW v0.9.0)
+- `src/filter/FilterPipeline.ts` - Middleware pipeline system (v0.9.0)
+- `src/filter/middleware.ts` - Built-in middleware (v0.9.0)
 - `src/filter/types.ts` - FilterRule, FilterResult
 
 ### UI Components
-- `src/quick-edit/InstructionInputPopup.ts` - Preset selector + input
-- `src/quick-edit/InlineEditRenderer.ts` - Comparison block rendering
+- `src/quick-edit/InstructionInputPopup.ts` - Preset selector + input with command history (v0.10.0)
+- `src/quick-edit/InlineEditRenderer.ts` - Comparison block rendering with DOM caching (v0.9.3)
 - `src/sidebar/UnifiedAIPanel.ts` - Main chat interface
 
 ### Configuration
@@ -487,7 +696,7 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 
 ### Types
 - `src/claude/types.ts` - ClaudeSettings, Message
-- `src/ai/types.ts` - AIProvider, AIModelConfig (NEW v0.9.0)
+- `src/ai/types.ts` - AIProvider, AIModelConfig (v0.9.0)
 - `src/filter/types.ts` - FilterRule, FilterResult
 - `src/editor/types.ts` - EditSettings, TextSelection
 
@@ -524,25 +733,21 @@ Activate with: `/skill siyuan-plugin`
 
 ## Architecture Documentation
 
-For detailed architecture information (v0.9.0 Refactoring):
+For detailed architecture information:
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete architecture guide (coming soon)
-  - Module details and responsibilities
-  - Data flow diagrams
-  - Extensibility points
-  - Performance optimizations
+- **[MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md)** - Module usage guide
+  - Detailed API documentation for modular components (v0.9.0+)
+  - Code examples and best practices
+  - Testing examples
+  - Migration checklist from legacy code
 
-- **[REFACTORING.md](REFACTORING.md)** - v0.9.0 refactoring log
+- **[REFACTORING.md](REFACTORING.md)** - Refactoring history (v0.9.0-v0.10.0)
   - Phase 1: Security fixes (SQL injection, async initialization)
   - Phase 2: AI Provider abstraction & Filter Pipeline
   - Phase 3: QuickEditManager modularization
+  - Phase 4: Performance optimizations (batch operations)
+  - Phase 5: Command history feature
   - Migration guide and backward compatibility notes
-
-- **[MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md)** - Module usage guide
-  - Detailed API documentation for new modules
-  - Code examples and best practices
-  - Testing examples
-  - Migration checklist
 
 ---
 
@@ -561,13 +766,14 @@ For detailed architecture information (v0.9.0 Refactoring):
 - Context extraction limited to linear document structure
 - No offline mode (requires active API connection)
 - API keys stored unencrypted in localStorage
-- QuickEditManager partially modularized (ongoing refactoring)
-  - New modules available for use (SelectionHandler, BlockOperations, PromptBuilder, EditStateManager)
-  - Full migration to modular architecture planned for v0.10.0
+- QuickEditManager uses hybrid architecture (legacy monolithic + new modular components)
+  - New modules available: SelectionHandler, BlockOperations, PromptBuilder, EditStateManager, InstructionHistoryManager
+  - Core workflow still uses legacy code paths (backward compatible)
+  - Full migration to pure modular architecture planned for future release
 - Multi-provider support framework ready, but only Anthropic implemented
   - OpenAI and Gemini providers planned for future releases
 
 ---
 
-**Last Updated**: 2025-01-06
-**Version**: 0.8.0 (Architecture v0.9.0)
+**Last Updated**: 2025-01-10
+**Version**: 0.10.0

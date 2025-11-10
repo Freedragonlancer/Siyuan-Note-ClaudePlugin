@@ -22,6 +22,7 @@ import { DiffRenderer } from "../editor/DiffRenderer";
 import { EditorHelper } from "../editor";
 import { ContextExtractor } from "../quick-edit/ContextExtractor";
 import { DEFAULT_SELECTION_QA_TEMPLATE } from "../settings/config-types";
+import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
@@ -72,6 +73,13 @@ export class UnifiedAIPanel {
     private messagesContainer?: HTMLElement;
     private diffContainer?: HTMLElement;
 
+    // Preset event subscription (NEW v0.9.0)
+    private presetEventUnsubscribe: (() => void) | null = null;
+
+    // Preset selector population retry counter
+    private populateSelectorRetries = 0;
+    private readonly MAX_POPULATE_RETRIES = 3;
+
     constructor(
         claudeClient: ClaudeClient,
         textSelectionManager: TextSelectionManager,
@@ -96,8 +104,34 @@ export class UnifiedAIPanel {
         // Create UI
         this.element = this.createPanel();
 
+        // Initialize preset loading asynchronously (deferred)
+        // Set to 'default' initially, will be updated after file storage loads
+        this.activeChatPresetId = 'default';
+
+        // Load persisted AI Dock preset selection asynchronously
+        this.loadAIDockPresetSelection()
+            .then((presetId) => {
+                this.activeChatPresetId = presetId;
+                console.log('[UnifiedAIPanel] Constructor - active preset loaded:', presetId);
+
+                // Update UI after preset loaded
+                const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
+                if (selector) {
+                    selector.value = presetId;
+                }
+
+                // Notify preset selection to synchronize with Settings Panel
+                this.notifyAIDockPresetSelection(presetId);
+            })
+            .catch((error) => {
+                console.warn('[UnifiedAIPanel] Failed to load AI Dock preset:', error);
+            });
+
         // Populate preset selector
         this.populatePresetSelector();
+
+        // NEW v0.9.0: Subscribe to preset events for automatic UI refresh
+        this.subscribeToPresetEvents();
 
         // Setup event listeners
         this.attachEventListeners();
@@ -461,6 +495,9 @@ export class UnifiedAIPanel {
         presetSelector?.addEventListener("change", () => {
             this.activeChatPresetId = presetSelector.value;
             console.log(`[UnifiedAIPanel] Switched to preset: ${this.activeChatPresetId}`);
+
+            // Persist AI Dock preset selection to localStorage
+            this.saveAIDockPresetSelection(this.activeChatPresetId);
         });
         clearBtn?.addEventListener("click", () => this.clearChat());
 
@@ -513,9 +550,9 @@ export class UnifiedAIPanel {
             // Get active preset
             const configManager = (this.claudeClient as any).configManager;
             let activePreset: any = null;
-            if (configManager && configManager.getAllTemplates) {
-                const templates = configManager.getAllTemplates();
-                activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+            if (configManager && configManager.getTemplateById) {
+                // NEW v0.9.0: Use getTemplateById() instead of find() for better performance
+                activePreset = configManager.getTemplateById(this.activeChatPresetId);
             }
 
             // Get Selection Q&A template from preset (fallback to default)
@@ -585,9 +622,9 @@ export class UnifiedAIPanel {
         // Get active preset
         const configManager = (this.claudeClient as any).configManager;
         let activePreset: any = null;
-        if (configManager && configManager.getAllTemplates) {
-            const templates = configManager.getAllTemplates();
-            activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+        if (configManager && configManager.getTemplateById) {
+            // NEW v0.9.0: Use getTemplateById() instead of find() for better performance
+            activePreset = configManager.getTemplateById(this.activeChatPresetId);
         }
 
         // Get system prompt from preset (fallback to global if not set)
@@ -604,6 +641,10 @@ export class UnifiedAIPanel {
 
         // Get filter rules for active preset
         const filterRules = this.claudeClient.getFilterRules(this.activeChatPresetId);
+
+        // Diagnostic logging
+        console.log(`[UnifiedAIPanel] Sending message - Preset: ${activePreset?.name ?? 'default'} (${this.activeChatPresetId})`);
+        console.log(`[UnifiedAIPanel] SystemPrompt: ${systemPrompt?.length ?? 0} chars, Messages: ${apiMessages.length}, FilterRules: ${filterRules?.length ?? 0}`);
 
         await this.claudeClient.sendMessage(
             apiMessages,
@@ -1076,9 +1117,9 @@ export class UnifiedAIPanel {
         // Get active preset
         const configManager = (this.claudeClient as any).configManager;
         let activePreset: any = null;
-        if (configManager && configManager.getAllTemplates) {
-            const templates = configManager.getAllTemplates();
-            activePreset = templates.find((t: any) => t.id === this.activeChatPresetId);
+        if (configManager && configManager.getTemplateById) {
+            // NEW v0.9.0: Use getTemplateById() instead of find() for better performance
+            activePreset = configManager.getTemplateById(this.activeChatPresetId);
         }
 
         // Get system prompt from preset (fallback to global if not set)
@@ -1095,6 +1136,10 @@ export class UnifiedAIPanel {
 
         // Get filter rules for active preset
         const filterRules = this.claudeClient.getFilterRules(this.activeChatPresetId);
+
+        // Diagnostic logging
+        console.log(`[UnifiedAIPanel] Sending message - Preset: ${activePreset?.name ?? 'default'} (${this.activeChatPresetId})`);
+        console.log(`[UnifiedAIPanel] SystemPrompt: ${systemPrompt?.length ?? 0} chars, Messages: ${apiMessages.length}, FilterRules: ${filterRules?.length ?? 0}`);
 
         await this.claudeClient.sendMessage(
             apiMessages,
@@ -1559,6 +1604,152 @@ export class UnifiedAIPanel {
             console.warn('[UnifiedAIPanel] Failed to save queue state:', error);
         }
     }
+
+    /**
+     * Save AI Dock preset selection to localStorage and file storage
+     * @param presetId - The preset ID to save
+     */
+    private saveAIDockPresetSelection(presetId: string) {
+        try {
+            // Save to localStorage (fast, synchronous)
+            localStorage.setItem('claude-ai-dock-preset-id', presetId);
+            console.log(`[UnifiedAIPanel] Saved AI Dock preset to localStorage: ${presetId}`);
+
+            // Save to file storage (reliable, async)
+            const plugin = this.claudeClient.plugin;
+            console.log('[UnifiedAIPanel] Checking plugin for file storage:', {
+                hasPlugin: !!plugin,
+                hasSaveData: plugin && typeof plugin.saveData === 'function'
+            });
+
+            if (plugin && typeof plugin.saveData === 'function') {
+                console.log(`[UnifiedAIPanel] Saving to file storage: ${presetId}`);
+                plugin.saveData('ai-dock-preset.json', { presetId })
+                    .then(() => {
+                        console.log(`[UnifiedAIPanel] ✅ Saved AI Dock preset to file storage: ${presetId}`);
+                    })
+                    .catch((err: Error) => {
+                        console.warn('[UnifiedAIPanel] ❌ Failed to save AI Dock preset to file storage:', err);
+                    });
+            } else {
+                console.warn('[UnifiedAIPanel] ⚠️ Cannot save to file storage - plugin not available');
+            }
+        } catch (error) {
+            console.warn('[UnifiedAIPanel] Failed to save AI Dock preset:', error);
+        }
+    }
+
+    /**
+     * Load AI Dock preset selection from file storage and localStorage
+     * Priority: file storage > localStorage > 'default'
+     * @param timeoutMs - Timeout for file loading (default: 3000ms)
+     * @returns The saved preset ID or 'default' if none found
+     */
+    private async loadAIDockPresetSelection(timeoutMs: number = 3000): Promise<string> {
+        const plugin = this.claudeClient.plugin;
+        let filePresetId: string | null = null;
+        let localStoragePresetId: string | null = null;
+
+        console.log('[UnifiedAIPanel] Loading AI Dock preset - checking plugin:', {
+            hasPlugin: !!plugin,
+            hasLoadData: plugin && typeof plugin.loadData === 'function'
+        });
+
+        // Try loading from file storage first (most reliable)
+        if (plugin && typeof plugin.loadData === 'function') {
+            console.log('[UnifiedAIPanel] Attempting to load from file storage...');
+            try {
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('File load timeout')), timeoutMs);
+                });
+
+                const loadPromise = plugin.loadData('ai-dock-preset.json') as Promise<{ presetId: string } | null>;
+                const stored = await Promise.race([loadPromise, timeoutPromise]);
+
+                console.log('[UnifiedAIPanel] File storage data received:', stored);
+
+                if (stored && typeof stored === 'object' && stored.presetId) {
+                    filePresetId = stored.presetId;
+                    console.log(`[UnifiedAIPanel] ✅ Loaded AI Dock preset from file: ${filePresetId}`);
+                } else {
+                    console.log('[UnifiedAIPanel] No valid preset data in file storage');
+                }
+            } catch (error) {
+                if (error instanceof Error && error.message === 'File load timeout') {
+                    console.warn('[UnifiedAIPanel] ⏱️ File load timed out, using localStorage');
+                } else {
+                    console.warn('[UnifiedAIPanel] ❌ Failed to load AI Dock preset from file:', error);
+                }
+            }
+        } else {
+            console.warn('[UnifiedAIPanel] ⚠️ Cannot load from file storage - plugin not available');
+        }
+
+        // Fallback to localStorage
+        try {
+            localStoragePresetId = localStorage.getItem('claude-ai-dock-preset-id');
+            if (localStoragePresetId) {
+                console.log(`[UnifiedAIPanel] Loaded AI Dock preset from localStorage: ${localStoragePresetId}`);
+            }
+        } catch (error) {
+            console.warn('[UnifiedAIPanel] Failed to load AI Dock preset from localStorage:', error);
+        }
+
+        // Use file storage if available, otherwise localStorage
+        const resultPresetId = filePresetId ?? localStoragePresetId ?? 'default';
+
+        // Sync localStorage with file storage value (file storage takes precedence)
+        if (filePresetId && filePresetId !== localStoragePresetId) {
+            try {
+                localStorage.setItem('claude-ai-dock-preset-id', filePresetId);
+                console.log(`[UnifiedAIPanel] Synced localStorage: ${localStoragePresetId} → ${filePresetId}`);
+            } catch (error) {
+                console.warn('[UnifiedAIPanel] Failed to sync localStorage:', error);
+            }
+        }
+
+        console.log(`[UnifiedAIPanel] Final loaded preset: ${resultPresetId}`);
+        return resultPresetId;
+    }
+
+    /**
+     * Notify AI Dock preset selection to PresetEventBus
+     * (Synchronize with Settings Panel and other components)
+     *
+     * @param presetId - The preset ID to notify
+     */
+    private notifyAIDockPresetSelection(presetId: string): void {
+        // Don't notify for default preset (avoid unnecessary events)
+        if (!presetId || presetId === 'default') {
+            console.log('[UnifiedAIPanel] No custom preset to notify (using default)');
+            return;
+        }
+
+        try {
+            // Get ConfigManager and PresetEventBus
+            const configManager = (this.claudeClient as any).configManager;
+            if (!configManager || !configManager.getEventBus) {
+                console.warn('[UnifiedAIPanel] ConfigManager or event bus not available');
+                return;
+            }
+
+            const eventBus = configManager.getEventBus();
+            const preset = configManager.getTemplateById?.(presetId);
+
+            // Publish 'selected' event to notify other components
+            eventBus.publish({
+                type: 'selected',
+                presetId: presetId,
+                preset: preset,
+                timestamp: Date.now(),
+                source: 'UnifiedAIPanel.loadAIDockPresetSelection'
+            });
+
+            console.log(`[UnifiedAIPanel] Notified AI Dock preset selection: ${presetId}`);
+        } catch (error) {
+            console.warn('[UnifiedAIPanel] Failed to notify preset selection:', error);
+        }
+    }
     //#endregion
 
     //#region Utilities
@@ -1590,6 +1781,7 @@ export class UnifiedAIPanel {
 
     /**
      * Populate preset selector with available templates
+     * Includes retry mechanism for initialization timing issues
      */
     private populatePresetSelector(): void {
         const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
@@ -1598,16 +1790,33 @@ export class UnifiedAIPanel {
         // Get config manager from claude client
         const configManager = (this.claudeClient as any).configManager;
         if (!configManager || !configManager.getAllTemplates) {
-            console.warn('[UnifiedAIPanel] ConfigManager not available, using default preset only');
+            // Retry if ConfigManager not ready yet (initialization timing issue)
+            if (this.populateSelectorRetries < this.MAX_POPULATE_RETRIES) {
+                this.populateSelectorRetries++;
+                console.warn(`[UnifiedAIPanel] ConfigManager not ready, retrying (${this.populateSelectorRetries}/${this.MAX_POPULATE_RETRIES})...`);
+                setTimeout(() => this.populatePresetSelector(), 100);
+                return;
+            }
+            console.warn('[UnifiedAIPanel] ConfigManager not available after retries, using default preset only');
             return;
         }
 
         // Get all templates
         const templates = configManager.getAllTemplates();
         if (!templates || templates.length === 0) {
-            console.warn('[UnifiedAIPanel] No presets found');
+            // Retry if templates not loaded yet
+            if (this.populateSelectorRetries < this.MAX_POPULATE_RETRIES) {
+                this.populateSelectorRetries++;
+                console.warn(`[UnifiedAIPanel] No presets found, retrying (${this.populateSelectorRetries}/${this.MAX_POPULATE_RETRIES})...`);
+                setTimeout(() => this.populatePresetSelector(), 100);
+                return;
+            }
+            console.warn('[UnifiedAIPanel] No presets found after retries');
             return;
         }
+
+        // Reset retry counter on success
+        this.populateSelectorRetries = 0;
 
         // Clear existing options
         selector.innerHTML = '';
@@ -1622,6 +1831,7 @@ export class UnifiedAIPanel {
 
         // Set current selection
         selector.value = this.activeChatPresetId;
+        console.log('[UnifiedAIPanel] Preset selector populated, active preset:', this.activeChatPresetId);
     }
 
     /**
@@ -1629,6 +1839,55 @@ export class UnifiedAIPanel {
      */
     refreshPresetSelector(): void {
         this.populatePresetSelector();
+    }
+
+    /**
+     * Subscribe to preset events for automatic UI synchronization (NEW v0.9.0)
+     * Eliminates manual refresh requirements
+     */
+    private subscribeToPresetEvents(): void {
+        const configManager = (this.claudeClient as any).configManager;
+        if (!configManager || !configManager.getEventBus) {
+            console.warn('[UnifiedAIPanel] ConfigManager or event bus not available');
+            return;
+        }
+
+        const eventBus = configManager.getEventBus();
+
+        // Subscribe to all preset change events
+        this.presetEventUnsubscribe = eventBus.subscribeAll((event: PresetEvent) => {
+            console.log(`[UnifiedAIPanel] Preset event received: ${event.type} (${event.presetId})`);
+
+            // Auto-refresh preset selector when any change occurs
+            switch (event.type) {
+                case 'created':
+                case 'updated':
+                case 'deleted':
+                case 'imported':
+                    this.refreshPresetSelector();
+                    console.log(`[UnifiedAIPanel] Auto-refreshed preset selector after ${event.type} event`);
+                    break;
+                case 'selected':
+                    // Update preset selection and sync UI
+                    if (event.presetId) {
+                        this.activeChatPresetId = event.presetId;
+
+                        // Update dropdown UI to match
+                        const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
+                        if (selector) {
+                            selector.value = event.presetId;
+                        }
+
+                        // Persist to localStorage
+                        this.saveAIDockPresetSelection(event.presetId);
+
+                        console.log(`[UnifiedAIPanel] Preset selection changed to: ${event.presetId}`);
+                    }
+                    break;
+            }
+        });
+
+        console.log('[UnifiedAIPanel] Subscribed to preset events for automatic UI sync');
     }
     //#endregion
 
@@ -1856,6 +2115,12 @@ export class UnifiedAIPanel {
     destroy() {
         // Stop selection monitoring
         this.stopSelectionMonitoring();
+
+        // Unsubscribe from preset events (NEW v0.9.0)
+        if (this.presetEventUnsubscribe) {
+            this.presetEventUnsubscribe();
+            this.presetEventUnsubscribe = null;
+        }
 
         // Remove element
         this.element.remove();

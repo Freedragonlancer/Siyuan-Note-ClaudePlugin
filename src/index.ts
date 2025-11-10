@@ -118,7 +118,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         // Initialize Claude client with ConfigManager for preset-level filterRules
         this.claudeClient = new ClaudeClient(settings, this.configManager);
-        console.log("[Plugin] ClaudeClient initialized");
+        this.claudeClient.setPlugin(this); // Set plugin instance for file storage access
+        console.log("[Plugin] ClaudeClient initialized with plugin reference");
 
         // Migrate quickEditPromptTemplate to default preset (new two-level tab system)
         await this.migrateQuickEditToDefaultPreset();
@@ -607,7 +608,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private sendToAIEdit(protyle: any): void {
         const selection = this.getEditorSelection(protyle);
         if (!selection) {
-            showMessage(this.i18n.noTextSelected, 3000, "info");
+            showMessage(this.i18n?.noTextSelected || "请先选择文本", 3000, "info");
             return;
         }
 
@@ -758,7 +759,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             this.unifiedPanel?.addEditSelection(selection);
             this.toggleDock();
 
-            showMessage(`${this.i18n.aiEditQueued}: ${instruction}`, 2000, "info");
+            showMessage(`${this.i18n?.aiEditQueued || "AI 编辑已加入队列"}: ${instruction}`, 2000, "info");
         } else {
             // No instruction → enter edit mode
             console.log(`[AIEdit] Entering edit mode for selection ${textSelection.id}`);
@@ -769,7 +770,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             const lineInfo = textSelection.startLine === textSelection.endLine
                 ? `${textSelection.startLine + 1}`
                 : `${textSelection.startLine + 1}-${textSelection.endLine + 1}`;
-            showMessage(`${this.i18n.enterEditMode} (Line ${lineInfo})`, 2000, "info");
+            showMessage(`${this.i18n?.enterEditMode || "进入编辑模式"} (Line ${lineInfo})`, 2000, "info");
         }
     }
 
@@ -908,7 +909,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add "Send to AI Edit" menu item
         menu.addItem({
             icon: "iconEdit",
-            label: this.i18n.aiEdit,
+            label: (this.i18n && typeof this.i18n.aiEdit === 'string' && this.i18n.aiEdit.trim())
+                ? this.i18n.aiEdit
+                : "发送到 AI 编辑",
             click: () => {
                 console.log("[AIEdit] 'Send to AI Edit' clicked from context menu");
                 this.sendToAIEdit(protyle);
@@ -933,7 +936,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
             menu.addItem({
                 icon: "iconList",
-                label: this.i18n.aiEditPresets,
+                label: (this.i18n && typeof this.i18n.aiEditPresets === 'string' && this.i18n.aiEditPresets.trim())
+                    ? this.i18n.aiEditPresets
+                    : "AI 编辑预设",
                 type: "submenu",
                 submenu: submenus
             });

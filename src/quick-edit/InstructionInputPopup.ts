@@ -70,6 +70,23 @@ export class InstructionInputPopup {
                 // Just remember the preset ID for placeholder and button highlighting
                 presetIdToUse = lastPresetId;
                 instructionToUse = ''; // Keep empty for user input
+
+                // NEW: Notify preset selection to synchronize with Settings Panel
+                if (this.presetSelectionManager) {
+                    try {
+                        // Ensure manager is initialized
+                        await this.presetSelectionManager.init();
+
+                        // Sync internal state (update currentPresetId without saving)
+                        (this.presetSelectionManager as any).currentPresetId = lastPresetId;
+
+                        // Publish event to notify other components (Settings Panel)
+                        this.presetSelectionManager.notifyCurrentPreset();
+                        console.log(`[InstructionInputPopup] Notified preset selection: ${lastPresetId}`);
+                    } catch (error) {
+                        console.warn('[InstructionInputPopup] Failed to notify preset selection:', error);
+                    }
+                }
             } else {
                 console.warn(`[InstructionInputPopup] Preset ${lastPresetId} not found, clearing saved preset`);
                 // Clean up invalid preset ID (localStorage fallback)
@@ -626,15 +643,32 @@ export class InstructionInputPopup {
         if (this.presetSelectionManager) {
             try {
                 const presetId = await this.presetSelectionManager.getCurrentPresetId(false); // Don't wait for init
-                return presetId;
+                if (presetId) {
+                    return presetId;
+                }
             } catch (error) {
                 console.warn('[InstructionInputPopup] Failed to get preset from manager:', error);
             }
         }
 
-        // Fallback to localStorage (for backward compatibility during migration)
+        // Fallback to localStorage - read from NEW key (aligned with PresetSelectionManager)
         try {
-            return localStorage.getItem('claude-quick-edit-last-preset-index');
+            // Try new key first (PresetSelectionManager storage)
+            let presetId = localStorage.getItem('lastSelectedPresetId');
+
+            // Migration: Check old key for backward compatibility
+            if (!presetId) {
+                const oldPresetIndex = localStorage.getItem('claude-quick-edit-last-preset-index');
+                if (oldPresetIndex) {
+                    console.log('[InstructionInputPopup] Migrating from old preset storage key');
+                    // Migrate to new key
+                    localStorage.setItem('lastSelectedPresetId', oldPresetIndex);
+                    localStorage.removeItem('claude-quick-edit-last-preset-index');
+                    presetId = oldPresetIndex;
+                }
+            }
+
+            return presetId;
         } catch (error) {
             console.warn('[InstructionInputPopup] Failed to read last preset:', error);
             return null;
@@ -654,9 +688,12 @@ export class InstructionInputPopup {
             return;
         }
 
-        // Fallback to localStorage (for backward compatibility during migration)
+        // Fallback to localStorage - use NEW key (aligned with PresetSelectionManager)
         try {
-            localStorage.setItem('claude-quick-edit-last-preset-index', index);
+            localStorage.setItem('lastSelectedPresetId', index);
+
+            // Remove old key if it exists (cleanup migration)
+            localStorage.removeItem('claude-quick-edit-last-preset-index');
 
             // Save to file storage async if plugin available
             const plugin = (this.configManager as any).plugin;

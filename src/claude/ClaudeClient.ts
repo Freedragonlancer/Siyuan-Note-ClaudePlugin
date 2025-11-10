@@ -13,6 +13,7 @@ export class ClaudeClient {
     private logger: RequestLogger;
     private activeAbortController: AbortController | null = null;
     private configManager: any = null; // ConfigManager reference for preset-level filterRules
+    public plugin: any = null; // Plugin instance for file storage access
 
     constructor(settings: ClaudeSettings, configManager?: any) {
         this.settings = settings;
@@ -29,6 +30,13 @@ export class ClaudeClient {
      */
     setConfigManager(configManager: any): void {
         this.configManager = configManager;
+    }
+
+    /**
+     * Set plugin instance (for file storage access)
+     */
+    setPlugin(plugin: any): void {
+        this.plugin = plugin;
     }
 
     private initializeClient() {

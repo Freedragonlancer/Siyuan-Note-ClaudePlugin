@@ -1148,25 +1148,27 @@ export class SettingsPanelV3 {
      */
     private async loadPresetInfo(container: HTMLElement) {
         try {
-            // Get Quick Edit preset from localStorage (PresetSelectionManager uses it)
-            // Since we can't easily access the plugin instance here, we'll read from localStorage directly
-            const lastPresetIndex = localStorage.getItem('claude-quick-edit-last-preset-index');
-            const allPresets = this.configManager.getAllTemplates();
+            console.log('[SettingsPanelV3] Loading preset info...');
 
-            // Get Quick Edit preset
-            let quickEditPresetId = 'default';
-            if (lastPresetIndex !== null) {
-                const index = parseInt(lastPresetIndex, 10);
-                if (!isNaN(index) && index >= 0 && index < allPresets.length) {
-                    quickEditPresetId = allPresets[index].id;
-                }
-            }
-            this.quickEditPreset = this.configManager.getTemplateById(quickEditPresetId);
+            // Get Quick Edit preset from localStorage (PresetSelectionManager uses 'lastSelectedPresetId')
+            // NOTE: PresetSelectionManager stores preset ID (not index), aligned since v0.9.0
+            const quickEditPresetId = localStorage.getItem('lastSelectedPresetId') || 'default';
+            console.log('[SettingsPanelV3] Quick Edit preset ID from localStorage:', quickEditPresetId);
 
-            // Get AI Dock preset (default to 'default' since it's not persisted)
-            // TODO: When AI Dock preset persistence is implemented, read from settings
-            const aiDockPresetId = this.currentProfile.settings.aiDockPresetId || 'default';
-            this.aiDockPreset = this.configManager.getTemplateById(aiDockPresetId);
+            // Validate preset exists before using it
+            const preset = this.configManager.getTemplateById(quickEditPresetId);
+            this.quickEditPreset = preset || this.configManager.getTemplateById('default');
+            console.log('[SettingsPanelV3] Quick Edit preset loaded:', this.quickEditPreset?.name || 'default');
+
+            // Get AI Dock preset from localStorage (UnifiedAIPanel persists to 'claude-ai-dock-preset-id')
+            // NOTE: AI Dock now persists selection, aligned with Quick Edit persistence pattern
+            const aiDockPresetId = localStorage.getItem('claude-ai-dock-preset-id') || 'default';
+            console.log('[SettingsPanelV3] AI Dock preset ID from localStorage:', aiDockPresetId);
+
+            // Validate preset exists before using it
+            const aiDockPreset = this.configManager.getTemplateById(aiDockPresetId);
+            this.aiDockPreset = aiDockPreset || this.configManager.getTemplateById('default');
+            console.log('[SettingsPanelV3] AI Dock preset loaded:', this.aiDockPreset?.name || 'default');
 
             // Update the UI
             this.updatePresetCards(container);

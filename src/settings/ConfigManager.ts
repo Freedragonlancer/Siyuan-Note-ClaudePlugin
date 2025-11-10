@@ -120,7 +120,7 @@ export class ConfigManager {
         this.profiles.set(id, profile);
         this.saveProfiles();
 
-        console.log(`[ConfigManager] Created profile: ${name} (${id})`);
+        this.logger.debug(`Created profile: ${name} (${id})`);
         return profile;
     }
 
@@ -130,7 +130,7 @@ export class ConfigManager {
     updateProfile(id: string, updates: Partial<Omit<ConfigProfile, 'id' | 'createdAt'>>): boolean {
         const profile = this.profiles.get(id);
         if (!profile) {
-            console.error(`[ConfigManager] Profile not found: ${id}`);
+            this.logger.error(`Profile not found: ${id}`);
             return false;
         }
 
@@ -145,7 +145,7 @@ export class ConfigManager {
         this.profiles.set(id, updatedProfile);
         this.saveProfiles();
 
-        console.log(`[ConfigManager] Updated profile: ${id}`);
+        this.logger.debug(`Updated profile: ${id}`);
         return true;
     }
 
@@ -155,26 +155,26 @@ export class ConfigManager {
     deleteProfile(id: string): boolean {
         const profile = this.profiles.get(id);
         if (!profile) {
-            console.error(`[ConfigManager] Profile not found: ${id}`);
+            this.logger.error(`Profile not found: ${id}`);
             return false;
         }
 
         // Cannot delete default profile
         if (profile.isDefault) {
-            console.warn(`[ConfigManager] Cannot delete default profile: ${id}`);
+            this.logger.warn(`Cannot delete default profile: ${id}`);
             return false;
         }
 
         // Cannot delete active profile without switching
         if (this.activeProfileId === id) {
-            console.warn(`[ConfigManager] Cannot delete active profile. Switch to another profile first.`);
+            this.logger.warn(`Cannot delete active profile. Switch to another profile first.`);
             return false;
         }
 
         this.profiles.delete(id);
         this.saveProfiles();
 
-        console.log(`[ConfigManager] Deleted profile: ${id}`);
+        this.logger.debug(`Deleted profile: ${id}`);
         return true;
     }
 
@@ -204,7 +204,7 @@ export class ConfigManager {
     duplicateProfile(id: string, newName?: string): ConfigProfile | null {
         const sourceProfile = this.profiles.get(id);
         if (!sourceProfile) {
-            console.error(`[ConfigManager] Profile not found: ${id}`);
+            this.logger.error(`Profile not found: ${id}`);
             return null;
         }
 
@@ -228,57 +228,7 @@ export class ConfigManager {
     setActiveProfile(id: string): boolean {
         const profile = this.profiles.get(id);
         if (!profile) {
-            console.error(`[ConfigManager] Profile not found: ${id}`);
-            return false;
-        }
-
-        this.activeProfileId = id;
-        this.saveActiveProfile();
-
-        console.log(`[ConfigManager] Switched to profile: ${profile.name} (${id})`);
-        return true;
-    }
-
-    /**
-     * Get the currently active profile
-     */
-    getActiveProfile(): ConfigProfile {
-        if (this.activeProfileId && this.profiles.has(this.activeProfileId)) {
-            return this.profiles.get(this.activeProfileId)!;
-        }
-
-        // Fallback: find default or first profile
-        const defaultProfile = Array.from(this.profiles.values()).find(p => p.isDefault);
-        if (defaultProfile) {
-            this.activeProfileId = defaultProfile.id;
-            return defaultProfile;
-        }
-
-        // Last resort: create a default profile
-        console.warn('[ConfigManager] No profiles found, creating default profile');
-        const newDefault = this.createDefaultProfile();
-        this.activeProfileId = newDefault.id;
-        return newDefault;
-    }
-
-    /**
-     * Get active profile ID
-     */
-    getActiveProfileId(): string {
-        return this.activeProfileId;
-    }
-
-    //#endregion
-
-    //#region Import/Export
-
-    /**
-     * Export a single profile to JSON
-     */
-    exportProfile(id: string): string | null {
-        const profile = this.profiles.get(id);
-        if (!profile) {
-            console.error(`[ConfigManager] Profile not found: ${id}`);
+            this.logger.error(`Profile not found: ${id}`);
             return null;
         }
 

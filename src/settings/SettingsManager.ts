@@ -1,9 +1,12 @@
 import type { ClaudeSettings } from "../claude";
 import { DEFAULT_SETTINGS } from "../claude";
 import type { ISiYuanPlugin } from "@/types/siyuan";
+import { Logger } from "../utils/Logger";
 
 const STORAGE_KEY = "claude-assistant-settings";
 const STORAGE_FILE = "settings.json";
+
+const logger = Logger.createScoped('SettingsManager');
 
 /**
  * Manages plugin settings storage and retrieval
@@ -23,7 +26,7 @@ export class SettingsManager {
         // Then try to load from file asynchronously
         if (plugin) {
             this.loadPromise = this.loadFromFileAsync().catch(error => {
-                console.error("[SettingsManager] Async file load failed:", error);
+                logger.error('Async file load failed', error);
             });
         } else {
             // No plugin, resolve immediately
@@ -48,32 +51,26 @@ export class SettingsManager {
         }
 
         try {
-            console.log("[SettingsManager] Attempting to load from file:", STORAGE_FILE);
             const fileData = await this.plugin.loadData(STORAGE_FILE);
-            
+
             if (fileData) {
-                console.log("[SettingsManager] ✅ Found settings in file system");
-                console.log("[SettingsManager] File data type:", typeof fileData);
-                
                 // Check if fileData is already an object or a string
                 let parsed: any;
                 if (typeof fileData === 'string') {
-                    console.log("[SettingsManager] Parsing JSON string");
                     parsed = JSON.parse(fileData);
                 } else if (typeof fileData === 'object') {
-                    console.log("[SettingsManager] Data already parsed as object");
                     parsed = fileData;
                 } else {
-                    console.warn("[SettingsManager] Unexpected data type:", typeof fileData);
+                    logger.warn('Unexpected data type from file', typeof fileData);
                     return;
                 }
-                
+
                 // Update current settings
                 this.settings = {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
                 };
-                
+
                 // Save to memory caches
                 const serialized = JSON.stringify(parsed);
                 localStorage.setItem(STORAGE_KEY, serialized);
@@ -81,19 +78,14 @@ export class SettingsManager {
                 if (typeof window !== 'undefined') {
                     (window as any).__CLAUDE_SETTINGS__ = this.settings;
                 }
-                
-                console.log("[SettingsManager] ✅ Settings loaded from file and cached");
-                
+
                 // Notify callback that settings have been loaded
                 if (this.onSettingsLoadedCallback) {
-                    console.log("[SettingsManager] 🔔 Notifying callback of loaded settings");
                     this.onSettingsLoadedCallback(this.settings);
                 }
-            } else {
-                console.log("[SettingsManager] No data found in file");
             }
         } catch (error) {
-            console.error("[SettingsManager] Failed to load from file system:", error);
+            logger.error('Failed to load from file system', error);
         }
     }
 
@@ -101,27 +93,22 @@ export class SettingsManager {
      * Synchronous loading from memory caches
      */
     private loadSettings(): ClaudeSettings {
-        console.log("[SettingsManager] Loading settings from cache...");
-    
-        
         // Try global variable
         try {
             if (typeof window !== 'undefined' && (window as any).__CLAUDE_SETTINGS__) {
-                console.log("[SettingsManager] Found in window.__CLAUDE_SETTINGS__");
                 return {
                     ...DEFAULT_SETTINGS,
                     ...(window as any).__CLAUDE_SETTINGS__,
                 };
             }
         } catch (error) {
-            console.error("[SettingsManager] Failed to load from global variable:", error);
+            // Silent fallback to next storage
         }
-        
+
         // Try sessionStorage
         try {
             const sessionStored = sessionStorage.getItem(STORAGE_KEY);
             if (sessionStored) {
-                console.log("[SettingsManager] Found in sessionStorage");
                 const parsed = JSON.parse(sessionStored);
                 return {
                     ...DEFAULT_SETTINGS,
@@ -129,29 +116,24 @@ export class SettingsManager {
                 };
             }
         } catch (error) {
-            console.error("[SettingsManager] Failed to load from sessionStorage:", error);
+            // Silent fallback to next storage
         }
 
         // Try localStorage
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
-            console.log("[SettingsManager] Checking localStorage:", STORAGE_KEY);
-            
             if (stored) {
-                console.log("[SettingsManager] Found in localStorage");
                 const parsed = JSON.parse(stored);
                 return {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
                 };
-            } else {
-                console.log("[SettingsManager] localStorage is empty");
             }
         } catch (error) {
-            console.error("[SettingsManager] Failed to load from localStorage:", error);
+            // Silent fallback to defaults
         }
 
-        console.log("[SettingsManager] No stored settings found, using defaults");
+        logger.info('No stored settings found, using defaults');
         return {
             apiKey: "",
             ...DEFAULT_SETTINGS,
@@ -159,16 +141,12 @@ export class SettingsManager {
     }
 
     async saveSettings(settings: Partial<ClaudeSettings>) {
-        console.log("[SettingsManager] Saving settings:", settings);
-
         // FIX Critical 1.5: Save old settings for rollback in case of failure
         const oldSettings = { ...this.settings };
         const newSettings = { ...this.settings, ...settings };
-        console.log("[SettingsManager] Merged settings:", newSettings);
 
         try {
             const serialized = JSON.stringify(newSettings, null, 2);
-            console.log("[SettingsManager] Serialized settings (length:", serialized.length, ")");
 
             // FIX Critical 1.5: Save to all storages BEFORE updating in-memory state
             // This ensures atomicity - either all succeed or none succeed
@@ -179,11 +157,10 @@ export class SettingsManager {
 
             // Save to file system using SiYuan plugin API (most likely to fail)
             if (this.plugin && typeof this.plugin.saveData === 'function') {
-                console.log("[SettingsManager] Saving to plugin data file:", STORAGE_FILE);
                 await this.plugin.saveData(STORAGE_FILE, serialized);
-                console.log("[SettingsManager] ✅ Settings saved to file system");
+                logger.info('Settings saved to file system');
             } else {
-                console.warn("[SettingsManager] ⚠️ Plugin instance not available, file save skipped");
+                logger.warn('Plugin instance not available, file save skipped');
             }
 
             // FIX Critical 1.5: Only update in-memory settings after all saves succeed
@@ -194,18 +171,16 @@ export class SettingsManager {
                 (window as any).__CLAUDE_SETTINGS__ = this.settings;
             }
 
-            console.log("[SettingsManager] ✅ Settings saved successfully");
-
         } catch (error) {
             // FIX Critical 1.5: Rollback localStorage/sessionStorage on failure
-            console.error("[SettingsManager] ❌ Failed to save settings, rolling back:", error);
+            logger.error('Failed to save settings, rolling back', error);
             try {
                 const oldSerialized = JSON.stringify(oldSettings, null, 2);
                 localStorage.setItem(STORAGE_KEY, oldSerialized);
                 sessionStorage.setItem(STORAGE_KEY, oldSerialized);
-                console.log("[SettingsManager] ✅ Rolled back to previous settings");
+                logger.info('Rolled back to previous settings');
             } catch (rollbackError) {
-                console.error("[SettingsManager] ❌ Failed to rollback settings:", rollbackError);
+                logger.error('Failed to rollback settings', rollbackError);
             }
             throw error;
         }

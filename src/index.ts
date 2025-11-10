@@ -169,14 +169,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             },
         });
 
-        // AI Text Edit command
-        this.addCommand({
-            langKey: "aiEdit",
-            hotkey: settings.keyboardShortcuts?.aiEdit || "⌃⇧E",
-            editorCallback: (protyle) => {
-                this.sendToAIEdit(protyle);
-            },
-        });
+        // [REMOVED] AI Text Edit command - 功能已统一到 QuickEdit
 
         // Undo last AI edit command
         this.addCommand({
@@ -639,177 +632,11 @@ export default class ClaudeAssistantPlugin extends Plugin {
         console.log("[QuickEdit] ✅ Quick Edit Manager initialized");
     }
 
-    /**
-     * Send selected text to AI for editing
-     */
-    private sendToAIEdit(protyle: any): void {
-        const selection = this.getEditorSelection(protyle);
-        if (!selection) {
-            showMessage(this.i18n?.noTextSelected || "请先选择文本", 3000, "info");
-            return;
-        }
-
-        const textSelection = this.createTextSelection(selection);
-        this.requestAIEdit(textSelection);  // No instruction → edit mode
-    }
-
-    /**
-     * Get editor selection information
-     */
-    private getEditorSelection(protyle: any): {
-        blockId: string;
-        startLine: number;
-        endLine: number;
-        selectedText: string;
-        contextBefore?: string;
-        contextAfter?: string;
-        fullBlockContent?: string;
-    } | null {
-        try {
-            // Get the selection from the editor
-            const range = protyle?.wysiwyg?.element?.ownerDocument?.getSelection()?.getRangeAt(0);
-            if (!range || range.collapsed) {
-                return null;
-            }
-
-            // Get selected text
-            const selectedText = range.toString().trim();
-            if (!selectedText) {
-                return null;
-            }
-
-            // Find the containing block
-            let blockElement = range.startContainer.parentElement;
-            while (blockElement && !blockElement.getAttribute('data-node-id')) {
-                blockElement = blockElement.parentElement;
-            }
-
-            if (!blockElement) {
-                console.warn("[AIEdit] Could not find block element");
-                return null;
-            }
-
-            const blockId = blockElement.getAttribute('data-node-id') || '';
-            if (!blockId) {
-                return null;
-            }
-
-            // Calculate line numbers (simplified - treat each line break as a new line)
-            const fullText = blockElement.textContent || '';
-            const lines = fullText.split('\n');
-
-            // Find start and end lines
-            const beforeSelection = fullText.substring(0, fullText.indexOf(selectedText));
-            const startLine = beforeSelection.split('\n').length - 1;
-            const endLine = startLine + selectedText.split('\n').length - 1;
-
-            // Extract context (lines before and after)
-            const allLines = lines;
-            const editSettings = this.settingsManager.getSettings().editSettings;
-            const contextLinesBefore = editSettings?.contextLinesBefore || 5;
-            const contextLinesAfter = editSettings?.contextLinesAfter || 3;
-
-            // Get context before
-            const contextBeforeStartLine = Math.max(0, startLine - contextLinesBefore);
-            const contextBeforeLines = allLines.slice(contextBeforeStartLine, startLine);
-            const contextBefore = contextBeforeLines.join('\n');
-
-            // Get context after
-            const contextAfterEndLine = Math.min(allLines.length, endLine + 1 + contextLinesAfter);
-            const contextAfterLines = allLines.slice(endLine + 1, contextAfterEndLine);
-            const contextAfter = contextAfterLines.join('\n');
-
-            return {
-                blockId,
-                startLine,
-                endLine,
-                selectedText,
-                contextBefore,
-                contextAfter,
-                fullBlockContent: fullText
-            };
-
-        } catch (error) {
-            console.error("[AIEdit] Error getting editor selection:", error);
-            return null;
-        }
-    }
-
-    /**
-     * Create TextSelection object from selection data
-     */
-    private createTextSelection(data: {
-        blockId: string;
-        startLine: number;
-        endLine: number;
-        selectedText: string;
-        contextBefore?: string;
-        contextAfter?: string;
-        fullBlockContent?: string;
-    }): TextSelection {
-        return {
-            id: `edit-${Date.now()}`,
-            blockId: data.blockId,
-            startLine: data.startLine,
-            endLine: data.endLine,
-            selectedText: data.selectedText,
-            contextBefore: data.contextBefore || '',
-            contextAfter: data.contextAfter || '',
-            timestamp: Date.now(),
-            status: 'pending',
-            fullBlockContent: data.fullBlockContent
-        };
-    }
-
+    // [REMOVED] sendToAIEdit() - 功能已统一到 QuickEdit
+    // [REMOVED] getEditorSelection() - 仅被已删除的方法使用
+    // [REMOVED] createTextSelection() - 仅被已删除的方法使用
     // [REMOVED] getBlockSelection() - 仅被已删除的块菜单功能使用
-
-    /**
-     * Unified AI edit request method
-     * @param textSelection Text selection object
-     * @param instruction Optional editing instruction
-     * @param showDiff Whether to show diff comparison
-     */
-    private requestAIEdit(
-        textSelection: TextSelection,
-        instruction?: string,
-        showDiff: boolean = true
-    ): void {
-        if (!this.textSelectionManager || !this.editQueue) {
-            console.error("[AIEdit] Edit feature not initialized");
-            showMessage("AI 编辑功能未初始化", 3000, "error");
-            return;
-        }
-
-        if (instruction) {
-            // Has instruction → process directly
-            console.log(`[AIEdit] Processing with instruction: ${instruction}`);
-
-            const selection = this.textSelectionManager.addSelection(
-                textSelection.blockId,
-                textSelection.startLine,
-                textSelection.endLine,
-                textSelection.selectedText,
-                instruction
-            );
-
-            this.editQueue.enqueue(selection);
-            this.unifiedPanel?.addEditSelection(selection);
-            this.toggleDock();
-
-            showMessage(`${this.i18n?.aiEditQueued || "AI 编辑已加入队列"}: ${instruction}`, 2000, "info");
-        } else {
-            // No instruction → enter edit mode
-            console.log(`[AIEdit] Entering edit mode for selection ${textSelection.id}`);
-
-            this.toggleDock();
-            this.unifiedPanel?.enterEditMode(textSelection, showDiff);
-
-            const lineInfo = textSelection.startLine === textSelection.endLine
-                ? `${textSelection.startLine + 1}`
-                : `${textSelection.startLine + 1}-${textSelection.endLine + 1}`;
-            showMessage(`${this.i18n?.enterEditMode || "进入编辑模式"} (Line ${lineInfo})`, 2000, "info");
-        }
-    }
+    // [REMOVED] requestAIEdit() - 功能已统一到 QuickEdit
 
     // toggleEditDock removed - now using unified panel
 
@@ -943,45 +770,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             }
         });
 
-        // Add "Send to AI Edit" menu item
-        menu.addItem({
-            icon: "iconEdit",
-            label: (this.i18n && typeof this.i18n.aiEdit === 'string' && this.i18n.aiEdit.trim())
-                ? this.i18n.aiEdit
-                : "发送到 AI 编辑",
-            click: () => {
-                console.log("[AIEdit] 'Send to AI Edit' clicked from context menu");
-                this.sendToAIEdit(protyle);
-            }
-        });
-
-        // Add custom instruction submenu
-        const editSettings = this.settingsManager.getSettings().editSettings;
-        if (editSettings?.customInstructions && editSettings.customInstructions.length > 0) {
-            const submenus = editSettings.customInstructions.map((instr: any) => ({
-                icon: instr.icon || "iconEdit",
-                label: instr.text,
-                click: () => {
-                    console.log("[AIEdit] Preset instruction clicked:", instr.text);
-                    const selection = this.getEditorSelection(protyle);
-                    if (selection) {
-                        const textSelection = this.createTextSelection(selection);
-                        this.requestAIEdit(textSelection, instr.text, instr.showDiff !== false);
-                    }
-                }
-            }));
-
-            menu.addItem({
-                icon: "iconList",
-                label: (this.i18n && typeof this.i18n.aiEditPresets === 'string' && this.i18n.aiEditPresets.trim())
-                    ? this.i18n.aiEditPresets
-                    : "AI 编辑预设",
-                type: "submenu",
-                submenu: submenus
-            });
-        }
-
-        console.log("[AIEdit] Context menu items added for text selection");
+        console.log("[AIEdit] Quick Edit menu item added for text selection");
     }
 
     /**

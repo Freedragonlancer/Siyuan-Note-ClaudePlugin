@@ -3,8 +3,6 @@
   "askClaude": "Ask Claude with Selection",
   "settings": "Claude AI Settings",
   "aiEdit": "Send to AI Edit",
-  "aiEditPresets": "AI Preset Instructions",
-  "aiEditBlock": "Edit Entire Block",
   "undoAIEdit": "Undo Last AI Edit",
   "quickEdit": "AI Quick Edit",
   "aiEditWithPreset": "Edit with Preset...",
@@ -39,5 +37,7 @@
   "quickEditInsert": "Insert Below",
   "quickEditAcceptReplace": "Accept & Replace",
   "quickEditInsertSuccess": "AI content inserted below (original kept)",
-  "quickEditReplaceSuccess": "Changes applied (undo supported)"
+  "quickEditReplaceSuccess": "Changes applied (undo supported)",
+  "local-plugintopunpin": "Unpin from Top Bar",
+  "local-plugintoppin": "Pin to Top Bar"
 }

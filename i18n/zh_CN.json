@@ -3,8 +3,6 @@
   "askClaude": "使用选中文本问 Claude",
   "settings": "Claude AI 设置",
   "aiEdit": "发送到 AI 编辑",
-  "aiEditPresets": "AI 预设指令",
-  "aiEditBlock": "编辑整个块",
   "undoAIEdit": "撤销上次 AI 编辑",
   "quickEdit": "AI 快速编辑",
   "aiEditWithPreset": "预设指令编辑...",
@@ -39,5 +37,7 @@
   "quickEditInsert": "插入到下方",
   "quickEditAcceptReplace": "接受替换",
   "quickEditInsertSuccess": "AI 内容已插入到下方（原文保留）",
-  "quickEditReplaceSuccess": "修改已应用（支持撤销）"
+  "quickEditReplaceSuccess": "修改已应用（支持撤销）",
+  "local-plugintopunpin": "从顶栏取消固定",
+  "local-plugintoppin": "固定到顶栏"
 }

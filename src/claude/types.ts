@@ -5,6 +5,16 @@
 import type { EditSettings } from "../editor/types";
 import type { FilterRule } from "../filter";
 
+/**
+ * Keyboard shortcuts configuration
+ */
+export interface KeyboardShortcuts {
+    quickEdit?: string;      // AI Quick Edit (default: ⌃⇧Q)
+    aiEdit?: string;         // Send to AI Edit (default: ⌃⇧E)
+    undoAIEdit?: string;     // Undo Last AI Edit (default: ⌃⇧Z)
+    openClaude?: string;     // Open Claude AI Panel (default: ⌥⇧C)
+}
+
 export interface ClaudeSettings {
     apiKey: string;
     baseURL: string;
@@ -28,6 +38,9 @@ export interface ClaudeSettings {
 
     // AI Text Editing settings
     editSettings?: EditSettings;
+
+    // Keyboard shortcuts
+    keyboardShortcuts?: KeyboardShortcuts;
 }
 
 export interface Message {

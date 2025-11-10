@@ -16,6 +16,7 @@ import type {
 import { BUILTIN_TEMPLATES } from "./config-types";
 import { Logger } from "@/utils/Logger";
 import type { ISiYuanPlugin } from "@/types/siyuan";
+import { getPresetEventBus, type PresetEventBus } from "./PresetEventBus";
 
 const PROFILES_STORAGE_KEY = "claude-assistant-profiles";
 const ACTIVE_PROFILE_KEY = "claude-assistant-active-profile";
@@ -33,6 +34,7 @@ export class ConfigManager {
     private templatesLoaded: boolean = false;
     private templatesLoadPromise: Promise<void> | null = null;
     private logger = Logger.createScoped('ConfigManager');
+    private eventBus: PresetEventBus = getPresetEventBus(); // Event bus for preset synchronization
 
     constructor(plugin?: ISiYuanPlugin) {
         this.plugin = plugin;
@@ -425,9 +427,18 @@ export class ConfigManager {
                             console.log(`[ConfigManager] Template ID conflict, regenerated: ${oldId} → ${templateData.id}`);
                         }
 
-                        // Save imported template
+                        // Save imported template (this will publish created/updated event via saveTemplate)
                         this.saveTemplate(templateData);
                         templatesImported++;
+
+                        // Also publish 'imported' event for bulk import tracking
+                        this.eventBus.publish({
+                            type: 'imported',
+                            presetId: templateData.id,
+                            preset: templateData,
+                            timestamp: Date.now(),
+                            source: 'ConfigManager.importProfiles'
+                        });
 
                         console.log(`[ConfigManager] Imported template: ${templateData.name}`);
                     } catch (err) {
@@ -564,11 +575,37 @@ export class ConfigManager {
     }
 
     /**
+     * Get template by ID
+     */
+    getTemplateById(id: string): PromptTemplate | undefined {
+        return this.promptTemplates.get(id);
+    }
+
+    /**
+     * Get event bus instance for subscribing to preset events
+     */
+    getEventBus(): PresetEventBus {
+        return this.eventBus;
+    }
+
+    /**
      * Add or update a custom template
      */
     saveTemplate(template: PromptTemplate): void {
+        const isUpdate = this.promptTemplates.has(template.id);
         this.promptTemplates.set(template.id, template);
         this.saveTemplates();
+
+        // Publish event for UI synchronization
+        this.eventBus.publish({
+            type: isUpdate ? 'updated' : 'created',
+            presetId: template.id,
+            preset: template,
+            timestamp: Date.now(),
+            source: 'ConfigManager.saveTemplate'
+        });
+
+        this.logger.debug(`Preset ${isUpdate ? 'updated' : 'created'}: ${template.name} (${template.id})`);
     }
 
     /**
@@ -605,6 +642,17 @@ export class ConfigManager {
         const deleted = this.promptTemplates.delete(id);
         if (deleted) {
             this.saveTemplates();
+
+            // Publish delete event for UI synchronization
+            this.eventBus.publish({
+                type: 'deleted',
+                presetId: id,
+                preset: template, // Include deleted template data
+                timestamp: Date.now(),
+                source: 'ConfigManager.deleteTemplate'
+            });
+
+            this.logger.debug(`Preset deleted: ${template.name} (${id})`);
         }
         return deleted;
     }

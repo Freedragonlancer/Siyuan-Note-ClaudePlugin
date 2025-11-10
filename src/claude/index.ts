@@ -1,5 +1,5 @@
 export { ClaudeClient } from "./ClaudeClient";
-export type { ClaudeSettings, Message, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
+export type { ClaudeSettings, KeyboardShortcuts, Message, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
 import { DEFAULT_EDIT_SETTINGS } from "../editor/types";
 
 export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
@@ -37,6 +37,12 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
     requestLogPath: '',
     requestLogIncludeResponse: true,
     editSettings: DEFAULT_EDIT_SETTINGS,
+    keyboardShortcuts: {
+        quickEdit: "⌃⇧Q",      // Ctrl+Shift+Q
+        aiEdit: "⌃⇧E",         // Ctrl+Shift+E
+        undoAIEdit: "⌃⇧Z",     // Ctrl+Shift+Z
+        openClaude: "⌥⇧C",     // Alt+Shift+C
+    },
 };
 
 // Default fallback models if API fetch fails

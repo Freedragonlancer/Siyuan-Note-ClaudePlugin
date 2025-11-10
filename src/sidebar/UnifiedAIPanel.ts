@@ -2109,7 +2109,7 @@ export class UnifiedAIPanel {
 
     /**
      * Add a new text selection to the edit queue
-     * Called from plugin's sendToAIEdit method
+     * Called from edit queue when processing selections
      */
     addEditSelection(selection: TextSelection) {
         // Selection is already managed by TextSelectionManager

@@ -20,6 +20,7 @@ import {
 import type { TextSelection } from "./editor/types";
 import { QuickEditManager } from "./quick-edit";
 import type { DockModel } from "@/types/siyuan";
+import { KeyboardShortcutFormatter } from "./utils/KeyboardShortcutFormatter";
 
 const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
@@ -706,14 +707,16 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add separator
         menu.addSeparator();
 
-        // Add "Quick Edit" menu item (without accelerator to avoid visual duplication)
-        // Note: Content Menu also has Quick Edit but with accelerator hint
-        // These two menus won't show simultaneously due to SiYuan's event mechanism
+        // Add "Quick Edit" menu item with platform-aware shortcut display
+        const quickEditShortcut = KeyboardShortcutFormatter.format(
+            this.settingsManager.getSettings().keyboardShortcuts?.quickEdit || "⌃⇧Q"
+        );
         menu.addItem({
             icon: "iconFlash",
             label: (this.i18n && typeof this.i18n.quickEdit === 'string' && this.i18n.quickEdit.trim())
                 ? this.i18n.quickEdit
                 : "AI 快速编辑",
+            accelerator: quickEditShortcut,
             click: () => {
                 console.log("[QuickEdit] 'Quick Edit' clicked from block menu");
                 this.triggerQuickEdit();
@@ -752,12 +755,11 @@ export default class ClaudeAssistantPlugin extends Plugin {
         // Add separator
         menu.addSeparator();
 
-        // Add "Quick Edit" menu item with keyboard shortcut hint
-        // Note: Block Icon Menu also has Quick Edit but without accelerator
-        // These two menus are for different scenarios and won't show simultaneously:
-        // - Block Icon Menu: Right-click on block icon (no text selection required)
-        // - Content Menu: Right-click on selected text (with shortcut hint)
-        const quickEditShortcut = this.settingsManager.getSettings().keyboardShortcuts?.quickEdit || "⌃⇧Q";
+        // Add "Quick Edit" menu item with platform-aware keyboard shortcut hint
+        // Format shortcut based on platform: Windows shows "Ctrl+Shift+Q", macOS shows "⌃⇧Q"
+        const quickEditShortcut = KeyboardShortcutFormatter.format(
+            this.settingsManager.getSettings().keyboardShortcuts?.quickEdit || "⌃⇧Q"
+        );
         menu.addItem({
             icon: "iconFlash",
             label: (this.i18n && typeof this.i18n.quickEdit === 'string' && this.i18n.quickEdit.trim())

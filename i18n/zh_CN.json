@@ -2,7 +2,6 @@
   "openClaude": "打开 Claude AI",
   "askClaude": "使用选中文本问 Claude",
   "settings": "Claude AI 设置",
-  "aiEdit": "发送到 AI 编辑",
   "undoAIEdit": "撤销上次 AI 编辑",
   "quickEdit": "AI 快速编辑",
   "aiEditWithPreset": "预设指令编辑...",

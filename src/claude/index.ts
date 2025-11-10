@@ -39,7 +39,6 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
     editSettings: DEFAULT_EDIT_SETTINGS,
     keyboardShortcuts: {
         quickEdit: "⌃⇧Q",      // Ctrl+Shift+Q
-        aiEdit: "⌃⇧E",         // Ctrl+Shift+E
         undoAIEdit: "⌃⇧Z",     // Ctrl+Shift+Z
         openClaude: "⌥⇧C",     // Alt+Shift+C
     },

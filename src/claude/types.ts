@@ -10,7 +10,6 @@ import type { FilterRule } from "../filter";
  */
 export interface KeyboardShortcuts {
     quickEdit?: string;      // AI Quick Edit (default: ⌃⇧Q)
-    aiEdit?: string;         // Send to AI Edit (default: ⌃⇧E)
     undoAIEdit?: string;     // Undo Last AI Edit (default: ⌃⇧Z)
     openClaude?: string;     // Open Claude AI Panel (default: ⌥⇧C)
 }

@@ -16,6 +16,7 @@ import { ClaudeClient } from "../claude/ClaudeClient";
 import type { ConfigManager } from "./ConfigManager";
 import type { ConfigProfile, PromptTemplate } from "./config-types";
 import { Dialog } from "siyuan";
+import { KeyboardShortcutFormatter } from "../utils/KeyboardShortcutFormatter";
 
 export class SettingsPanelV3 {
     private element: HTMLElement;
@@ -527,30 +528,12 @@ export class SettingsPanelV3 {
                         class="b3-text-field"
                         type="text"
                         id="shortcut-quick-edit"
-                        placeholder="⌃⇧Q (Ctrl+Shift+Q)"
-                        value="${this.escapeHtml(shortcuts.quickEdit || '⌃⇧Q')}"
+                        placeholder="${KeyboardShortcutFormatter.format('⌃⇧Q')}"
+                        value="${KeyboardShortcutFormatter.format(shortcuts.quickEdit || '⌃⇧Q')}"
                         style="width: 100%;"
                     >
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        选中文本后快速调用 AI 编辑功能（默认：Ctrl+Shift+Q）
-                    </div>
-                </div>
-
-                <!-- AI Edit Shortcut -->
-                <div class="setting-item" style="margin-bottom: 16px;">
-                    <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">发送到 AI 编辑</span>
-                    </div>
-                    <input
-                        class="b3-text-field"
-                        type="text"
-                        id="shortcut-ai-edit"
-                        placeholder="⌃⇧E (Ctrl+Shift+E)"
-                        value="${this.escapeHtml(shortcuts.aiEdit || '⌃⇧E')}"
-                        style="width: 100%;"
-                    >
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        将选中文本发送到侧边栏 AI 面板编辑（默认：Ctrl+Shift+E）
+                        选中文本后快速调用 AI 编辑功能（默认：${KeyboardShortcutFormatter.format('⌃⇧Q')}）
                     </div>
                 </div>
 
@@ -563,12 +546,12 @@ export class SettingsPanelV3 {
                         class="b3-text-field"
                         type="text"
                         id="shortcut-undo-ai-edit"
-                        placeholder="⌃⇧Z (Ctrl+Shift+Z)"
-                        value="${this.escapeHtml(shortcuts.undoAIEdit || '⌃⇧Z')}"
+                        placeholder="${KeyboardShortcutFormatter.format('⌃⇧Z')}"
+                        value="${KeyboardShortcutFormatter.format(shortcuts.undoAIEdit || '⌃⇧Z')}"
                         style="width: 100%;"
                     >
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        撤销上一次 AI 编辑操作（默认：Ctrl+Shift+Z）
+                        撤销上一次 AI 编辑操作（默认：${KeyboardShortcutFormatter.format('⌃⇧Z')}）
                     </div>
                 </div>
 
@@ -581,12 +564,12 @@ export class SettingsPanelV3 {
                         class="b3-text-field"
                         type="text"
                         id="shortcut-open-claude"
-                        placeholder="⌥⇧C (Alt+Shift+C)"
-                        value="${this.escapeHtml(shortcuts.openClaude || '⌥⇧C')}"
+                        placeholder="${KeyboardShortcutFormatter.format('⌥⇧C')}"
+                        value="${KeyboardShortcutFormatter.format(shortcuts.openClaude || '⌥⇧C')}"
                         style="width: 100%;"
                     >
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        打开侧边栏 Claude AI 聊天面板（默认：Alt+Shift+C）
+                        打开侧边栏 Claude AI 聊天面板（默认：${KeyboardShortcutFormatter.format('⌥⇧C')}）
                     </div>
                 </div>
 
@@ -605,7 +588,7 @@ export class SettingsPanelV3 {
                         • ⌃ = Ctrl（Windows/Linux）或 ⌘ Command（macOS）<br>
                         • ⌥ = Alt（Windows/Linux）或 ⌥ Option（macOS）<br>
                         • ⇧ = Shift<br>
-                        • 示例：⌃⇧Q = Ctrl+Shift+Q，⌥⇧C = Alt+Shift+C<br>
+                        • 示例：⌃⇧Q = ${KeyboardShortcutFormatter.format('⌃⇧Q')}，⌥⇧C = ${KeyboardShortcutFormatter.format('⌥⇧C')}<br>
                         <br>
                         <strong>💡 提示：</strong>修改后需要重启思源笔记才能生效
                     </div>
@@ -715,14 +698,12 @@ export class SettingsPanelV3 {
         const restoreDefaultShortcutsBtn = container.querySelector("#restore-default-shortcuts");
         restoreDefaultShortcutsBtn?.addEventListener("click", () => {
             const quickEditInput = container.querySelector("#shortcut-quick-edit") as HTMLInputElement;
-            const aiEditInput = container.querySelector("#shortcut-ai-edit") as HTMLInputElement;
             const undoAIEditInput = container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement;
             const openClaudeInput = container.querySelector("#shortcut-open-claude") as HTMLInputElement;
 
-            if (quickEditInput) quickEditInput.value = "⌃⇧Q";
-            if (aiEditInput) aiEditInput.value = "⌃⇧E";
-            if (undoAIEditInput) undoAIEditInput.value = "⌃⇧Z";
-            if (openClaudeInput) openClaudeInput.value = "⌥⇧C";
+            if (quickEditInput) quickEditInput.value = KeyboardShortcutFormatter.format("⌃⇧Q");
+            if (undoAIEditInput) undoAIEditInput.value = KeyboardShortcutFormatter.format("⌃⇧Z");
+            if (openClaudeInput) openClaudeInput.value = KeyboardShortcutFormatter.format("⌥⇧C");
         });
 
         // Test connection button (in connection section)
@@ -1075,10 +1056,15 @@ export class SettingsPanelV3 {
             requestLogPath: (container.querySelector("#request-log-path") as HTMLInputElement)?.value || "",
             requestLogIncludeResponse: (container.querySelector("#log-include-response") as HTMLInputElement)?.checked ?? true,
             keyboardShortcuts: {
-                quickEdit: (container.querySelector("#shortcut-quick-edit") as HTMLInputElement)?.value || "⌃⇧Q",
-                aiEdit: (container.querySelector("#shortcut-ai-edit") as HTMLInputElement)?.value || "⌃⇧E",
-                undoAIEdit: (container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement)?.value || "⌃⇧Z",
-                openClaude: (container.querySelector("#shortcut-open-claude") as HTMLInputElement)?.value || "⌥⇧C",
+                quickEdit: KeyboardShortcutFormatter.toMacFormat(
+                    (container.querySelector("#shortcut-quick-edit") as HTMLInputElement)?.value || "Ctrl+Shift+Q"
+                ) || "⌃⇧Q",
+                undoAIEdit: KeyboardShortcutFormatter.toMacFormat(
+                    (container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement)?.value || "Ctrl+Shift+Z"
+                ) || "⌃⇧Z",
+                openClaude: KeyboardShortcutFormatter.toMacFormat(
+                    (container.querySelector("#shortcut-open-claude") as HTMLInputElement)?.value || "Alt+Shift+C"
+                ) || "⌥⇧C",
             },
         };
 

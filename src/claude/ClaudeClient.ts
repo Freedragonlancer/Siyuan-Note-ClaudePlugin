@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Message, ClaudeSettings, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
 import { RequestLogger, type LogEntry } from "../logger/RequestLogger";
 import { responseFilter, type FilterRule } from "../filter";
+import type { ISiYuanPlugin } from "@/types/siyuan";
 
 /**
  * Claude API Client
@@ -13,7 +14,7 @@ export class ClaudeClient {
     private logger: RequestLogger;
     private activeAbortController: AbortController | null = null;
     private configManager: any = null; // ConfigManager reference for preset-level filterRules
-    public plugin: any = null; // Plugin instance for file storage access
+    public plugin: ISiYuanPlugin | null = null; // Plugin instance for file storage access
 
     constructor(settings: ClaudeSettings, configManager?: any) {
         this.settings = settings;
@@ -35,7 +36,7 @@ export class ClaudeClient {
     /**
      * Set plugin instance (for file storage access)
      */
-    setPlugin(plugin: any): void {
+    setPlugin(plugin: ISiYuanPlugin): void {
         this.plugin = plugin;
     }
 

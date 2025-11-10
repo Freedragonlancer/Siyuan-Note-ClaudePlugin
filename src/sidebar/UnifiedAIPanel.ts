@@ -492,12 +492,13 @@ export class UnifiedAIPanel {
                 this.onSettingsCallback();
             }
         });
-        presetSelector?.addEventListener("change", () => {
+        presetSelector?.addEventListener("change", async () => {
             this.activeChatPresetId = presetSelector.value;
             console.log(`[UnifiedAIPanel] Switched to preset: ${this.activeChatPresetId}`);
 
-            // Persist AI Dock preset selection to localStorage
-            this.saveAIDockPresetSelection(this.activeChatPresetId);
+            // Persist AI Dock preset selection to localStorage and file storage
+            await this.saveAIDockPresetSelection(this.activeChatPresetId)
+                .catch(err => console.error('[UnifiedAIPanel] Preset save failed:', err));
         });
         clearBtn?.addEventListener("click", () => this.clearChat());
 
@@ -1609,28 +1610,21 @@ export class UnifiedAIPanel {
      * Save AI Dock preset selection to localStorage and file storage
      * @param presetId - The preset ID to save
      */
-    private saveAIDockPresetSelection(presetId: string) {
+    private async saveAIDockPresetSelection(presetId: string): Promise<void> {
         try {
             // Save to localStorage (fast, synchronous)
             localStorage.setItem('claude-ai-dock-preset-id', presetId);
-            console.log(`[UnifiedAIPanel] Saved AI Dock preset to localStorage: ${presetId}`);
 
             // Save to file storage (reliable, async)
             const plugin = this.claudeClient.plugin;
-            console.log('[UnifiedAIPanel] Checking plugin for file storage:', {
-                hasPlugin: !!plugin,
-                hasSaveData: plugin && typeof plugin.saveData === 'function'
-            });
 
             if (plugin && typeof plugin.saveData === 'function') {
-                console.log(`[UnifiedAIPanel] Saving to file storage: ${presetId}`);
-                plugin.saveData('ai-dock-preset.json', { presetId })
-                    .then(() => {
-                        console.log(`[UnifiedAIPanel] ✅ Saved AI Dock preset to file storage: ${presetId}`);
-                    })
-                    .catch((err: Error) => {
-                        console.warn('[UnifiedAIPanel] ❌ Failed to save AI Dock preset to file storage:', err);
-                    });
+                try {
+                    await plugin.saveData('ai-dock-preset.json', { presetId });
+                    console.log(`[UnifiedAIPanel] ✅ Saved AI Dock preset to file storage: ${presetId}`);
+                } catch (err) {
+                    console.warn('[UnifiedAIPanel] ❌ Failed to save AI Dock preset to file storage:', err);
+                }
             } else {
                 console.warn('[UnifiedAIPanel] ⚠️ Cannot save to file storage - plugin not available');
             }
@@ -1650,14 +1644,8 @@ export class UnifiedAIPanel {
         let filePresetId: string | null = null;
         let localStoragePresetId: string | null = null;
 
-        console.log('[UnifiedAIPanel] Loading AI Dock preset - checking plugin:', {
-            hasPlugin: !!plugin,
-            hasLoadData: plugin && typeof plugin.loadData === 'function'
-        });
-
         // Try loading from file storage first (most reliable)
         if (plugin && typeof plugin.loadData === 'function') {
-            console.log('[UnifiedAIPanel] Attempting to load from file storage...');
             try {
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     setTimeout(() => reject(new Error('File load timeout')), timeoutMs);
@@ -1666,13 +1654,9 @@ export class UnifiedAIPanel {
                 const loadPromise = plugin.loadData('ai-dock-preset.json') as Promise<{ presetId: string } | null>;
                 const stored = await Promise.race([loadPromise, timeoutPromise]);
 
-                console.log('[UnifiedAIPanel] File storage data received:', stored);
-
                 if (stored && typeof stored === 'object' && stored.presetId) {
                     filePresetId = stored.presetId;
                     console.log(`[UnifiedAIPanel] ✅ Loaded AI Dock preset from file: ${filePresetId}`);
-                } else {
-                    console.log('[UnifiedAIPanel] No valid preset data in file storage');
                 }
             } catch (error) {
                 if (error instanceof Error && error.message === 'File load timeout') {
@@ -1688,9 +1672,6 @@ export class UnifiedAIPanel {
         // Fallback to localStorage
         try {
             localStoragePresetId = localStorage.getItem('claude-ai-dock-preset-id');
-            if (localStoragePresetId) {
-                console.log(`[UnifiedAIPanel] Loaded AI Dock preset from localStorage: ${localStoragePresetId}`);
-            }
         } catch (error) {
             console.warn('[UnifiedAIPanel] Failed to load AI Dock preset from localStorage:', error);
         }
@@ -1702,7 +1683,6 @@ export class UnifiedAIPanel {
         if (filePresetId && filePresetId !== localStoragePresetId) {
             try {
                 localStorage.setItem('claude-ai-dock-preset-id', filePresetId);
-                console.log(`[UnifiedAIPanel] Synced localStorage: ${localStoragePresetId} → ${filePresetId}`);
             } catch (error) {
                 console.warn('[UnifiedAIPanel] Failed to sync localStorage:', error);
             }
@@ -1855,7 +1835,7 @@ export class UnifiedAIPanel {
         const eventBus = configManager.getEventBus();
 
         // Subscribe to all preset change events
-        this.presetEventUnsubscribe = eventBus.subscribeAll((event: PresetEvent) => {
+        this.presetEventUnsubscribe = eventBus.subscribeAll(async (event: PresetEvent) => {
             console.log(`[UnifiedAIPanel] Preset event received: ${event.type} (${event.presetId})`);
 
             // Auto-refresh preset selector when any change occurs
@@ -1878,8 +1858,9 @@ export class UnifiedAIPanel {
                             selector.value = event.presetId;
                         }
 
-                        // Persist to localStorage
-                        this.saveAIDockPresetSelection(event.presetId);
+                        // Persist to localStorage and file storage
+                        await this.saveAIDockPresetSelection(event.presetId)
+                            .catch(err => console.error('[UnifiedAIPanel] Preset save failed:', err));
 
                         console.log(`[UnifiedAIPanel] Preset selection changed to: ${event.presetId}`);
                     }

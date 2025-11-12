@@ -256,6 +256,12 @@ export class SettingsPanelV3 {
                 url: 'https://platform.deepseek.com',
                 defaultBaseURL: 'https://api.deepseek.com/v1'
             },
+            moonshot: { 
+                name: 'Moonshot AI (Kimi)', 
+                icon: '🌙', 
+                url: 'https://platform.moonshot.ai/console/api-keys',
+                defaultBaseURL: 'https://api.moonshot.ai/v1'
+            },
             custom: { 
                 name: 'Custom Provider', 
                 icon: '⚙️', 
@@ -284,19 +290,22 @@ export class SettingsPanelV3 {
                 </div>
                 <select class=\"b3-select\" id=\"ai-provider-selector\" style=\"width: 100%;\">
                     <option value=\"anthropic\" ${activeProvider === 'anthropic' ? 'selected' : ''}>
-                        ${providerInfo.anthropic.icon} ${providerInfo.anthropic.name}
+                        ${providerInfo.anthropic.name}
                     </option>
                     <option value=\"openai\" ${activeProvider === 'openai' ? 'selected' : ''}>
-                        ${providerInfo.openai.icon} ${providerInfo.openai.name}
+                        ${providerInfo.openai.name}
                     </option>
                     <option value=\"gemini\" ${activeProvider === 'gemini' ? 'selected' : ''}>
-                        ${providerInfo.gemini.icon} ${providerInfo.gemini.name}
+                        ${providerInfo.gemini.name}
                     </option>
                     <option value=\"xai\" ${activeProvider === 'xai' ? 'selected' : ''}>
-                        ${providerInfo.xai.icon} ${providerInfo.xai.name}
+                        ${providerInfo.xai.name}
                     </option>
                     <option value=\"deepseek\" ${activeProvider === 'deepseek' ? 'selected' : ''}>
-                        ${providerInfo.deepseek.icon} ${providerInfo.deepseek.name}
+                        ${providerInfo.deepseek.name}
+                    </option>
+                    <option value=\"moonshot\" ${activeProvider === 'moonshot' ? 'selected' : ''}>
+                        ${providerInfo.moonshot.name}
                     </option>
                 </select>
                 <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\">
@@ -449,6 +458,18 @@ export class SettingsPanelV3 {
                 { value: 'deepseek-chat', label: 'DeepSeek Chat' },
                 { value: 'deepseek-coder', label: 'DeepSeek Coder' },
                 { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (推理模型)' },
+            ],
+            moonshot: [
+                // Kimi K2 Series (Latest - 2025)
+                { value: 'kimi-k2-0905-preview', label: '🌟 Kimi K2 0905 (256K上下文，最新推荐)' },
+                { value: 'kimi-k2-thinking', label: '🧠 Kimi K2 Thinking (256K，推理模型)' },
+                { value: 'kimi-k2-thinking-turbo', label: '⚡ Kimi K2 Thinking Turbo (256K，快速推理)' },
+                { value: 'kimi-k2-0711-preview', label: 'Kimi K2 0711 (128K)' },
+                
+                // Legacy models
+                { value: 'moonshot-v1-128k', label: 'Moonshot V1 128K (旧版)' },
+                { value: 'moonshot-v1-32k', label: 'Moonshot V1 32K (旧版)' },
+                { value: 'moonshot-v1-8k', label: 'Moonshot V1 8K (旧版)' },
             ],
             custom: [
                 { value: 'custom-model', label: 'Custom Model' },
@@ -827,12 +848,18 @@ export class SettingsPanelV3 {
                     defaultBaseURL: 'https://api.x.ai/v1'
                 },
                 deepseek: { 
-                    name: 'DeepSeek', 
-                    icon: '🧠', 
-                    url: 'https://platform.deepseek.com',
-                    defaultBaseURL: 'https://api.deepseek.com/v1'
-                },
-                custom: { 
+                name: 'DeepSeek', 
+                icon: '🧠', 
+                url: 'https://platform.deepseek.com',
+                defaultBaseURL: 'https://api.deepseek.com/v1'
+            },
+            moonshot: { 
+                name: 'Moonshot AI (Kimi)', 
+                icon: '🌙', 
+                url: 'https://platform.moonshot.ai/console/api-keys',
+                defaultBaseURL: 'https://api.moonshot.ai/v1'
+            },
+            custom: { 
                     name: 'Custom Provider', 
                     icon: '⚙️', 
                     url: '',

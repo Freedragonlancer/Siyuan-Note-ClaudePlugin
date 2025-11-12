@@ -144,8 +144,11 @@ ConfigManager
 ```
 AIProviderFactory
   ├── AnthropicProvider (Claude - Implemented ✅)
-  ├── OpenAIProvider (GPT - Planned 📋)
-  ├── GeminiProvider (Google - Planned 📋)
+  ├── OpenAIProvider (GPT - Implemented ✅)
+  ├── GeminiProvider (Google Gemini - Implemented ✅)
+  ├── XAIProvider (xAI Grok - Implemented ✅)
+  ├── DeepSeekProvider (DeepSeek - Implemented ✅)
+  ├── MoonshotProvider (Moonshot AI Kimi - Implemented ✅)
   └── Custom Providers (Extensible 🔌)
 ```
 
@@ -158,6 +161,14 @@ interface AIProvider {
   getAvailableModels(): string[]
 }
 ```
+
+**Provider-Specific Features**:
+- **Moonshot (Kimi)**: K2 Thinking models expose `reasoning_content` in responses, automatically formatted in collapsible sections. Temperature auto-clamped to [0, 1] range. 256K context window support. See [MOONSHOT_API_SETUP.md](MOONSHOT_API_SETUP.md) for details.
+- **Anthropic (Claude)**: Native streaming support, tool use capabilities
+- **OpenAI (GPT)**: Function calling, vision support (GPT-4V)
+- **Gemini**: Multimodal input, long context (1M+ tokens for Gemini 1.5)
+- **xAI (Grok)**: Real-time data access, up-to-date information
+- **DeepSeek**: Specialized coding models, cost-effective pricing
 
 **3. Quick Edit Pipeline (Modular)**
 ```
@@ -483,8 +494,11 @@ AIProviderFactory.register({
 
 **Current Providers:**
 - `anthropic` - Claude (Implemented ✅)
-- `openai` - GPT (Planned 📋)
-- `gemini` - Google Gemini (Planned 📋)
+- `openai` - GPT (Implemented ✅)
+- `gemini` - Google Gemini (Implemented ✅)
+- `xai` - xAI Grok (Implemented ✅)
+- `deepseek` - DeepSeek (Implemented ✅)
+- `moonshot` - Moonshot AI Kimi (Implemented ✅)
 
 ### Adding Filter Middleware
 
@@ -630,7 +644,9 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 | Build fails | Run `npm install`, check Node 18+, clear `dist/` folder |
 | Changes not showing | Ensure `npm run deploy` succeeded, restart SiYuan (not just F5) |
 | Streaming timeout | Check API key, network, Anthropic status; increase timeout in ClaudeClient.ts |
-| **Reverse proxy 404 error** | **For Anthropic: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`. OpenAI/Gemini/xAI/DeepSeek: Use baseURL as provided by proxy service.** |
+| **Reverse proxy 404 error** | **For Anthropic: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`. OpenAI/Gemini/xAI/DeepSeek/Moonshot: Use baseURL as provided by proxy service.** |
+| **Moonshot temperature warning** | **Plugin auto-clamps temperature to [0, 1] range (Moonshot limit). Values above 1.0 are automatically clamped with console warning. No action needed.** |
+| **Moonshot reasoning content** | **K2 Thinking models return reasoning in collapsible `<details>` section. Expand to view model's thought process. Use non-Thinking models if reasoning not needed (faster, cheaper).** |
 | **Multiple topbar icons (3+)** | **Run `npm run clean-deploy` - removes duplicates caused by improper cleanup** |
 | **Settings panel blank/invisible** | **Run `npm run clean-cache` then restart SiYuan - clears cached HTML/CSS** |
 | **CSS changes not applying** | **Run `npm run clean-cache` - forces fresh CSS load** |
@@ -672,6 +688,11 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 ### AI Provider Layer (v0.9.0)
 - `src/ai/types.ts` - AIProvider interface definitions
 - `src/ai/AnthropicProvider.ts` - Claude implementation
+- `src/ai/providers/OpenAIProvider.ts` - OpenAI GPT implementation
+- `src/ai/providers/GeminiProvider.ts` - Google Gemini implementation
+- `src/ai/providers/XAIProvider.ts` - xAI Grok implementation
+- `src/ai/providers/DeepSeekProvider.ts` - DeepSeek implementation
+- `src/ai/providers/MoonshotProvider.ts` - Moonshot AI Kimi implementation (v0.10.1)
 - `src/ai/AIProviderFactory.ts` - Provider registry and factory
 - `src/ai/index.ts` - Module exports
 
@@ -758,6 +779,7 @@ For detailed architecture information:
 - **Anthropic Docs**: https://docs.anthropic.com/
 - **Plugin Sample**: https://github.com/siyuan-note/plugin-sample
 - **Release Guide**: [RELEASE.md](RELEASE.md)
+- **Moonshot AI Setup**: [MOONSHOT_API_SETUP.md](MOONSHOT_API_SETUP.md) - Complete guide for Kimi integration
 
 ---
 
@@ -771,8 +793,8 @@ For detailed architecture information:
   - New modules available: SelectionHandler, BlockOperations, PromptBuilder, EditStateManager, InstructionHistoryManager
   - Core workflow still uses legacy code paths (backward compatible)
   - Full migration to pure modular architecture planned for future release
-- Multi-provider support fully implemented (5 providers available)
-  - Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek ✅
+- Multi-provider support fully implemented (6 providers available)
+  - Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek, Moonshot AI (Kimi) ✅
   - Reverse proxy configuration supported for all providers
   - **Important**: For Anthropic reverse proxies, baseURL should include `/v1` (e.g., `https://proxy.com/api/v1`)
     - The plugin automatically strips trailing `/v1` to prevent duplicate paths (`/v1/v1/messages`)
@@ -781,4 +803,4 @@ For detailed architecture information:
 ---
 
 **Last Updated**: 2025-01-12
-**Version**: 0.10.1 (Multi-Provider + BaseURL Normalization Fix)
+**Version**: 0.10.1 (Multi-Provider + Moonshot AI Kimi Integration)

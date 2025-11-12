@@ -8,7 +8,7 @@ import type { Message } from '../claude/types';
 /**
  * Supported AI providers
  */
-export type AIProviderType = 'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'custom';
+export type AIProviderType = 'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'moonshot' | 'custom';
 
 /**
  * AI model configuration

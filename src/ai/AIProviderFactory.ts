@@ -5,7 +5,7 @@
 
 import type { AIProvider, AIProviderType, AIModelConfig, ProviderRegistration } from './types';
 import { AnthropicProvider } from './AnthropicProvider';
-import { OpenAIProvider, GeminiProvider, XAIProvider, DeepSeekProvider } from './providers';
+import { OpenAIProvider, GeminiProvider, XAIProvider, DeepSeekProvider, MoonshotProvider } from './providers';
 
 export class AIProviderFactory {
     private static registrations: Map<AIProviderType, ProviderRegistration> = new Map();
@@ -52,6 +52,14 @@ export class AIProviderFactory {
             factory: (config) => new DeepSeekProvider(config),
             displayName: 'DeepSeek',
             description: 'DeepSeek Chat, Coder, and Reasoner models',
+        });
+
+        // Register Moonshot AI (Kimi) provider
+        this.register({
+            type: 'moonshot',
+            factory: (config) => new MoonshotProvider(config),
+            displayName: 'Moonshot AI (Kimi)',
+            description: 'Kimi K2 series with 256K context and reasoning models',
         });
     }
 

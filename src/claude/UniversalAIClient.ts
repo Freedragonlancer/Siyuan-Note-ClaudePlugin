@@ -186,7 +186,8 @@ export class UniversalAIClient {
             'openai': 'GPT',
             'gemini': 'Gemini',
             'xai': 'Grok',
-            'deepseek': 'DeepSeek'
+            'deepseek': 'DeepSeek',
+            'moonshot': 'Kimi'
         };
         return names[provider] || provider || 'Unknown';
     }

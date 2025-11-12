@@ -7,3 +7,4 @@ export { OpenAIProvider } from './OpenAIProvider';
 export { GeminiProvider } from './GeminiProvider';
 export { XAIProvider } from './XAIProvider';
 export { DeepSeekProvider } from './DeepSeekProvider';
+export { MoonshotProvider } from './MoonshotProvider';

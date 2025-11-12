@@ -1,0 +1,314 @@
+/**
+ * Moonshot AI (Kimi) Provider
+ * Official Docs: https://platform.moonshot.ai/docs
+ *
+ * Features:
+ * - OpenAI-compatible API
+ * - 128K-256K context windows
+ * - K2 Thinking models with reasoning exposure
+ * - Support for global and China regions
+ */
+
+import { BaseAIProvider } from '../BaseAIProvider';
+import type { AIModelConfig, Message, AIRequestOptions, AIProvider } from '../types';
+
+export class MoonshotProvider extends BaseAIProvider implements AIProvider {
+    readonly providerType = 'moonshot';
+    readonly providerName = 'Moonshot AI (Kimi)';
+
+    private baseURL: string;
+    private apiKey: string;
+    private model: string;
+    private temperature: number;
+    private maxTokens: number;
+
+    constructor(config: AIModelConfig) {
+        super();
+        this.apiKey = config.apiKey;
+        this.model = config.model || 'kimi-k2-0905-preview';
+        this.temperature = config.temperature ?? 1;
+        this.maxTokens = config.maxTokens ?? 4096;
+
+        // Allow user to choose between global and China API
+        // Default to global if not specified
+        this.baseURL = config.baseURL || 'https://api.moonshot.ai/v1';
+
+        console.log(`[MoonshotProvider] Initializing with API key: ${this.apiKey.substring(0, 10)}...`);
+        console.log(`[MoonshotProvider] Base URL: ${this.baseURL}`);
+        console.log(`[MoonshotProvider] Model ID: ${this.model}`);
+    }
+
+    /**
+     * Send a non-streaming message
+     */
+    async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
+        const url = `${this.baseURL}/chat/completions`;
+
+        // Moonshot limits temperature to [0, 1] range (vs OpenAI's [0, 2])
+        const clampedTemperature = this.clampTemperature(
+            options?.temperature ?? this.temperature
+        );
+
+        const requestBody = {
+            model: this.model,
+            messages: messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            })),
+            temperature: clampedTemperature,
+            max_tokens: options?.maxTokens || this.maxTokens,
+            stream: false
+        };
+
+        console.log(`[MoonshotProvider] Sending request to ${url}`);
+        console.log(`[MoonshotProvider] Request body:`, JSON.stringify(requestBody, null, 2));
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+                signal: options?.signal,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[MoonshotProvider] API error (${response.status}):`, errorText);
+
+                // Handle rate limiting
+                if (response.status === 429) {
+                    throw new Error('Moonshot API rate limit exceeded. Please try again later or upgrade your plan.');
+                }
+
+                throw new Error(`Moonshot API error: ${response.statusText} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log(`[MoonshotProvider] Response received:`, JSON.stringify(data, null, 2));
+
+            return this.extractResponse(data);
+
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.log('[MoonshotProvider] Request aborted');
+                throw new Error('Request cancelled');
+            }
+            console.error('[MoonshotProvider] Error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Send a streaming message
+     */
+    async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
+        if (!options?.onChunk) {
+            throw new Error('onChunk callback is required for streaming');
+        }
+
+        const url = `${this.baseURL}/chat/completions`;
+
+        const clampedTemperature = this.clampTemperature(
+            options?.temperature ?? this.temperature
+        );
+
+        const requestBody = {
+            model: this.model,
+            messages: messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            })),
+            temperature: clampedTemperature,
+            max_tokens: options?.maxTokens || this.maxTokens,
+            stream: true
+        };
+
+        console.log(`[MoonshotProvider] Starting streaming request to ${url}`);
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+                signal: options?.signal,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[MoonshotProvider] Streaming API error (${response.status}):`, errorText);
+
+                if (response.status === 429) {
+                    throw new Error('Moonshot API rate limit exceeded. Please try again later.');
+                }
+
+                throw new Error(`Moonshot API error: ${response.statusText} - ${errorText}`);
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('Response body is not readable');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) {
+                    console.log('[MoonshotProvider] Streaming completed');
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed === 'data: [DONE]') continue;
+
+                    if (trimmed.startsWith('data: ')) {
+                        try {
+                            const jsonData = JSON.parse(trimmed.slice(6));
+                            const delta = jsonData.choices?.[0]?.delta;
+
+                            if (delta?.content) {
+                                options.onChunk(delta.content);
+                            }
+
+                            // Handle reasoning content from K2 Thinking models
+                            if (delta?.reasoning_content) {
+                                console.log('[MoonshotProvider] Reasoning chunk:', delta.reasoning_content);
+                                // Optionally pass reasoning to callback if needed
+                            }
+                        } catch (parseError) {
+                            console.warn('[MoonshotProvider] Failed to parse SSE line:', trimmed);
+                        }
+                    }
+                }
+            }
+
+            if (options.onComplete) {
+                options.onComplete();
+            }
+
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.log('[MoonshotProvider] Streaming request aborted');
+                throw new Error('Request cancelled');
+            }
+            console.error('[MoonshotProvider] Streaming error:', error);
+            if (options.onError) {
+                options.onError(error as Error);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Validate configuration
+     */
+    validateConfig(config: AIModelConfig): true | string {
+        if (!config.apiKey) {
+            return 'Moonshot API key is required';
+        }
+
+        if (!config.model) {
+            return 'Model selection is required';
+        }
+
+        const validModels = this.getAvailableModels();
+        if (!validModels.includes(config.model)) {
+            return `Invalid model. Available models: ${validModels.join(', ')}`;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get list of available models
+     */
+    getAvailableModels(): string[] {
+        return [
+            // Kimi K2 Series (2025 Latest)
+            'kimi-k2-0905-preview',      // Latest, 256K context
+            'kimi-k2-0711-preview',      // Earlier version, 128K context
+            'kimi-k2-thinking',          // Reasoning model with exposed thinking
+            'kimi-k2-thinking-turbo',    // Faster reasoning variant
+
+            // Legacy (may still be supported)
+            'moonshot-v1-128k',          // 128K context
+            'moonshot-v1-32k',           // 32K context
+            'moonshot-v1-8k',            // 8K context
+        ];
+    }
+
+    /**
+     * Get model context window limits
+     */
+    getModelContextWindow(model: string): number {
+        const contextWindows: Record<string, number> = {
+            'kimi-k2-0905-preview': 262144,      // 256K
+            'kimi-k2-0711-preview': 131072,      // 128K
+            'kimi-k2-thinking': 262144,          // 256K
+            'kimi-k2-thinking-turbo': 262144,    // 256K
+            'moonshot-v1-128k': 131072,          // 128K
+            'moonshot-v1-32k': 32768,            // 32K
+            'moonshot-v1-8k': 8192,              // 8K
+        };
+
+        return contextWindows[model] || 128000; // Default to 128K
+    }
+
+    /**
+     * Extract response from API data
+     * Handles special K2 Thinking models with reasoning_content
+     */
+    private extractResponse(data: any): string {
+        const message = data.choices?.[0]?.message;
+
+        if (!message) {
+            throw new Error('Invalid API response: no message found');
+        }
+
+        const content = message.content || '';
+
+        // K2 Thinking models return reasoning_content separately
+        if (message.reasoning_content) {
+            console.log('[MoonshotProvider] 🤔 Reasoning process detected:');
+            console.log(message.reasoning_content);
+
+            // Option 1: Return content with collapsible reasoning (recommended)
+            return `${content}\n\n<details>\n<summary>🤔 推理过程 (Reasoning Process)</summary>\n\n${message.reasoning_content}\n</details>`;
+
+            // Option 2: Return content only (user won't see reasoning)
+            // return content;
+
+            // Option 3: Return both concatenated
+            // return `${content}\n\n---\n\n**推理过程：**\n\n${message.reasoning_content}`;
+        }
+
+        return content;
+    }
+
+    /**
+     * Clamp temperature to Moonshot's [0, 1] range
+     * (vs OpenAI's [0, 2])
+     */
+    private clampTemperature(temperature: number): number {
+        const clamped = Math.max(0, Math.min(1, temperature));
+
+        if (clamped !== temperature) {
+            console.warn(`[MoonshotProvider] Temperature ${temperature} clamped to ${clamped} (Moonshot range: [0, 1])`);
+        }
+
+        return clamped;
+    }
+}

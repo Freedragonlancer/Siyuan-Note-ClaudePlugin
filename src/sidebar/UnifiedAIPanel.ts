@@ -1804,7 +1804,16 @@ export class UnifiedAIPanel {
 
             // DeepSeek models
             [/deepseek-chat/, 'Chat'],
-            [/deepseek-coder/, 'Coder']
+            [/deepseek-coder/, 'Coder'],
+
+            // Kimi (Moonshot) models
+            [/kimi-k2-0905/, 'K2 0905'],
+            [/kimi-k2-0711/, 'K2 0711'],
+            [/kimi-k2-thinking-turbo/, 'K2 Thinking Turbo'],
+            [/kimi-k2-thinking/, 'K2 Thinking'],
+            [/moonshot-v1-128k/, 'V1 128K'],
+            [/moonshot-v1-32k/, 'V1 32K'],
+            [/moonshot-v1-8k/, 'V1 8K']
         ];
 
         for (const [pattern, shortName] of patterns) {
@@ -1848,7 +1857,8 @@ export class UnifiedAIPanel {
                     'openai': { bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.3)' },
                     'gemini': { bg: 'rgba(251, 146, 60, 0.1)', border: 'rgba(251, 146, 60, 0.3)' },
                     'xai': { bg: 'rgba(236, 72, 153, 0.1)', border: 'rgba(236, 72, 153, 0.3)' },
-                    'deepseek': { bg: 'rgba(6, 182, 212, 0.1)', border: 'rgba(6, 182, 212, 0.3)' }
+                    'deepseek': { bg: 'rgba(6, 182, 212, 0.1)', border: 'rgba(6, 182, 212, 0.3)' },
+                    'moonshot': { bg: 'rgba(138, 43, 226, 0.1)', border: 'rgba(138, 43, 226, 0.3)' }  // Purple for Kimi
                 };
 
                 const providerType = this.claudeClient.getActiveProvider();

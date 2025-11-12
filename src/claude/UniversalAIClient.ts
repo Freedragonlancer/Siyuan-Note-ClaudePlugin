@@ -65,6 +65,13 @@ export class UniversalAIClient {
             const activeProvider = this.settings.activeProvider || 'anthropic';
             const providerConfig = this.settings.providers?.[activeProvider];
 
+            // DEBUG: Log configuration state
+            console.log('[UniversalAIClient] DEBUG - activeProvider:', activeProvider);
+            console.log('[UniversalAIClient] DEBUG - settings.providers keys:', this.settings.providers ? Object.keys(this.settings.providers) : 'undefined');
+            console.log('[UniversalAIClient] DEBUG - providerConfig:', providerConfig);
+            console.log('[UniversalAIClient] DEBUG - apiKey exists:', providerConfig ? !!providerConfig.apiKey : 'no config');
+            console.log('[UniversalAIClient] DEBUG - apiKey value:', providerConfig?.apiKey ? `${providerConfig.apiKey.substring(0, 10)}...` : 'empty');
+
             if (!providerConfig || !providerConfig.apiKey || providerConfig.apiKey.trim() === '') {
                 console.log(`[UniversalAIClient] Provider ${activeProvider} not configured (API Key required)`);
                 this.provider = null;

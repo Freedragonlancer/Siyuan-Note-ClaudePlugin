@@ -31,7 +31,7 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
 
         // Allow user to choose between global and China API
         // Default to global if not specified
-        this.baseURL = config.baseURL || 'https://api.moonshot.ai/v1';
+        this.baseURL = config.baseURL || 'https://api.moonshot.cn/v1';
 
         console.log(`[MoonshotProvider] Initializing with API key: ${this.apiKey.substring(0, 10)}...`);
         console.log(`[MoonshotProvider] Base URL: ${this.baseURL}`);
@@ -310,5 +310,23 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
         }
 
         return clamped;
+    }
+
+    /**
+     * Get maximum token limit for a specific model
+     */
+    getMaxTokenLimit(model: string): number {
+        return this.getModelContextWindow(model);
+    }
+
+    /**
+     * Get parameter limits for Moonshot provider
+     */
+    getParameterLimits(): ParameterLimits {
+        const modelId = this.model || 'kimi-k2-0905-preview';
+        return {
+            temperature: { min: 0, max: 1, default: 1 },           // Moonshot限制 [0, 1]
+            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
+        };
     }
 }

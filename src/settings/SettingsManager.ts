@@ -68,14 +68,26 @@ export class SettingsManager {
                     return;
                 }
                 
-                // Update current settings
+                // Update current settings with deep merge for providers
                 this.settings = {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
+                    providers: {
+                        ...DEFAULT_SETTINGS.providers,
+                        ...parsed.providers,
+                    },
                 };
                 
-                // Save to memory caches
-                const serialized = JSON.stringify(parsed);
+                // DEBUG: Verify deep merge worked
+                console.log('[SettingsManager] DEBUG - After deep merge, providers keys:', Object.keys(this.settings.providers));
+                console.log('[SettingsManager] DEBUG - moonshot config exists:', !!this.settings.providers.moonshot);
+                if (this.settings.providers.moonshot) {
+                    console.log('[SettingsManager] DEBUG - moonshot apiKey exists:', !!this.settings.providers.moonshot.apiKey);
+                    console.log('[SettingsManager] DEBUG - moonshot model:', this.settings.providers.moonshot.model);
+                }
+                
+                // Save to memory caches (deep merged settings, not raw parsed)
+                const serialized = JSON.stringify(this.settings);
                 localStorage.setItem(STORAGE_KEY, serialized);
                 sessionStorage.setItem(STORAGE_KEY, serialized);
                 if (typeof window !== 'undefined') {
@@ -108,9 +120,14 @@ export class SettingsManager {
         try {
             if (typeof window !== 'undefined' && (window as any).__CLAUDE_SETTINGS__) {
                 console.log("[SettingsManager] Found in window.__CLAUDE_SETTINGS__");
+                const cached = (window as any).__CLAUDE_SETTINGS__;
                 return {
                     ...DEFAULT_SETTINGS,
-                    ...(window as any).__CLAUDE_SETTINGS__,
+                    ...cached,
+                    providers: {
+                        ...DEFAULT_SETTINGS.providers,
+                        ...cached.providers,
+                    },
                 };
             }
         } catch (error) {
@@ -126,6 +143,10 @@ export class SettingsManager {
                 return {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
+                    providers: {
+                        ...DEFAULT_SETTINGS.providers,
+                        ...parsed.providers,
+                    },
                 };
             }
         } catch (error) {
@@ -140,10 +161,22 @@ export class SettingsManager {
             if (stored) {
                 console.log("[SettingsManager] Found in localStorage");
                 const parsed = JSON.parse(stored);
-                return {
+                
+                const merged = {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
+                    providers: {
+                        ...DEFAULT_SETTINGS.providers,
+                        ...parsed.providers,
+                    },
                 };
+                
+                // DEBUG: Log localStorage deep merge result
+                console.log('[SettingsManager] DEBUG (localStorage) - Parsed providers keys:', parsed.providers ? Object.keys(parsed.providers) : 'no providers');
+                console.log('[SettingsManager] DEBUG (localStorage) - After deep merge, providers keys:', Object.keys(merged.providers));
+                console.log('[SettingsManager] DEBUG (localStorage) - moonshot exists:', !!merged.providers.moonshot);
+                
+                return merged;
             } else {
                 console.log("[SettingsManager] localStorage is empty");
             }

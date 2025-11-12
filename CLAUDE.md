@@ -457,13 +457,37 @@ const blockId = blockElement.getAttribute('data-node-id');
 
 ### Adding AI Providers
 
-The plugin now supports multiple AI providers through an abstraction layer:
+The plugin supports multiple AI providers through an extensible architecture. Follow this **complete checklist** to add a new provider:
+
+#### Complete Integration Checklist
+
+**Step 1: Create Provider Implementation** (`src/ai/providers/NewProvider.ts`)
 
 ```typescript
-// 1. Implement AIProvider interface
-class MyCustomProvider implements AIProvider {
-    readonly providerType = 'custom';
-    readonly providerName = 'My AI Service';
+import { BaseAIProvider } from '../BaseAIProvider';
+import type { AIModelConfig, AIRequestOptions, ParameterLimits } from '../types';
+import type { Message } from '../../claude/types';
+
+export class NewProvider extends BaseAIProvider {
+    readonly providerType = 'newprovider';  // IMPORTANT: lowercase, matches type in AIProviderType
+    readonly providerName = 'New Provider Display Name';
+
+    private apiKey: string;
+    private model: string;
+    private temperature: number;
+    private maxTokens: number;
+    private baseURL: string;
+
+    constructor(config: AIModelConfig) {
+        super(config);  // CRITICAL: Must call super(config), not super()
+        
+        // IMPORTANT: Use config.modelId (not config.model)
+        this.apiKey = config.apiKey;
+        this.model = config.modelId || 'default-model-id';
+        this.temperature = config.temperature ?? 0.7;
+        this.maxTokens = config.maxTokens ?? 4096;
+        this.baseURL = config.baseURL || 'https://api.example.com/v1';
+    }
 
     async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
         // Implementation
@@ -473,24 +497,195 @@ class MyCustomProvider implements AIProvider {
         // Stream implementation with options.onChunk callback
     }
 
+    // CRITICAL: validateConfig must check config.modelId (not config.model)
     validateConfig(config: AIModelConfig): true | string {
-        if (!config.apiKey) return 'API key required';
+        if (!config.apiKey) return 'API key is required';
+        if (!config.modelId) return 'Model selection is required';
+        
+        const validModels = this.getAvailableModels();
+        if (!validModels.includes(config.modelId)) {
+            return `Invalid model. Available: ${validModels.join(', ')}`;
+        }
         return true;
     }
 
     getAvailableModels(): string[] {
-        return ['model-v1', 'model-v2'];
+        return ['model-v1', 'model-v2', 'model-v3'];
+    }
+
+    // CRITICAL: These two methods are REQUIRED (abstract methods from BaseAIProvider)
+    getMaxTokenLimit(model: string): number {
+        const limits: Record<string, number> = {
+            'model-v1': 4096,
+            'model-v2': 8192,
+            'model-v3': 16384,
+        };
+        return limits[model] || 4096;
+    }
+
+    getParameterLimits(): ParameterLimits {
+        const modelId = this.model || 'model-v1';
+        return {
+            temperature: { min: 0, max: 2, default: 0.7 },
+            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
+        };
     }
 }
+```
 
-// 2. Register provider
-AIProviderFactory.register({
-    type: 'custom',
-    factory: (config) => new MyCustomProvider(config),
-    displayName: 'My AI Service',
-    description: 'Custom AI provider'
+**Step 2: Export Provider** (`src/ai/providers/index.ts`)
+
+```typescript
+export { NewProvider } from './NewProvider';
+```
+
+**Step 3: Register in Factory** (`src/ai/AIProviderFactory.ts`)
+
+```typescript
+import { NewProvider } from './providers';  // Add to imports
+
+// In initialize() method:
+this.register({
+    type: 'newprovider',  // Must match providerType
+    factory: (config) => new NewProvider(config),
+    displayName: 'New Provider Name',
+    description: 'Brief description of the provider',
 });
 ```
+
+**Step 4: Add to Type Definitions** (`src/ai/types.ts`)
+
+```typescript
+export type AIProviderType = 
+    'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'moonshot' | 
+    'newprovider' |  // Add your new provider here
+    'custom';
+```
+
+**Step 5: Add to DEFAULT_SETTINGS** (`src/claude/index.ts`) ⚠️ **CRITICAL**
+
+```typescript
+export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
+    // ... other settings ...
+    providers: {
+        anthropic: { /* ... */ },
+        openai: { /* ... */ },
+        // ... other providers ...
+        
+        // CRITICAL: Add your new provider here!
+        newprovider: {
+            apiKey: '',
+            baseURL: '',
+            model: 'model-v1',  // Default model
+            enabled: false,
+        },
+    },
+};
+```
+
+**⚠️ WARNING**: If you forget Step 5, `settings.providers.newprovider` will be `undefined`, causing initialization failures!
+
+**Step 6: Add UI Components** (`src/settings/SettingsPanelV3.ts`)
+
+Add provider metadata (around line 253):
+```typescript
+const providerInfo: Record<AIProviderType, { name: string; icon: string; url: string; defaultBaseURL: string }> = {
+    // ... existing providers ...
+    newprovider: { 
+        name: 'New Provider Display Name', 
+        icon: '🆕',  // Choose an emoji
+        url: 'https://provider.com/api-keys',
+        defaultBaseURL: 'https://api.provider.com/v1'
+    },
+};
+```
+
+Add dropdown option (around line 307):
+```typescript
+<option value="newprovider" ${activeProvider === 'newprovider' ? 'selected' : ''}>
+    ${providerInfo.newprovider.name}
+</option>
+```
+
+Add model list (around line 462):
+```typescript
+newprovider: [
+    { value: 'model-v1', label: '🌟 Model V1 (Recommended)' },
+    { value: 'model-v2', label: 'Model V2 (Advanced)' },
+    { value: 'model-v3', label: '⚡ Model V3 (Fast)' },
+],
+```
+
+Update event listener metadata (around line 856):
+```typescript
+newprovider: { 
+    name: 'New Provider', 
+    icon: '🆕', 
+    url: 'https://provider.com/api-keys',
+    defaultBaseURL: 'https://api.provider.com/v1'
+},
+```
+
+**Step 7: Add Display Name Mapping** (`src/claude/UniversalAIClient.ts`)
+
+```typescript
+getProviderDisplayName(): string {
+    const names: Record<string, string> = {
+        'anthropic': 'Claude',
+        'openai': 'GPT',
+        // ... other providers ...
+        'newprovider': 'NewAI',  // Short display name
+    };
+    return names[provider] || provider || 'Unknown';
+}
+```
+
+**Step 8: Add Badge Display** (`src/sidebar/UnifiedAIPanel.ts`)
+
+Add model name patterns (around line 1806):
+```typescript
+// New Provider models
+[/model-v1/, 'V1'],
+[/model-v2/, 'V2'],
+[/model-v3/, 'V3'],
+```
+
+Add badge color (around line 1856):
+```typescript
+'newprovider': { bg: 'rgba(255, 100, 50, 0.1)', border: 'rgba(255, 100, 50, 0.3)' }  // Choose colors
+```
+
+**Step 9: Update Documentation** (`CLAUDE.md`)
+
+- Update provider list in "Current Providers" section
+- Update version number
+- Add provider-specific notes if needed
+
+**Step 10: Testing Checklist**
+
+- [ ] Build succeeds without errors (`npm run build`)
+- [ ] Provider appears in settings dropdown
+- [ ] Can save configuration with API key
+- [ ] No "Provider not configured" error after saving
+- [ ] Test connection succeeds with valid credentials
+- [ ] Model selection dropdown shows correct models
+- [ ] Badge displays with correct name and color
+- [ ] Streaming works correctly
+- [ ] Non-streaming works correctly
+- [ ] Error messages are user-friendly
+
+#### Common Pitfalls ⚠️
+
+1. **Constructor must call `super(config)`** - NOT `super()`
+2. **Use `config.modelId`** - NOT `config.model`
+3. **Must implement `getMaxTokenLimit()` and `getParameterLimits()`** - Required abstract methods
+4. **Must add to `DEFAULT_SETTINGS.providers`** - Otherwise config will be `undefined`
+5. **Type name must be lowercase** - e.g., `'newprovider'` not `'NewProvider'`
+6. **validateConfig must check `config.modelId`** - NOT `config.model`
+
+#### Example: Moonshot Provider Integration
+
+See `src/ai/providers/MoonshotProvider.ts` for a complete real-world example following all best practices.
 
 **Current Providers:**
 - `anthropic` - Claude (Implemented ✅)
@@ -498,7 +693,7 @@ AIProviderFactory.register({
 - `gemini` - Google Gemini (Implemented ✅)
 - `xai` - xAI Grok (Implemented ✅)
 - `deepseek` - DeepSeek (Implemented ✅)
-- `moonshot` - Moonshot AI Kimi (Implemented ✅)
+- `moonshot` - Moonshot AI Kimi (Implemented ✅ - v0.11.2)
 
 ### Adding Filter Middleware
 
@@ -627,6 +822,27 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 - **Async Initialization**: Fixed race condition using `waitForLoad()` pattern (v0.9.0)
   - Prevents settings overwrite on first launch
   - Ensures configuration fully loaded before plugin initialization
+- **Deep Merge for Providers** (v0.11.3): Fixed configuration migration bug (Critical Fix)
+  - **Problem**: Shallow merge (`{...DEFAULT_SETTINGS, ...parsed}`) overwrote entire `providers` object
+  - **Impact**: New providers added to DEFAULT_SETTINGS were lost when loading saved configs
+  - **Solution**: Deep merge `providers` object when loading settings
+  - **Implementation**: All settings loading paths (localStorage, sessionStorage, file, window global) now use:
+    ```typescript
+    return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        providers: {
+            ...DEFAULT_SETTINGS.providers,  // Ensure all default providers present
+            ...parsed.providers,            // Override with user's saved configs
+        },
+    };
+    ```
+  - **Why Critical**: Without this fix, users with existing configs couldn't access newly added providers (e.g., Moonshot/Kimi)
+  - **Locations Fixed**: 
+    - `src/settings/SettingsManager.ts:loadFromFileAsync()` (line ~80)
+    - `src/settings/SettingsManager.ts:loadSettings()` - window global (line ~113)
+    - `src/settings/SettingsManager.ts:loadSettings()` - sessionStorage (line ~126)
+    - `src/settings/SettingsManager.ts:loadSettings()` - localStorage (line ~138)
 
 ### API Security
 - **Filter Validation**: Regex patterns validated to prevent ReDoS attacks
@@ -647,6 +863,7 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 | **Reverse proxy 404 error** | **For Anthropic: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`. OpenAI/Gemini/xAI/DeepSeek/Moonshot: Use baseURL as provided by proxy service.** |
 | **Moonshot temperature warning** | **Plugin auto-clamps temperature to [0, 1] range (Moonshot limit). Values above 1.0 are automatically clamped with console warning. No action needed.** |
 | **Moonshot reasoning content** | **K2 Thinking models return reasoning in collapsible `<details>` section. Expand to view model's thought process. Use non-Thinking models if reasoning not needed (faster, cheaper).** |
+| **New provider not appearing** | **If a newly added provider (e.g., Moonshot) shows "AI provider is not configured" despite having API key set, this is the configuration migration bug. Fixed in v0.11.3. Solution: (1) Update to v0.11.3+, (2) Open Settings, (3) Re-save your API key for the new provider, (4) Restart SiYuan. The deep merge fix ensures new providers from DEFAULT_SETTINGS are preserved.** |
 | **Multiple topbar icons (3+)** | **Run `npm run clean-deploy` - removes duplicates caused by improper cleanup** |
 | **Settings panel blank/invisible** | **Run `npm run clean-cache` then restart SiYuan - clears cached HTML/CSS** |
 | **CSS changes not applying** | **Run `npm run clean-cache` - forces fresh CSS load** |
@@ -803,4 +1020,4 @@ For detailed architecture information:
 ---
 
 **Last Updated**: 2025-01-12
-**Version**: 0.10.1 (Multi-Provider + Moonshot AI Kimi Integration)
+**Version**: 0.11.3 (Critical Fix: Configuration Deep Merge + Moonshot AI Integration)

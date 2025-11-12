@@ -94,6 +94,7 @@ export interface MultiProviderSettings extends ClaudeSettings {
         gemini?: ProviderConfig;
         xai?: ProviderConfig;
         deepseek?: ProviderConfig;
+        moonshot?: ProviderConfig;
     };
 }
 
@@ -141,6 +142,12 @@ export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderS
                     model: 'deepseek-chat',
                     enabled: false,
                 },
+                moonshot: migratedSettings.providers?.moonshot || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'kimi-k2-0905-preview',
+                    enabled: false,
+                },
             },
         };
     }
@@ -180,6 +187,12 @@ export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderS
                 apiKey: '',
                 baseURL: '',
                 model: 'deepseek-chat',
+                enabled: false,
+            },
+            moonshot: {
+                apiKey: '',
+                baseURL: '',
+                model: 'kimi-k2-0905-preview',
                 enabled: false,
             },
         },

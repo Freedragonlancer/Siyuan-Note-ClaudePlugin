@@ -259,8 +259,8 @@ export class SettingsPanelV3 {
             moonshot: { 
                 name: 'Moonshot AI (Kimi)', 
                 icon: '🌙', 
-                url: 'https://platform.moonshot.ai/console/api-keys',
-                defaultBaseURL: 'https://api.moonshot.ai/v1'
+                url: 'https://platform.moonshot.cn/console/api-keys',
+                defaultBaseURL: 'https://api.moonshot.cn/v1'
             },
             custom: { 
                 name: 'Custom Provider', 
@@ -856,8 +856,8 @@ export class SettingsPanelV3 {
             moonshot: { 
                 name: 'Moonshot AI (Kimi)', 
                 icon: '🌙', 
-                url: 'https://platform.moonshot.ai/console/api-keys',
-                defaultBaseURL: 'https://api.moonshot.ai/v1'
+                url: 'https://platform.moonshot.cn/console/api-keys',
+                defaultBaseURL: 'https://api.moonshot.cn/v1'
             },
             custom: { 
                     name: 'Custom Provider', 

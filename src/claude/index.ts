@@ -100,6 +100,12 @@ export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
             model: 'deepseek-chat',
             enabled: false,
         },
+        moonshot: {
+            apiKey: '',
+            baseURL: '',
+            model: 'kimi-k2-0905-preview',
+            enabled: false,
+        },
     },
 };
 

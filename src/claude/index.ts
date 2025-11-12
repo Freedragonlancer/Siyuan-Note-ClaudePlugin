@@ -1,8 +1,32 @@
-export { ClaudeClient } from "./ClaudeClient";
-export type { ClaudeSettings, KeyboardShortcuts, Message, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
-import { DEFAULT_EDIT_SETTINGS } from "../editor/types";
+// Export UniversalAIClient (new multi-provider client)
+export { UniversalAIClient } from "./UniversalAIClient";
 
-export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
+// Backward compatibility: ClaudeClient is now an alias for UniversalAIClient
+export { UniversalAIClient as ClaudeClient } from "./UniversalAIClient";
+
+// Export types
+export type { 
+    ClaudeSettings, 
+    MultiProviderSettings,
+    ProviderConfig,
+    KeyboardShortcuts, 
+    Message, 
+    MessageCallback, 
+    ErrorCallback, 
+    CompleteCallback 
+} from "./types";
+
+// Export constants
+export { DEFAULT_KEYBOARD_SHORTCUTS } from "./types";
+
+// Export migration utility
+export { migrateToMultiProvider } from "./types";
+import { DEFAULT_EDIT_SETTINGS } from "../editor/types";
+import type { MultiProviderSettings } from "./types";
+
+export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
+    // Legacy single-provider settings (for backward compatibility)
+    // These will be migrated to multi-provider format automatically
     baseURL: "",
     model: "claude-sonnet-4-5-20250929",
     maxTokens: 4096,
@@ -41,6 +65,41 @@ export const DEFAULT_SETTINGS: Omit<ClaudeSettings, "apiKey"> = {
         quickEdit: "⌃⇧Q",      // Ctrl+Shift+Q
         undoAIEdit: "⌃⇧Z",     // Ctrl+Shift+Z
         openClaude: "⌥⇧C",     // Alt+Shift+C
+    },
+    
+    // Multi-provider settings (new in v0.10.0+)
+    activeProvider: 'anthropic' as const,
+    providers: {
+        anthropic: {
+            apiKey: '',  // Will be set by user
+            baseURL: '',
+            model: 'claude-sonnet-4-5-20250929',
+            enabled: true,
+        },
+        openai: {
+            apiKey: '',
+            baseURL: '',
+            model: 'gpt-4-turbo-preview',
+            enabled: false,
+        },
+        gemini: {
+            apiKey: '',
+            baseURL: '',
+            model: 'gemini-pro',
+            enabled: false,
+        },
+        xai: {
+            apiKey: '',
+            baseURL: '',
+            model: 'grok-beta',
+            enabled: false,
+        },
+        deepseek: {
+            apiKey: '',
+            baseURL: '',
+            model: 'deepseek-chat',
+            enabled: false,
+        },
     },
 };
 

@@ -144,6 +144,9 @@ export class UnifiedAIPanel {
 
         // Start selection monitoring for automatic mode switching
         this.startSelectionMonitoring();
+
+        // Initialize provider info badge
+        setTimeout(() => this.updateProviderInfoBadge(), 100);
     }
 
     //#region Selection Monitoring & Mode Switching
@@ -369,6 +372,9 @@ export class UnifiedAIPanel {
                         <span id="claude-mode-badge" class="claude-mode-badge" style="display: none; font-size: 11px; padding: 2px 8px; background: var(--b3-theme-primary-lighter); color: var(--b3-theme-primary); border-radius: 10px; white-space: nowrap;">📝 已选中 0 个块</span>
                     </div>
                     <div class="fn__flex" style="align-items: center; gap: 3px;">
+                        <div class="provider-info-badge" data-provider-badge style="display: inline-flex; align-items: center; padding: 4px 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; font-size: 11px; font-weight: 500; color: var(--b3-theme-on-surface); white-space: nowrap;">
+                            <span class="provider-text">Loading...</span>
+                        </div>
                         <button class="b3-button b3-button--text" id="claude-settings-btn" title="设置" style="padding: 2px 4px;">
                             <svg class="fn__size200"><use xlink:href="#iconSettings"></use></svg>
                         </button>
@@ -752,7 +758,7 @@ export class UnifiedAIPanel {
 
         const roleLabel = document.createElement("div");
         roleLabel.className = "ft__smaller ft__secondary";
-        roleLabel.textContent = message.role === "user" ? "You" : "Claude";
+        roleLabel.textContent = message.role === "user" ? "You" : this.claudeClient.getProviderName();
 
         headerDiv.appendChild(roleLabel);
 
@@ -918,7 +924,7 @@ export class UnifiedAIPanel {
 
         const roleLabel = document.createElement("div");
         roleLabel.className = "ft__smaller ft__secondary";
-        roleLabel.textContent = "Claude";
+        roleLabel.textContent = this.claudeClient.getProviderName();
 
         const typingIndicator = document.createElement("span");
         typingIndicator.className = "claude-typing-indicator ft__smaller ft__secondary";
@@ -999,7 +1005,7 @@ export class UnifiedAIPanel {
             if (this.messages.length === 0) {
                 this.messagesContainer.innerHTML = `
                     <div class="ft__secondary" style="text-align: center; padding: 20px;">
-                        Start a conversation with Claude or select text and click the select button above.
+                        Start a conversation with ${this.claudeClient.getProviderName()} or select text and click the select button above.
                     </div>
                 `;
             }
@@ -1757,6 +1763,106 @@ export class UnifiedAIPanel {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Get short model name for display in badge
+     */
+    private getShortModelName(fullModelName: string): string {
+        if (!fullModelName) return '';
+
+        // Map common model patterns to short names
+        const patterns: [RegExp, string][] = [
+            // Claude models
+            [/claude-3-5-sonnet/, 'Sonnet 3.5'],
+            [/claude-sonnet-4/, 'Sonnet 4'],
+            [/claude-3-opus/, 'Opus 3'],
+            [/claude-3-haiku/, 'Haiku 3'],
+            [/claude-2/, 'Claude 2'],
+
+            // OpenAI models
+            [/gpt-4o-mini/, 'GPT-4o Mini'],
+            [/gpt-4o/, 'GPT-4o'],
+            [/gpt-4-turbo/, 'GPT-4 Turbo'],
+            [/gpt-4/, 'GPT-4'],
+            [/gpt-3\.5-turbo/, 'GPT-3.5'],
+            [/o1-preview/, 'o1 Preview'],
+            [/o1-mini/, 'o1 Mini'],
+            [/o1/, 'o1'],
+            [/o3-mini/, 'o3 Mini'],
+
+            // Gemini models
+            [/gemini-2\.5-pro/, '2.5 Pro'],
+            [/gemini-2\.5-flash/, '2.5 Flash'],
+            [/gemini-2\.0-flash/, '2.0 Flash'],
+            [/gemini-1\.5-pro/, '1.5 Pro'],
+            [/gemini-1\.5-flash/, '1.5 Flash'],
+
+            // xAI models
+            [/grok-2/, 'Grok 2'],
+            [/grok-/, 'Grok'],
+
+            // DeepSeek models
+            [/deepseek-chat/, 'Chat'],
+            [/deepseek-coder/, 'Coder']
+        ];
+
+        for (const [pattern, shortName] of patterns) {
+            if (pattern.test(fullModelName)) {
+                return shortName;
+            }
+        }
+
+        // Fallback: return first 20 chars if no pattern matches
+        return fullModelName.length > 20 
+            ? fullModelName.substring(0, 20) + '...' 
+            : fullModelName;
+    }
+
+    /**
+     * Update provider info badge with current AI provider and model
+     * Called on initialization and after settings changes
+     */
+    updateProviderInfoBadge(): void {
+        const badge = this.element.querySelector('[data-provider-badge] .provider-text');
+        if (!badge) {
+            console.warn('[UnifiedAIPanel] Provider info badge not found');
+            return;
+        }
+
+        try {
+            const providerName = this.claudeClient.getProviderDisplayName();
+            const settings = this.claudeClient.getSettings();
+            const modelName = this.getShortModelName(settings.model || '');
+            
+            // Format: "Provider ModelName" (e.g., "Claude Sonnet 4", "GPT-4o")
+            badge.textContent = modelName 
+                ? `${providerName} ${modelName}`
+                : providerName;
+
+            // Optional: Update badge color based on provider
+            const badgeContainer = badge.parentElement;
+            if (badgeContainer) {
+                const colors: Record<string, { bg: string; border: string }> = {
+                    'anthropic': { bg: 'rgba(99, 102, 241, 0.1)', border: 'rgba(99, 102, 241, 0.3)' },
+                    'openai': { bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.3)' },
+                    'gemini': { bg: 'rgba(251, 146, 60, 0.1)', border: 'rgba(251, 146, 60, 0.3)' },
+                    'xai': { bg: 'rgba(236, 72, 153, 0.1)', border: 'rgba(236, 72, 153, 0.3)' },
+                    'deepseek': { bg: 'rgba(6, 182, 212, 0.1)', border: 'rgba(6, 182, 212, 0.3)' }
+                };
+
+                const providerType = this.claudeClient.getActiveProvider();
+                const color = colors[providerType] || colors['anthropic']; // Default to Claude color
+                
+                badgeContainer.style.background = color.bg;
+                badgeContainer.style.borderColor = color.border;
+            }
+
+            console.log(`[UnifiedAIPanel] Updated provider badge: ${badge.textContent}`);
+        } catch (error) {
+            console.error('[UnifiedAIPanel] Error updating provider badge:', error);
+            badge.textContent = 'Unknown';
+        }
     }
 
     /**

@@ -10,9 +10,11 @@
  * Prompt editing is moved to a separate dedicated panel.
  */
 
-import type { ClaudeSettings } from "../claude";
+import type { ClaudeSettings, MultiProviderSettings, ProviderConfig } from "../claude";
 import { AVAILABLE_MODELS } from "../claude";
-import { ClaudeClient } from "../claude/ClaudeClient";
+import { UniversalAIClient } from "../claude/UniversalAIClient";
+import { AIProviderFactory } from "../ai/AIProviderFactory";
+import type { AIProviderType } from "../ai/types";
 import type { ConfigManager } from "./ConfigManager";
 import type { ConfigProfile, PromptTemplate } from "./config-types";
 import { Dialog } from "siyuan";
@@ -25,7 +27,7 @@ export class SettingsPanelV3 {
     private onOpenPromptEditor: () => void;
     private configManager: ConfigManager;
     private currentProfile: ConfigProfile;
-    private testClient: ClaudeClient | null = null;
+    private testClient: UniversalAIClient | null = null;
     private availableModels: { value: string; label: string }[] = AVAILABLE_MODELS;
     private dialog: Dialog | null = null;
     private quickEditPreset: PromptTemplate | null = null;
@@ -218,94 +220,245 @@ export class SettingsPanelV3 {
     }
 
     private createConnectionSection(): string {
-        const settings = this.currentProfile.settings;
-        const hasProxy = !!settings.baseURL;
+        const settings = this.currentProfile.settings as MultiProviderSettings;
+        const activeProvider = settings.activeProvider || 'anthropic';
+        const providerConfig = settings.providers?.[activeProvider];
+        
+        // Provider display names and metadata
+        const providerInfo: Record<AIProviderType, { name: string; icon: string; url: string; defaultBaseURL: string }> = {
+            anthropic: { 
+                name: 'Anthropic Claude', 
+                icon: '🤖', 
+                url: 'https://console.anthropic.com/settings/keys',
+                defaultBaseURL: 'https://api.anthropic.com'
+            },
+            openai: { 
+                name: 'OpenAI', 
+                icon: '🟢', 
+                url: 'https://platform.openai.com/api-keys',
+                defaultBaseURL: 'https://api.openai.com/v1'
+            },
+            gemini: { 
+                name: 'Google Gemini', 
+                icon: '✨', 
+                url: 'https://makersuite.google.com/app/apikey',
+                defaultBaseURL: 'https://generativelanguage.googleapis.com'
+            },
+            xai: { 
+                name: 'xAI Grok', 
+                icon: '🚀', 
+                url: 'https://x.ai',
+                defaultBaseURL: 'https://api.x.ai/v1'
+            },
+            deepseek: { 
+                name: 'DeepSeek', 
+                icon: '🧠', 
+                url: 'https://platform.deepseek.com',
+                defaultBaseURL: 'https://api.deepseek.com/v1'
+            },
+            custom: { 
+                name: 'Custom Provider', 
+                icon: '⚙️', 
+                url: '',
+                defaultBaseURL: ''
+            }
+        };
+
+        const currentInfo = providerInfo[activeProvider];
+        const hasCustomBaseURL = !!(providerConfig?.baseURL && providerConfig.baseURL.trim());
 
         return `
-            <div class="section-header" style="margin-bottom: 16px;">
-                <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+            <div class=\"section-header\" style=\"margin-bottom: 16px;\">
+                <h3 style=\"margin: 0; font-size: 15px; font-weight: 500;\">
                     🔌 连接设置
                 </h3>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
-                        配置 Claude API 连接方式
-                    </div>
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 4px;\">
+                    配置 AI 提供商和 API 连接
                 </div>
+            </div>
 
-                <!-- API Provider -->
-                <div class="setting-item" style="margin-bottom: 16px;">
-                    <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">API 提供商</span>
-                    </div>
-                    <div class="b3-form__radio" style="margin-bottom: 8px;">
-                        <label>
-                            <input type="radio" name="api-provider" value="official" ${!hasProxy ? 'checked' : ''}>
-                            <span>Anthropic 官方 API</span>
-                        </label>
-                    </div>
-                    <div class="b3-form__radio">
-                        <label>
-                            <input type="radio" name="api-provider" value="proxy" ${hasProxy ? 'checked' : ''}>
-                            <span>自定义反向代理</span>
-                        </label>
-                    </div>
+            <!-- AI Provider Selector -->
+            <div class=\"setting-item\" style=\"margin-bottom: 16px;\">
+                <div class=\"setting-label\" style=\"margin-bottom: 8px;\">
+                    <span style=\"font-weight: 500;\">AI 提供商 <span style=\"color: var(--b3-theme-error);\">*</span></span>
                 </div>
-
-                <!-- API Key -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span>API Key <span style="color: var(--b3-theme-error);">*</span></span>
-                    </div>
-                    <div class="settings-input-group">
-                        <input
-                            class="b3-text-field"
-                            type="password"
-                            id="claude-api-key"
-                            placeholder="输入您的 API Key"
-                            value="${settings.apiKey || ""}"
-                        >
-                        <button
-                            class="b3-button b3-button--outline"
-                            id="toggle-api-key"
-                            title="显示/隐藏 API Key"
-                            style="padding: 0 12px;"
-                        >
-                            <svg><use xlink:href="#iconEye"></use></svg>
-                        </button>
-                    </div>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        📍 获取 API Key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: var(--b3-theme-on-background);">Anthropic 控制台</a>
-                    </div>
+                <select class=\"b3-select\" id=\"ai-provider-selector\" style=\"width: 100%;\">
+                    <option value=\"anthropic\" ${activeProvider === 'anthropic' ? 'selected' : ''}>
+                        ${providerInfo.anthropic.icon} ${providerInfo.anthropic.name}
+                    </option>
+                    <option value=\"openai\" ${activeProvider === 'openai' ? 'selected' : ''}>
+                        ${providerInfo.openai.icon} ${providerInfo.openai.name}
+                    </option>
+                    <option value=\"gemini\" ${activeProvider === 'gemini' ? 'selected' : ''}>
+                        ${providerInfo.gemini.icon} ${providerInfo.gemini.name}
+                    </option>
+                    <option value=\"xai\" ${activeProvider === 'xai' ? 'selected' : ''}>
+                        ${providerInfo.xai.icon} ${providerInfo.xai.name}
+                    </option>
+                    <option value=\"deepseek\" ${activeProvider === 'deepseek' ? 'selected' : ''}>
+                        ${providerInfo.deepseek.icon} ${providerInfo.deepseek.name}
+                    </option>
+                </select>
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\">
+                    💡 选择不同的 AI 提供商，支持多平台切换
                 </div>
+            </div>
 
-                <!-- Proxy URL -->
-                <div class="setting-item" id="proxy-url-section" style="margin-bottom: 16px; ${hasProxy ? '' : 'display: none;'}">
-                    <div class="setting-label" style="margin-bottom: 8px;">
-                        <span style="font-weight: 500;">反向代理地址</span>
-                    </div>
+            <!-- API Endpoint Type -->
+            <div class=\"setting-item\" style=\"margin-bottom: 16px;\">
+                <div class=\"setting-label\" style=\"margin-bottom: 8px;\">
+                    <span style=\"font-weight: 500;\">API 端点</span>
+                </div>
+                <div class=\"b3-form__radio\" style=\"margin-bottom: 8px;\">
+                    <label>
+                        <input type=\"radio\" name=\"api-endpoint-type\" value=\"official\" ${!hasCustomBaseURL ? 'checked' : ''}>
+                        <span>官方 API (${currentInfo.defaultBaseURL})</span>
+                    </label>
+                </div>
+                <div class=\"b3-form__radio\">
+                    <label>
+                        <input type=\"radio\" name=\"api-endpoint-type\" value=\"custom\" ${hasCustomBaseURL ? 'checked' : ''}>
+                        <span>自定义端点 / 反向代理</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- API Key -->
+            <div class=\"setting-item\">
+                <div class=\"setting-label\">
+                    <span>API Key <span style=\"color: var(--b3-theme-error);\">*</span></span>
+                </div>
+                <div class=\"settings-input-group\">
                     <input
-                        class="b3-text-field"
-                        type="text"
-                        id="claude-base-url"
-                        placeholder="https://your-proxy.com/v1"
-                        value="${settings.baseURL || ""}"
-                        style="width: 100%;"
+                        class=\"b3-text-field\"
+                        type=\"password\"
+                        id=\"provider-api-key\"
+                        placeholder=\"输入您的 API Key\"
+                        value=\"${this.escapeHtml(providerConfig?.apiKey || '')}\"
                     >
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        💡 支持 OpenAI 兼容的 API 接口
-                    </div>
-                </div>
-
-                <!-- Test Connection Button -->
-                <div class="setting-item" style="margin-top: 24px;">
-                    <button class="b3-button b3-button--outline" id="claude-test-connection" style="width: 100%;">
-                        <svg><use xlink:href="#iconRefresh"></use></svg>
-                        <span style="margin-left: 4px;">测试连接</span>
+                    <button
+                        class=\"b3-button b3-button--outline\"
+                        id=\"toggle-api-key\"
+                        title=\"显示/隐藏 API Key\"
+                        style=\"padding: 0 12px;\"
+                    >
+                        <svg><use xlink:href=\"#iconEye\"></use></svg>
                     </button>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px; text-align: center;">
-                        点击测试 API 连接是否正常
-                    </div>
                 </div>
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\" id=\"api-key-help\">
+                    ${currentInfo.url ? `📍 获取 API Key: <a href=\"${currentInfo.url}\" target=\"_blank\" style=\"color: var(--b3-theme-on-background);\">${currentInfo.name} 控制台</a>` : ''}
+                </div>
+            </div>
+
+            <!-- Custom Base URL -->
+            <div class=\"setting-item\" id=\"custom-baseurl-section\" style=\"margin-bottom: 16px; ${hasCustomBaseURL ? '' : 'display: none;'}\">
+                <div class=\"setting-label\" style=\"margin-bottom: 8px;\">
+                    <span style=\"font-weight: 500;\">自定义 API 端点</span>
+                </div>
+                <input
+                    class=\"b3-text-field\"
+                    type=\"text\"
+                    id=\"provider-base-url\"
+                    placeholder=\"https://your-proxy.com/v1\"
+                    value=\"${this.escapeHtml(providerConfig?.baseURL || '')}\"
+                    style=\"width: 100%;\"
+                >
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\">
+                    💡 支持反向代理或自建 API 服务
+                </div>
+            </div>
+
+            <!-- Model Selection -->
+            <div class=\"setting-item\" style=\"margin-bottom: 16px;\">
+                <div class=\"setting-label\" style=\"margin-bottom: 8px;\">
+                    <span style=\"font-weight: 500;\">模型选择 <span style=\"color: var(--b3-theme-error);\">*</span></span>
+                </div>
+                <select class=\"b3-select\" id=\"provider-model\" style=\"width: 100%;\">
+                    ${this.getModelOptionsForProvider(activeProvider, providerConfig?.model || '')}
+                </select>
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\" id=\"model-help\">
+                    选择此提供商的模型版本
+                </div>
+            </div>
+
+            <!-- Test Connection Button -->
+            <div class=\"setting-item\" style=\"margin-top: 24px;\">
+                <button class=\"b3-button b3-button--outline\" id=\"test-provider-connection\" style=\"width: 100%;\">
+                    <svg><use xlink:href=\"#iconRefresh\"></use></svg>
+                    <span style=\"margin-left: 4px;\">测试连接</span>
+                </button>
+                <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px; text-align: center;\">
+                    验证 ${currentInfo.name} API 连接是否正常
+                </div>
+            </div>
         `;
+    }
+
+    /**
+     * Get model options HTML for a specific provider
+     */
+    private getModelOptionsForProvider(provider: AIProviderType, selectedModel: string): string {
+        const modelsByProvider: Record<AIProviderType, Array<{ value: string; label: string }>> = {
+            anthropic: [
+                { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5 (推荐)' },
+                { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+                { value: 'claude-opus-4-20250514', label: 'Claude Opus 4 (最强)' },
+                { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+                { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku (快速)' },
+            ],
+            openai: [
+                // GPT-4o Series (Recommended - 2024-2025)
+                { value: 'chatgpt-4o-latest', label: '🌟 ChatGPT-4o Latest (最新推荐)' },
+                { value: 'gpt-4o', label: '⚡ GPT-4o (多模态旗舰)' },
+                { value: 'gpt-4o-2024-11-20', label: 'GPT-4o (2024-11-20)' },
+                { value: 'gpt-4o-mini', label: '🚀 GPT-4o Mini (快速省钱)' },
+                
+                // o-Series Reasoning Models (2025)
+                { value: 'o1', label: '🧠 o1 (深度推理)' },
+                { value: 'o1-preview', label: 'o1 Preview' },
+                { value: 'o1-mini', label: 'o1 Mini (推理精简版)' },
+                { value: 'o3-mini', label: 'o3-mini (最新推理模型)' },
+                
+                // GPT-4 Turbo (Legacy but supported)
+                { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+                { value: 'gpt-4', label: 'GPT-4 Classic' },
+                
+                // GPT-3.5 (Budget option)
+                { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (经济型)' },
+            ],
+            gemini: [
+                // Gemini 2.5 Series (Latest - 2025)
+                { value: 'gemini-2.5-pro', label: '🌟 Gemini 2.5 Pro (最强推理能力)' },
+                { value: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (推荐，性价比最高)' },
+                { value: 'gemini-2.5-flash-lite', label: '🚀 Gemini 2.5 Flash Lite (最快最省)' },
+                { value: 'gemini-2.5-flash-image', label: '🖼️ Gemini 2.5 Flash Image (图像生成)' },
+                
+                // Gemini 2.0 Series
+                { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (稳定版)' },
+                { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp (实验版)' },
+                
+                // Gemini 1.5 Series (Previous generation)
+                { value: 'gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro Latest' },
+                { value: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash Latest' },
+            ],
+            xai: [
+                { value: 'grok-beta', label: 'Grok Beta' },
+                { value: 'grok-vision-beta', label: 'Grok Vision Beta' },
+            ],
+            deepseek: [
+                { value: 'deepseek-chat', label: 'DeepSeek Chat' },
+                { value: 'deepseek-coder', label: 'DeepSeek Coder' },
+                { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (推理模型)' },
+            ],
+            custom: [
+                { value: 'custom-model', label: 'Custom Model' },
+            ],
+        };
+
+        const models = modelsByProvider[provider] || [];
+        return models
+            .map(m => `<option value=\"${this.escapeHtml(m.value)}\" ${m.value === selectedModel ? 'selected' : ''}>${this.escapeHtml(m.label)}</option>`)
+            .join('');
     }
 
     private createModelSection(): string {
@@ -607,37 +760,132 @@ export class SettingsPanelV3 {
         // Profile management
         this.attachProfileListeners(container);
 
-        // API Provider toggle
-        const providerRadios = container.querySelectorAll('input[name="api-provider"]');
-        const proxySection = container.querySelector("#proxy-url-section") as HTMLElement;
+        // AI Provider Selector
+        const providerSelector = container.querySelector("#ai-provider-selector") as HTMLSelectElement;
+        const modelSelect = container.querySelector("#provider-model") as HTMLSelectElement;
+        const apiKeyHelp = container.querySelector("#api-key-help") as HTMLElement;
 
-        providerRadios.forEach(radio => {
+        providerSelector?.addEventListener("change", (e) => {
+            const selectedProvider = (e.target as HTMLSelectElement).value as AIProviderType;
+            const settings = this.currentProfile.settings as MultiProviderSettings;
+            const providerConfig = settings.providers?.[selectedProvider];
+            
+            // Update all input fields with the selected provider's configuration
+            const apiKeyInput = container.querySelector("#provider-api-key") as HTMLInputElement;
+            const baseURLInput = container.querySelector("#provider-base-url") as HTMLInputElement;
+            const customBaseURLSection = container.querySelector("#custom-baseurl-section") as HTMLElement;
+            const officialRadio = container.querySelector('input[name="api-endpoint-type"][value="official"]') as HTMLInputElement;
+            const customRadio = container.querySelector('input[name="api-endpoint-type"][value="custom"]') as HTMLInputElement;
+            
+            // Update API Key
+            if (apiKeyInput) {
+                apiKeyInput.value = providerConfig?.apiKey || '';
+            }
+            
+            // Update Base URL and endpoint type
+            const hasCustomBaseURL = !!(providerConfig?.baseURL && providerConfig.baseURL.trim());
+            if (baseURLInput) {
+                baseURLInput.value = providerConfig?.baseURL || '';
+            }
+            if (officialRadio && customRadio) {
+                officialRadio.checked = !hasCustomBaseURL;
+                customRadio.checked = hasCustomBaseURL;
+            }
+            if (customBaseURLSection) {
+                customBaseURLSection.style.display = hasCustomBaseURL ? 'block' : 'none';
+            }
+            
+            // Update model options for selected provider
+            if (modelSelect) {
+                modelSelect.innerHTML = this.getModelOptionsForProvider(selectedProvider, providerConfig?.model || '');
+            }
+
+            // FIX: Update provider info metadata (URLs, names, default baseURL)
+            const providerInfo: Record<AIProviderType, { name: string; icon: string; url: string; defaultBaseURL: string }> = {
+                anthropic: { 
+                    name: 'Anthropic Claude', 
+                    icon: '🤖', 
+                    url: 'https://console.anthropic.com/settings/keys',
+                    defaultBaseURL: 'https://api.anthropic.com'
+                },
+                openai: { 
+                    name: 'OpenAI', 
+                    icon: '🟢', 
+                    url: 'https://platform.openai.com/api-keys',
+                    defaultBaseURL: 'https://api.openai.com/v1'
+                },
+                gemini: { 
+                    name: 'Google Gemini', 
+                    icon: '✨', 
+                    url: 'https://makersuite.google.com/app/apikey',
+                    defaultBaseURL: 'https://generativelanguage.googleapis.com'
+                },
+                xai: { 
+                    name: 'xAI Grok', 
+                    icon: '🚀', 
+                    url: 'https://x.ai',
+                    defaultBaseURL: 'https://api.x.ai/v1'
+                },
+                deepseek: { 
+                    name: 'DeepSeek', 
+                    icon: '🧠', 
+                    url: 'https://platform.deepseek.com',
+                    defaultBaseURL: 'https://api.deepseek.com/v1'
+                },
+                custom: { 
+                    name: 'Custom Provider', 
+                    icon: '⚙️', 
+                    url: '',
+                    defaultBaseURL: ''
+                }
+            };
+
+            const currentInfo = providerInfo[selectedProvider];
+
+            // FIX: Update official API endpoint text label
+            const officialRadioLabel = officialRadio?.parentElement?.querySelector('span');
+            if (officialRadioLabel) {
+                officialRadioLabel.textContent = `官方 API (${currentInfo.defaultBaseURL})`;
+            }
+
+            // Update API key help text
+            if (apiKeyHelp && currentInfo.url) {
+                apiKeyHelp.innerHTML = `📍 获取 API Key: <a href="${currentInfo.url}" target="_blank" style="color: var(--b3-theme-on-background);">${currentInfo.name} 控制台</a>`;
+            }
+
+            // FIX: Update "测试连接" button help text
+            const testBtnHelp = container.querySelector('#test-provider-connection')?.nextElementSibling;
+            if (testBtnHelp) {
+                testBtnHelp.textContent = `验证 ${currentInfo.name} API 连接是否正常`;
+            }
+
+            // Auto-save provider selection
+            this.triggerSave();
+        });
+
+        // API Endpoint Type toggle
+        const endpointRadios = container.querySelectorAll('input[name="api-endpoint-type"]');
+        const customBaseURLSection = container.querySelector("#custom-baseurl-section") as HTMLElement;
+
+        endpointRadios.forEach(radio => {
             radio.addEventListener("change", (e) => {
                 const value = (e.target as HTMLInputElement).value;
-                if (proxySection) {
-                    proxySection.style.display = value === "proxy" ? "block" : "none";
+                if (customBaseURLSection) {
+                    customBaseURLSection.style.display = value === "custom" ? "block" : "none";
                 }
             });
         });
 
         // Toggle API Key visibility
         const toggleKeyBtn = container.querySelector("#toggle-api-key");
-        const apiKeyInput = container.querySelector("#claude-api-key") as HTMLInputElement;
+        const apiKeyInput = container.querySelector("#provider-api-key") as HTMLInputElement;
 
         toggleKeyBtn?.addEventListener("click", () => {
             apiKeyInput.type = apiKeyInput.type === "password" ? "text" : "password";
         });
 
-        // Model selection
-        const modelSelect = container.querySelector("#claude-model");
-        const modelInfo = container.querySelector("#model-info");
-
-        modelSelect?.addEventListener("change", (e) => {
-            const value = (e.target as HTMLSelectElement).value;
-            if (modelInfo) {
-                modelInfo.textContent = this.getModelInfo(value);
-            }
-        });
+        // Model selection is now handled above in provider selector
+        // (Legacy code removed - model is now selected per-provider)
 
         // Max Tokens slider
         const maxTokensSlider = container.querySelector("#claude-max-tokens") as HTMLInputElement;
@@ -707,7 +955,7 @@ export class SettingsPanelV3 {
         });
 
         // Test connection button (in connection section)
-        const testBtn = container.querySelector("#claude-test-connection");
+        const testBtn = container.querySelector("#test-provider-connection");
         testBtn?.addEventListener("click", () => this.testConnection(container));
 
         // Load preset information asynchronously
@@ -1041,17 +1289,31 @@ export class SettingsPanelV3 {
 
     //#region Save & Test
 
-    private saveSettings(container: HTMLElement) {
-        const useProxy = (container.querySelector('input[name="api-provider"]:checked') as HTMLInputElement)?.value === "proxy";
+    private saveSettings(container: HTMLElement, closeAfterSave: boolean = true) {
+        const settings = this.currentProfile.settings as MultiProviderSettings;
+        const activeProvider = (container.querySelector("#ai-provider-selector") as HTMLSelectElement)?.value as AIProviderType || 'anthropic';
+        const useCustomEndpoint = (container.querySelector('input[name="api-endpoint-type"]:checked') as HTMLInputElement)?.value === "custom";
 
-        const updates: Partial<ClaudeSettings> = {
-            apiKey: (container.querySelector("#claude-api-key") as HTMLInputElement)?.value || "",
-            baseURL: useProxy
-                ? (container.querySelector("#claude-base-url") as HTMLInputElement)?.value || ""
+        // Build provider config
+        const providerConfig: ProviderConfig = {
+            apiKey: (container.querySelector("#provider-api-key") as HTMLInputElement)?.value || "",
+            baseURL: useCustomEndpoint
+                ? (container.querySelector("#provider-base-url") as HTMLInputElement)?.value || ""
                 : "",
-            model: (container.querySelector("#claude-model") as HTMLSelectElement)?.value || this.currentProfile.settings.model,
-            maxTokens: parseInt((container.querySelector("#claude-max-tokens") as HTMLInputElement)?.value) || this.currentProfile.settings.maxTokens,
-            temperature: parseFloat((container.querySelector("#claude-temperature") as HTMLInputElement)?.value) || this.currentProfile.settings.temperature,
+            model: (container.querySelector("#provider-model") as HTMLSelectElement)?.value || "",
+            enabled: true,
+        };
+
+        // Update multi-provider settings
+        const updates: Partial<MultiProviderSettings> = {
+            activeProvider,
+            providers: {
+                ...settings.providers,
+                [activeProvider]: providerConfig,
+            },
+            // Keep other settings from legacy fields (for backward compatibility)
+            maxTokens: parseInt((container.querySelector("#claude-max-tokens") as HTMLInputElement)?.value) || settings.maxTokens,
+            temperature: parseFloat((container.querySelector("#claude-temperature") as HTMLInputElement)?.value) || settings.temperature,
             enableRequestLogging: (container.querySelector("#enable-request-logging") as HTMLInputElement)?.checked ?? false,
             requestLogPath: (container.querySelector("#request-log-path") as HTMLInputElement)?.value || "",
             requestLogIncludeResponse: (container.querySelector("#log-include-response") as HTMLInputElement)?.checked ?? true,
@@ -1066,6 +1328,10 @@ export class SettingsPanelV3 {
                     (container.querySelector("#shortcut-open-claude") as HTMLInputElement)?.value || "Alt+Shift+C"
                 ) || "⌥⇧C",
             },
+            // Also update legacy fields for backward compatibility
+            apiKey: providerConfig.apiKey,
+            baseURL: providerConfig.baseURL,
+            model: providerConfig.model,
         };
 
         // Update current profile
@@ -1076,49 +1342,65 @@ export class SettingsPanelV3 {
         // Notify parent to save
         this.onSave(updates);
 
-        console.log('[SettingsPanelV3] Settings saved');
-        this.close();
+        console.log('[SettingsPanelV3] Settings saved, active provider:', activeProvider);
+        
+        // Only close if explicitly requested (e.g., from Save button)
+        if (closeAfterSave) {
+            this.close();
+        }
     }
 
     private async testConnection(container: HTMLElement) {
-        const testBtn = container.querySelector("#claude-test-connection") as HTMLButtonElement;
+        const testBtn = container.querySelector("#test-provider-connection") as HTMLButtonElement;
         const originalHTML = testBtn.innerHTML;
 
         try {
             testBtn.disabled = true;
-            testBtn.innerHTML = '<svg class="fn__rotate"><use xlink:href="#iconRefresh"></use></svg><span style="margin-left: 4px;">测试中...</span>';
+            testBtn.innerHTML = '<svg class="fn__rotate"><use xlink:href="#iconRefresh"></use></svg><span style="margin-left: 4px;\">测试中...</span>';
 
-            const useProxy = (container.querySelector('input[name="api-provider"]:checked') as HTMLInputElement)?.value === "proxy";
-            const settings: Partial<ClaudeSettings> = {
-                apiKey: (container.querySelector("#claude-api-key") as HTMLInputElement)?.value || "",
-                baseURL: useProxy
-                    ? (container.querySelector("#claude-base-url") as HTMLInputElement)?.value || ""
+            const activeProvider = (container.querySelector("#ai-provider-selector") as HTMLSelectElement)?.value as AIProviderType || 'anthropic';
+            const useCustomEndpoint = (container.querySelector('input[name="api-endpoint-type"]:checked') as HTMLInputElement)?.value === "custom";
+            
+            const providerConfig: ProviderConfig = {
+                apiKey: (container.querySelector("#provider-api-key") as HTMLInputElement)?.value || "",
+                baseURL: useCustomEndpoint
+                    ? (container.querySelector("#provider-base-url") as HTMLInputElement)?.value || ""
                     : "",
-                model: (container.querySelector("#claude-model") as HTMLSelectElement)?.value,
-                maxTokens: this.currentProfile.settings.maxTokens,
-                temperature: this.currentProfile.settings.temperature,
-                systemPrompt: this.currentProfile.settings.systemPrompt,
-                appendedPrompt: this.currentProfile.settings.appendedPrompt,
+                model: (container.querySelector("#provider-model") as HTMLSelectElement)?.value || "",
+                enabled: true,
             };
 
-            if (!settings.apiKey || settings.apiKey.trim() === "") {
+            const settings: MultiProviderSettings = {
+                ...this.currentProfile.settings,
+                activeProvider,
+                providers: {
+                    ...this.currentProfile.settings.providers,
+                    [activeProvider]: providerConfig,
+                },
+            };
+
+            if (!providerConfig.apiKey || providerConfig.apiKey.trim() === "") {
                 throw new Error("请输入 API Key");
             }
 
-            this.testClient = new ClaudeClient(settings as ClaudeSettings);
+            if (!providerConfig.model || providerConfig.model.trim() === "") {
+                throw new Error("请选择模型");
+            }
+
+            this.testClient = new UniversalAIClient(settings);
 
             await this.testClient.sendMessageSimple([
                 { role: "user", content: "Hi" }
             ]);
 
-            testBtn.innerHTML = '<svg><use xlink:href="#iconCheck"></use></svg><span style="margin-left: 4px;">连接成功</span>';
+            testBtn.innerHTML = '<svg><use xlink:href="#iconCheck"></use></svg><span style="margin-left: 4px;\">连接成功</span>';
             setTimeout(() => {
                 testBtn.innerHTML = originalHTML;
                 testBtn.disabled = false;
             }, 2000);
 
         } catch (error) {
-            testBtn.innerHTML = '<svg><use xlink:href="#iconClose"></use></svg><span style="margin-left: 4px;">连接失败</span>';
+            testBtn.innerHTML = '<svg><use xlink:href="#iconClose"></use></svg><span style="margin-left: 4px;\">连接失败</span>';
             alert(`测试失败: ${error instanceof Error ? error.message : String(error)}`);
             setTimeout(() => {
                 testBtn.innerHTML = originalHTML;
@@ -1187,7 +1469,7 @@ export class SettingsPanelV3 {
         const quickEditContent = container.querySelector("#quick-edit-preset-card");
         if (quickEditContent && this.quickEditPreset) {
             const preset = this.quickEditPreset;
-            const icon = preset.icon || '📝';
+            const icon = this.escapeHtml(preset.icon || '📝'); // FIX XSS: Escape icon
             const name = this.escapeHtml(preset.name);
             const filterCount = (preset.filterRules || []).filter(r => r.enabled).length;
 
@@ -1202,7 +1484,7 @@ export class SettingsPanelV3 {
         const aiDockContent = container.querySelector("#ai-dock-preset-card");
         if (aiDockContent && this.aiDockPreset) {
             const preset = this.aiDockPreset;
-            const icon = preset.icon || '💬';
+            const icon = this.escapeHtml(preset.icon || '💬'); // FIX XSS: Escape icon
             const name = this.escapeHtml(preset.name);
             const filterCount = (preset.filterRules || []).filter(r => r.enabled).length;
 
@@ -1287,7 +1569,23 @@ export class SettingsPanelV3 {
      */
     triggerSave() {
         if (this.container) {
-            this.saveSettings(this.container);
+            // Auto-save from provider switching - don't close dialog
+            this.saveSettings(this.container, false);
+        } else {
+            console.error("[SettingsPanelV3] Cannot save: container not initialized");
+        }
+    }
+
+    /**
+     * Trigger save action and prepare for dialog close
+     * Used by Save button to save settings without closing dialog
+     * (dialog will be closed by button handler in index.ts)
+     */
+    async triggerSaveAndClose() {
+        if (this.container) {
+            // Save from explicit Save button - but don't close dialog here
+            // The dialog will be closed by the button handler in index.ts
+            this.saveSettings(this.container, false);
         } else {
             console.error("[SettingsPanelV3] Cannot save: container not initialized");
         }

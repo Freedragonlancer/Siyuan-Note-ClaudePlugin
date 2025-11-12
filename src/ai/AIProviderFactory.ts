@@ -5,6 +5,7 @@
 
 import type { AIProvider, AIProviderType, AIModelConfig, ProviderRegistration } from './types';
 import { AnthropicProvider } from './AnthropicProvider';
+import { OpenAIProvider, GeminiProvider, XAIProvider, DeepSeekProvider } from './providers';
 
 export class AIProviderFactory {
     private static registrations: Map<AIProviderType, ProviderRegistration> = new Map();
@@ -21,13 +22,37 @@ export class AIProviderFactory {
             description: 'Claude AI models (Opus, Sonnet, Haiku)',
         });
 
-        // TODO: Register other providers
-        // this.register({
-        //     type: 'openai',
-        //     factory: (config) => new OpenAIProvider(config),
-        //     displayName: 'OpenAI',
-        //     description: 'GPT-4, GPT-3.5 and other OpenAI models',
-        // });
+        // Register OpenAI provider
+        this.register({
+            type: 'openai',
+            factory: (config) => new OpenAIProvider(config),
+            displayName: 'OpenAI',
+            description: 'GPT-4, GPT-3.5 and other OpenAI models',
+        });
+
+        // Register Google Gemini provider
+        this.register({
+            type: 'gemini',
+            factory: (config) => new GeminiProvider(config),
+            displayName: 'Google Gemini',
+            description: 'Gemini Pro and other Google AI models',
+        });
+
+        // Register xAI Grok provider
+        this.register({
+            type: 'xai',
+            factory: (config) => new XAIProvider(config),
+            displayName: 'xAI Grok',
+            description: 'Grok and other xAI models',
+        });
+
+        // Register DeepSeek provider
+        this.register({
+            type: 'deepseek',
+            factory: (config) => new DeepSeekProvider(config),
+            displayName: 'DeepSeek',
+            description: 'DeepSeek Chat, Coder, and Reasoner models',
+        });
     }
 
     /**

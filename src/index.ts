@@ -490,10 +490,17 @@ export default class ClaudeAssistantPlugin extends Plugin {
                         // Update Claude client
                         console.log("[ClaudePlugin] Updating Claude client");
                         this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
+                        
+                        // Update provider info badge in dock after Claude client is updated
+                        if (this.unifiedPanel) {
+                            setTimeout(() => {
+                                this.unifiedPanel.updateProviderInfoBadge();
+                                console.log("[ClaudePlugin] Provider badge updated after settings save");
+                            }, 100);
+                        }
 
-                        // Show success message and close dialog
+                        // Show success message (dialog will be closed by save button handler)
                         showMessage("✅ 设置已保存", 2000, "info");
-                        dialog.destroy();
                     } catch (error) {
                         console.error("[ClaudePlugin] Failed to save settings:", error);
                         showMessage("❌ 保存设置失败", 3000, "error");
@@ -519,8 +526,11 @@ export default class ClaudeAssistantPlugin extends Plugin {
             if (saveButton) {
                 saveButton.addEventListener("click", async () => {
                     console.log("[ClaudePlugin] Save button clicked");
-                    // Trigger the save functionality from settings panel
-                    settingsPanel.triggerSave();
+                    // Trigger the save functionality from settings panel (with explicit close)
+                    await settingsPanel.triggerSaveAndClose();
+                    
+                    // Close dialog after successful save
+                    dialog.destroy();
                 });
             }
         }

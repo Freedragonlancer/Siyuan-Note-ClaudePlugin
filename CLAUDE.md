@@ -630,6 +630,7 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 | Build fails | Run `npm install`, check Node 18+, clear `dist/` folder |
 | Changes not showing | Ensure `npm run deploy` succeeded, restart SiYuan (not just F5) |
 | Streaming timeout | Check API key, network, Anthropic status; increase timeout in ClaudeClient.ts |
+| **Reverse proxy 404 error** | **For Anthropic: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`. OpenAI/Gemini/xAI/DeepSeek: Use baseURL as provided by proxy service.** |
 | **Multiple topbar icons (3+)** | **Run `npm run clean-deploy` - removes duplicates caused by improper cleanup** |
 | **Settings panel blank/invisible** | **Run `npm run clean-cache` then restart SiYuan - clears cached HTML/CSS** |
 | **CSS changes not applying** | **Run `npm run clean-cache` - forces fresh CSS load** |
@@ -770,10 +771,14 @@ For detailed architecture information:
   - New modules available: SelectionHandler, BlockOperations, PromptBuilder, EditStateManager, InstructionHistoryManager
   - Core workflow still uses legacy code paths (backward compatible)
   - Full migration to pure modular architecture planned for future release
-- Multi-provider support framework ready, but only Anthropic implemented
-  - OpenAI and Gemini providers planned for future releases
+- Multi-provider support fully implemented (5 providers available)
+  - Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek ✅
+  - Reverse proxy configuration supported for all providers
+  - **Important**: For Anthropic reverse proxies, baseURL should include `/v1` (e.g., `https://proxy.com/api/v1`)
+    - The plugin automatically strips trailing `/v1` to prevent duplicate paths (`/v1/v1/messages`)
+    - This normalization ensures correct API endpoint construction
 
 ---
 
-**Last Updated**: 2025-01-10
-**Version**: 0.10.0
+**Last Updated**: 2025-01-12
+**Version**: 0.10.1 (Multi-Provider + BaseURL Normalization Fix)

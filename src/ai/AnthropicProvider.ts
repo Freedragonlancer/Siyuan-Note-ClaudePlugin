@@ -6,29 +6,38 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Message } from '../claude/types';
 import type {
-    AIProvider,
-    AIProviderType,
     AIModelConfig,
     AIRequestOptions,
+    ParameterLimits,
 } from './types';
+import { BaseAIProvider } from './BaseAIProvider';
 
-export class AnthropicProvider implements AIProvider {
-    readonly providerType: AIProviderType = 'anthropic';
+export class AnthropicProvider extends BaseAIProvider {
+    readonly providerType = 'anthropic' as const;
     readonly providerName = 'Anthropic Claude';
 
     private client: Anthropic;
-    private config: AIModelConfig;
 
     constructor(config: AIModelConfig) {
-        const validationResult = this.validateConfig(config);
-        if (validationResult !== true) {
-            throw new Error(`Invalid Anthropic config: ${validationResult}`);
+        super(config);
+        
+        // Normalize baseURL to prevent duplicate /v1 paths
+        // Users commonly provide "https://proxy.com/api/v1" for reverse proxies
+        // But Anthropic SDK automatically appends "/v1/messages"
+        // So we strip trailing /v1 to avoid /v1/v1/messages
+        let normalizedBaseURL = config.baseURL;
+        if (normalizedBaseURL) {
+            // Remove trailing slashes first
+            normalizedBaseURL = normalizedBaseURL.replace(/\/+$/, '');
+            // Remove trailing /v1 if present
+            if (normalizedBaseURL.endsWith('/v1')) {
+                normalizedBaseURL = normalizedBaseURL.slice(0, -3);
+            }
         }
-
-        this.config = config;
+        
         this.client = new Anthropic({
             apiKey: config.apiKey,
-            baseURL: config.baseURL,
+            baseURL: normalizedBaseURL,
             dangerouslyAllowBrowser: true,
             timeout: 120000, // 120 seconds
             maxRetries: 2,
@@ -96,21 +105,15 @@ export class AnthropicProvider implements AIProvider {
     }
 
     validateConfig(config: AIModelConfig): true | string {
-        if (!config.apiKey || config.apiKey.trim() === '') {
-            return 'API key is required';
-        }
-
-        if (!config.modelId || config.modelId.trim() === '') {
-            return 'Model ID is required';
+        // Call base validation first
+        const baseValidation = super.validateConfig(config);
+        if (baseValidation !== true) {
+            return baseValidation;
         }
 
         // Validate model ID format (should start with 'claude-')
         if (!config.modelId.startsWith('claude-')) {
             return 'Invalid model ID: must start with "claude-"';
-        }
-
-        if (config.baseURL && !/^https?:\/\/.+/.test(config.baseURL)) {
-            return 'Base URL must be a valid HTTP(S) URL';
         }
 
         return true;
@@ -124,5 +127,21 @@ export class AnthropicProvider implements AIProvider {
             'claude-3-sonnet-20240229',
             'claude-3-haiku-20240307',
         ];
+    }
+
+    getMaxTokenLimit(model: string): number {
+        // Claude models have 200K context window but output is limited
+        if (model.includes('claude-3')) {
+            return 4096; // Safe default for output
+        }
+        return 4096;
+    }
+
+    getParameterLimits(): ParameterLimits {
+        return {
+            temperature: { min: 0, max: 1, default: 0.7 },
+            maxTokens: { min: 1, max: 4096, default: 4096 },
+            topP: { min: 0, max: 1, default: 0.9 },
+        };
     }
 }

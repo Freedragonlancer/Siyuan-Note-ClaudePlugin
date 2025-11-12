@@ -8,7 +8,7 @@ import type { Message } from '../claude/types';
 /**
  * Supported AI providers
  */
-export type AIProviderType = 'anthropic' | 'openai' | 'gemini' | 'custom';
+export type AIProviderType = 'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'custom';
 
 /**
  * AI model configuration
@@ -28,6 +28,15 @@ export interface AIModelConfig {
     temperature?: number;
     /** Additional provider-specific options */
     options?: Record<string, any>;
+}
+
+/**
+ * Parameter limits for AI provider
+ */
+export interface ParameterLimits {
+    temperature: { min: number; max: number; default: number };
+    maxTokens: { min: number; max: number; default: number };
+    topP?: { min: number; max: number; default: number };
 }
 
 /**
@@ -96,6 +105,31 @@ export interface AIProvider {
      * @returns List of model identifiers
      */
     getAvailableModels(): string[];
+
+    /**
+     * Check if provider supports streaming
+     * @returns True if streaming is supported
+     */
+    supportsStreaming(): boolean;
+
+    /**
+     * Check if provider supports system prompts
+     * @returns True if system prompts are supported
+     */
+    supportsSystemPrompt(): boolean;
+
+    /**
+     * Get maximum token limit for a specific model
+     * @param model Model identifier
+     * @returns Maximum token limit
+     */
+    getMaxTokenLimit(model: string): number;
+
+    /**
+     * Get parameter limits for this provider
+     * @returns Parameter limits configuration
+     */
+    getParameterLimits(): ParameterLimits;
 }
 
 /**

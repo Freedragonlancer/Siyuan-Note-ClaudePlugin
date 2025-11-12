@@ -4,6 +4,16 @@
 
 import type { EditSettings } from "../editor/types";
 import type { FilterRule } from "../filter";
+import type { AIProviderType } from "../ai/types";
+
+/**
+ * Default keyboard shortcuts configuration
+ */
+export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
+    quickEdit: "⌃⇧Q",      // Ctrl+Shift+Q
+    undoAIEdit: "⌃⇧Z",     // Ctrl+Shift+Z
+    openClaude: "⌥⇧C",     // Alt+Shift+C
+};
 
 /**
  * Keyboard shortcuts configuration
@@ -58,3 +68,120 @@ export interface StreamChunk {
 export type MessageCallback = (chunk: string) => void;
 export type ErrorCallback = (error: Error) => void;
 export type CompleteCallback = () => void;
+
+/**
+ * Single AI Provider Configuration
+ */
+export interface ProviderConfig {
+    apiKey: string;
+    baseURL?: string;
+    model: string;
+    enabled?: boolean;
+}
+
+/**
+ * Multi-Provider Settings
+ * Extends ClaudeSettings to support multiple AI providers
+ */
+export interface MultiProviderSettings extends ClaudeSettings {
+    /** Currently active provider */
+    activeProvider?: AIProviderType;
+
+    /** Provider-specific configurations */
+    providers?: {
+        anthropic?: ProviderConfig;
+        openai?: ProviderConfig;
+        gemini?: ProviderConfig;
+        xai?: ProviderConfig;
+        deepseek?: ProviderConfig;
+    };
+}
+
+/**
+ * Migrate legacy ClaudeSettings to MultiProviderSettings
+ * Preserves existing Claude configuration under 'anthropic' provider
+ */
+export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderSettings {
+    // Check if already migrated
+    if ('activeProvider' in settings && 'providers' in settings) {
+        // Ensure all providers exist (merge with defaults)
+        const migratedSettings = settings as MultiProviderSettings;
+        return {
+            ...migratedSettings,
+            // Ensure keyboardShortcuts always exists
+            keyboardShortcuts: migratedSettings.keyboardShortcuts || DEFAULT_KEYBOARD_SHORTCUTS,
+            providers: {
+                anthropic: migratedSettings.providers?.anthropic || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'claude-sonnet-4-5-20250929',
+                    enabled: false,
+                },
+                openai: migratedSettings.providers?.openai || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'gpt-4-turbo-preview',
+                    enabled: false,
+                },
+                gemini: migratedSettings.providers?.gemini || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'gemini-pro',
+                    enabled: false,
+                },
+                xai: migratedSettings.providers?.xai || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'grok-beta',
+                    enabled: false,
+                },
+                deepseek: migratedSettings.providers?.deepseek || {
+                    apiKey: '',
+                    baseURL: '',
+                    model: 'deepseek-chat',
+                    enabled: false,
+                },
+            },
+        };
+    }
+
+    // Migrate legacy settings (first time)
+    return {
+        ...settings,
+        // Ensure keyboardShortcuts always exists
+        keyboardShortcuts: settings.keyboardShortcuts || DEFAULT_KEYBOARD_SHORTCUTS,
+        activeProvider: 'anthropic',
+        providers: {
+            anthropic: {
+                apiKey: settings.apiKey || '',
+                baseURL: settings.baseURL || '',
+                model: settings.model || 'claude-sonnet-4-5-20250929',
+                enabled: true,
+            },
+            openai: {
+                apiKey: '',
+                baseURL: '',
+                model: 'gpt-4-turbo-preview',
+                enabled: false,
+            },
+            gemini: {
+                apiKey: '',
+                baseURL: '',
+                model: 'gemini-pro',
+                enabled: false,
+            },
+            xai: {
+                apiKey: '',
+                baseURL: '',
+                model: 'grok-beta',
+                enabled: false,
+            },
+            deepseek: {
+                apiKey: '',
+                baseURL: '',
+                model: 'deepseek-chat',
+                enabled: false,
+            },
+        },
+    };
+}

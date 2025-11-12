@@ -23,9 +23,9 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
     private maxTokens: number;
 
     constructor(config: AIModelConfig) {
-        super();
+        super(config);
         this.apiKey = config.apiKey;
-        this.model = config.model || 'kimi-k2-0905-preview';
+        this.model = config.modelId || 'kimi-k2-0905-preview';
         this.temperature = config.temperature ?? 1;
         this.maxTokens = config.maxTokens ?? 4096;
 
@@ -220,12 +220,12 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             return 'Moonshot API key is required';
         }
 
-        if (!config.model) {
+        if (!config.modelId) {
             return 'Model selection is required';
         }
 
         const validModels = this.getAvailableModels();
-        if (!validModels.includes(config.model)) {
+        if (!validModels.includes(config.modelId)) {
             return `Invalid model. Available models: ${validModels.join(', ')}`;
         }
 

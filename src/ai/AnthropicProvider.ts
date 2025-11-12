@@ -9,6 +9,7 @@ import type {
     AIModelConfig,
     AIRequestOptions,
     ParameterLimits,
+    ProviderMetadata,
 } from './types';
 import { BaseAIProvider } from './BaseAIProvider';
 
@@ -142,6 +143,72 @@ export class AnthropicProvider extends BaseAIProvider {
             temperature: { min: 0, max: 1, default: 0.7 },
             maxTokens: { min: 1, max: 4096, default: 4096 },
             topP: { min: 0, max: 1, default: 0.9 },
+        };
+    }
+
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'anthropic',
+            displayName: 'Anthropic Claude',
+            description: 'Claude AI 系列 - Opus, Sonnet, Haiku',
+            icon: '🤖',
+            apiKeyUrl: 'https://console.anthropic.com/settings/keys',
+            defaultBaseURL: 'https://api.anthropic.com',
+            defaultModel: 'claude-sonnet-4-5-20250929',
+            models: [
+                {
+                    id: 'claude-sonnet-4-5-20250929',
+                    displayName: 'Claude Sonnet 4.5 (Latest, Recommended)',
+                    contextWindow: 200000,
+                    description: '最新Sonnet 4.5，平衡性能和成本',
+                    recommended: true,
+                },
+                {
+                    id: 'claude-sonnet-4-20250514',
+                    displayName: 'Claude Sonnet 4',
+                    contextWindow: 200000,
+                },
+                {
+                    id: 'claude-opus-4-20250514',
+                    displayName: 'Claude Opus 4 (Most Capable)',
+                    contextWindow: 200000,
+                    description: '最强能力模型',
+                },
+                {
+                    id: 'claude-3-7-sonnet-20250219',
+                    displayName: 'Claude 3.7 Sonnet',
+                    contextWindow: 200000,
+                },
+                {
+                    id: 'claude-3-5-sonnet-20241022',
+                    displayName: 'Claude 3.5 Sonnet',
+                    contextWindow: 200000,
+                },
+                {
+                    id: 'claude-3-5-haiku-20241022',
+                    displayName: 'Claude 3.5 Haiku (Fast)',
+                    contextWindow: 200000,
+                    description: '快速模型',
+                },
+                {
+                    id: 'claude-3-opus-20240229',
+                    displayName: 'Claude 3 Opus',
+                    contextWindow: 200000,
+                    deprecated: true,
+                },
+                {
+                    id: 'claude-3-haiku-20240307',
+                    displayName: 'Claude 3 Haiku',
+                    contextWindow: 200000,
+                    deprecated: true,
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: true,
+                supportsFunctionCalling: true,
+            },
         };
     }
 }

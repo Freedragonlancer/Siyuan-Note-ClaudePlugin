@@ -9,6 +9,7 @@ import type {
     AIModelConfig,
     AIRequestOptions,
     ParameterLimits,
+    ProviderMetadata,
 } from './types';
 import type { Message } from '../claude/types';
 
@@ -36,6 +37,7 @@ export abstract class BaseAIProvider implements AIProvider {
     abstract getAvailableModels(): string[];
     abstract getMaxTokenLimit(model: string): number;
     abstract getParameterLimits(): ParameterLimits;
+    abstract getMetadata(): ProviderMetadata;
 
     /**
      * Base configuration validation

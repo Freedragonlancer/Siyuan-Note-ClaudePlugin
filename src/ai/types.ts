@@ -7,8 +7,9 @@ import type { Message } from '../claude/types';
 
 /**
  * Supported AI providers
+ * Changed to string for runtime flexibility (no longer union type)
  */
-export type AIProviderType = 'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'moonshot' | 'custom';
+export type AIProviderType = string;
 
 /**
  * AI model configuration
@@ -130,6 +131,12 @@ export interface AIProvider {
      * @returns Parameter limits configuration
      */
     getParameterLimits(): ParameterLimits;
+
+    /**
+     * Get provider metadata (single source of truth)
+     * @returns Complete provider metadata
+     */
+    getMetadata(): ProviderMetadata;
 }
 
 /**
@@ -140,4 +147,85 @@ export interface ProviderRegistration {
     factory: (config: AIModelConfig) => AIProvider;
     displayName: string;
     description: string;
+}
+
+// ==================== Provider Metadata ====================
+
+/**
+ * Model metadata for display and configuration
+ */
+export interface ModelMetadata {
+    /** Model ID (used in API calls) */
+    id: string;
+    /** Display name (shown in UI) */
+    displayName: string;
+    /** Context window size (tokens) */
+    contextWindow: number;
+    /** Model description */
+    description?: string;
+    /** Whether the model is deprecated */
+    deprecated?: boolean;
+    /** Whether this is a recommended model */
+    recommended?: boolean;
+}
+
+/**
+ * Provider feature flags
+ */
+export interface ProviderFeatures {
+    /** Supports streaming responses */
+    supportsStreaming: boolean;
+    /** Supports system prompts */
+    supportsSystemPrompt: boolean;
+    /** Supports vision/image inputs */
+    supportsVision: boolean;
+    /** Supports function calling */
+    supportsFunctionCalling: boolean;
+}
+
+/**
+ * Complete provider metadata (single source of truth)
+ */
+export interface ProviderMetadata {
+    /** Provider type identifier */
+    type: string;
+    /** Display name for UI */
+    displayName: string;
+    /** Short description */
+    description: string;
+    /** UI icon (emoji or SVG) */
+    icon: string;
+    /** URL to get API key */
+    apiKeyUrl: string;
+    /** Default API base URL */
+    defaultBaseURL: string;
+    /** Default model ID */
+    defaultModel: string;
+    /** Available models */
+    models: ModelMetadata[];
+    /** Feature flags */
+    features: ProviderFeatures;
+}
+
+// ==================== Runtime Type Validation ====================
+
+/**
+ * Check if a provider type is valid (registered in factory)
+ * @param type Provider type to check
+ * @returns True if provider is registered
+ */
+export function isValidProviderType(type: string): boolean {
+    // Will be implemented using AIProviderFactory.hasProvider()
+    // Import moved to avoid circular dependency
+    return true; // Placeholder
+}
+
+/**
+ * Assert that a provider type is valid, throw if not
+ * @param type Provider type to validate
+ * @throws Error if provider type is not registered
+ */
+export function assertProviderType(type: string): asserts type is AIProviderType {
+    // Will be implemented using AIProviderFactory
+    // Import moved to avoid circular dependency
 }

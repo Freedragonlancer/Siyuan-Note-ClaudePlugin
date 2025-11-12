@@ -9,6 +9,7 @@ import type {
     AIModelConfig,
     AIRequestOptions,
     ParameterLimits,
+    ProviderMetadata,
 } from '../types';
 import { BaseAIProvider } from '../BaseAIProvider';
 
@@ -227,6 +228,89 @@ export class GeminiProvider extends BaseAIProvider {
             temperature: { min: 0, max: 2, default: 0.9 },
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 8192 },
             topP: { min: 0, max: 1, default: 0.95 },
+        };
+    }
+
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'gemini',
+            displayName: 'Google Gemini',
+            description: 'Gemini Pro 及其他 Google AI 模型',
+            icon: '✨',
+            apiKeyUrl: 'https://makersuite.google.com/app/apikey',
+            defaultBaseURL: 'https://generativelanguage.googleapis.com',
+            defaultModel: 'gemini-2.5-flash',
+            models: [
+                {
+                    id: 'gemini-2.5-flash',
+                    displayName: 'Gemini 2.5 Flash (推荐，性价比最高)',
+                    contextWindow: 1000000,
+                    description: '最新2.5 Flash，性价比最高',
+                    recommended: true,
+                },
+                {
+                    id: 'gemini-2.5-pro',
+                    displayName: 'Gemini 2.5 Pro (1M上下文)',
+                    contextWindow: 1000000,
+                    description: '最先进的思考模型',
+                },
+                {
+                    id: 'gemini-2.5-flash-lite',
+                    displayName: 'Gemini 2.5 Flash Lite (最快)',
+                    contextWindow: 1000000,
+                    description: '最快、最经济的模型',
+                },
+                {
+                    id: 'gemini-2.5-flash-image',
+                    displayName: 'Gemini 2.5 Flash Image (图像生成)',
+                    contextWindow: 1000000,
+                    description: '图像生成和理解',
+                },
+                {
+                    id: 'gemini-2.0-flash',
+                    displayName: 'Gemini 2.0 Flash (1M)',
+                    contextWindow: 1000000,
+                    description: '2.0下一代特性',
+                },
+                {
+                    id: 'gemini-2.0-flash-lite',
+                    displayName: 'Gemini 2.0 Flash Lite',
+                    contextWindow: 1000000,
+                    description: '2.0轻量版',
+                },
+                {
+                    id: 'gemini-1.5-pro',
+                    displayName: 'Gemini 1.5 Pro (2M)',
+                    contextWindow: 2000000,
+                    description: '1.5 Pro，超大上下文',
+                },
+                {
+                    id: 'gemini-1.5-flash',
+                    displayName: 'Gemini 1.5 Flash',
+                    contextWindow: 1000000,
+                    description: '1.5 Flash，快速响应',
+                },
+                {
+                    id: 'gemini-pro',
+                    displayName: 'Gemini Pro (传统)',
+                    contextWindow: 32768,
+                    description: '传统Gemini Pro',
+                    deprecated: true,
+                },
+                {
+                    id: 'gemini-pro-vision',
+                    displayName: 'Gemini Pro Vision (传统)',
+                    contextWindow: 16384,
+                    description: '传统视觉模型',
+                    deprecated: true,
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: true,
+                supportsFunctionCalling: false,
+            },
         };
     }
 

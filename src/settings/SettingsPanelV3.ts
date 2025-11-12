@@ -224,53 +224,8 @@ export class SettingsPanelV3 {
         const activeProvider = settings.activeProvider || 'anthropic';
         const providerConfig = settings.providers?.[activeProvider];
         
-        // Provider display names and metadata
-        const providerInfo: Record<AIProviderType, { name: string; icon: string; url: string; defaultBaseURL: string }> = {
-            anthropic: { 
-                name: 'Anthropic Claude', 
-                icon: '🤖', 
-                url: 'https://console.anthropic.com/settings/keys',
-                defaultBaseURL: 'https://api.anthropic.com'
-            },
-            openai: { 
-                name: 'OpenAI', 
-                icon: '🟢', 
-                url: 'https://platform.openai.com/api-keys',
-                defaultBaseURL: 'https://api.openai.com/v1'
-            },
-            gemini: { 
-                name: 'Google Gemini', 
-                icon: '✨', 
-                url: 'https://makersuite.google.com/app/apikey',
-                defaultBaseURL: 'https://generativelanguage.googleapis.com'
-            },
-            xai: { 
-                name: 'xAI Grok', 
-                icon: '🚀', 
-                url: 'https://x.ai',
-                defaultBaseURL: 'https://api.x.ai/v1'
-            },
-            deepseek: { 
-                name: 'DeepSeek', 
-                icon: '🧠', 
-                url: 'https://platform.deepseek.com',
-                defaultBaseURL: 'https://api.deepseek.com/v1'
-            },
-            moonshot: { 
-                name: 'Moonshot AI (Kimi)', 
-                icon: '🌙', 
-                url: 'https://platform.moonshot.cn/console/api-keys',
-                defaultBaseURL: 'https://api.moonshot.cn/v1'
-            },
-            custom: { 
-                name: 'Custom Provider', 
-                icon: '⚙️', 
-                url: '',
-                defaultBaseURL: ''
-            }
-        };
-
-        const currentInfo = providerInfo[activeProvider];
+        // Get provider info dynamically from Factory
+        const currentInfo = this.getProviderInfo(activeProvider);
         const hasCustomBaseURL = !!(providerConfig?.baseURL && providerConfig.baseURL.trim());
 
         return `
@@ -289,24 +244,7 @@ export class SettingsPanelV3 {
                     <span style=\"font-weight: 500;\">AI 提供商 <span style=\"color: var(--b3-theme-error);\">*</span></span>
                 </div>
                 <select class=\"b3-select\" id=\"ai-provider-selector\" style=\"width: 100%;\">
-                    <option value=\"anthropic\" ${activeProvider === 'anthropic' ? 'selected' : ''}>
-                        ${providerInfo.anthropic.name}
-                    </option>
-                    <option value=\"openai\" ${activeProvider === 'openai' ? 'selected' : ''}>
-                        ${providerInfo.openai.name}
-                    </option>
-                    <option value=\"gemini\" ${activeProvider === 'gemini' ? 'selected' : ''}>
-                        ${providerInfo.gemini.name}
-                    </option>
-                    <option value=\"xai\" ${activeProvider === 'xai' ? 'selected' : ''}>
-                        ${providerInfo.xai.name}
-                    </option>
-                    <option value=\"deepseek\" ${activeProvider === 'deepseek' ? 'selected' : ''}>
-                        ${providerInfo.deepseek.name}
-                    </option>
-                    <option value=\"moonshot\" ${activeProvider === 'moonshot' ? 'selected' : ''}>
-                        ${providerInfo.moonshot.name}
-                    </option>
+                    ${this.getProviderSelectorOptions(activeProvider)}
                 </select>
                 <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\">
                     💡 选择不同的 AI 提供商，支持多平台切换
@@ -480,6 +418,29 @@ export class SettingsPanelV3 {
         return models
             .map(m => `<option value=\"${this.escapeHtml(m.value)}\" ${m.value === selectedModel ? 'selected' : ''}>${this.escapeHtml(m.label)}</option>`)
             .join('');
+    }
+
+    /**
+     * Generate provider selector options HTML (dynamic from Factory)
+     */
+    private getProviderSelectorOptions(activeProvider: string): string {
+        try {
+            const providerTypes = AIProviderFactory.getProviderTypes();
+            
+            if (providerTypes.length === 0) {
+                return '<option value="">No providers available</option>';
+            }
+
+            return providerTypes.map(type => {
+                const info = this.getProviderInfo(type);
+                return `<option value="${this.escapeHtml(type)}" ${type === activeProvider ? 'selected' : ''}>
+                    ${this.escapeHtml(`${info.icon} ${info.name}`)}
+                </option>`;
+            }).join('');
+        } catch (error) {
+            console.error('[SettingsPanelV3] Failed to generate provider options:', error);
+            return '<option value="">Error loading providers</option>';
+        }
     }
 
     private createModelSection(): string {
@@ -821,53 +782,8 @@ export class SettingsPanelV3 {
                 modelSelect.innerHTML = this.getModelOptionsForProvider(selectedProvider, providerConfig?.model || '');
             }
 
-            // FIX: Update provider info metadata (URLs, names, default baseURL)
-            const providerInfo: Record<AIProviderType, { name: string; icon: string; url: string; defaultBaseURL: string }> = {
-                anthropic: { 
-                    name: 'Anthropic Claude', 
-                    icon: '🤖', 
-                    url: 'https://console.anthropic.com/settings/keys',
-                    defaultBaseURL: 'https://api.anthropic.com'
-                },
-                openai: { 
-                    name: 'OpenAI', 
-                    icon: '🟢', 
-                    url: 'https://platform.openai.com/api-keys',
-                    defaultBaseURL: 'https://api.openai.com/v1'
-                },
-                gemini: { 
-                    name: 'Google Gemini', 
-                    icon: '✨', 
-                    url: 'https://makersuite.google.com/app/apikey',
-                    defaultBaseURL: 'https://generativelanguage.googleapis.com'
-                },
-                xai: { 
-                    name: 'xAI Grok', 
-                    icon: '🚀', 
-                    url: 'https://x.ai',
-                    defaultBaseURL: 'https://api.x.ai/v1'
-                },
-                deepseek: { 
-                name: 'DeepSeek', 
-                icon: '🧠', 
-                url: 'https://platform.deepseek.com',
-                defaultBaseURL: 'https://api.deepseek.com/v1'
-            },
-            moonshot: { 
-                name: 'Moonshot AI (Kimi)', 
-                icon: '🌙', 
-                url: 'https://platform.moonshot.cn/console/api-keys',
-                defaultBaseURL: 'https://api.moonshot.cn/v1'
-            },
-            custom: { 
-                    name: 'Custom Provider', 
-                    icon: '⚙️', 
-                    url: '',
-                    defaultBaseURL: ''
-                }
-            };
-
-            const currentInfo = providerInfo[selectedProvider];
+            // Get provider info dynamically from Factory
+            const currentInfo = this.getProviderInfo(selectedProvider);
 
             // FIX: Update official API endpoint text label
             const officialRadioLabel = officialRadio?.parentElement?.querySelector('span');

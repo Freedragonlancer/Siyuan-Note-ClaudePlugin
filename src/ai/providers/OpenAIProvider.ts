@@ -9,6 +9,7 @@ import type {
     AIModelConfig,
     AIRequestOptions,
     ParameterLimits,
+    ProviderMetadata,
 } from '../types';
 import { BaseAIProvider } from '../BaseAIProvider';
 
@@ -214,6 +215,83 @@ export class OpenAIProvider extends BaseAIProvider {
             temperature: { min: 0, max: 2, default: 1 },
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
             topP: { min: 0, max: 1, default: 1 },
+        };
+    }
+
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'openai',
+            displayName: 'OpenAI',
+            description: 'GPT-4, GPT-3.5 等 OpenAI 模型',
+            icon: '⚡',
+            apiKeyUrl: 'https://platform.openai.com/api-keys',
+            defaultBaseURL: 'https://api.openai.com/v1',
+            defaultModel: 'gpt-4o',
+            models: [
+                {
+                    id: 'chatgpt-4o-latest',
+                    displayName: 'ChatGPT-4o Latest (推荐)',
+                    contextWindow: 128000,
+                    description: '最新ChatGPT-4o，自动更新',
+                    recommended: true,
+                },
+                {
+                    id: 'gpt-4o',
+                    displayName: 'GPT-4o (128K上下文)',
+                    contextWindow: 128000,
+                    description: 'GPT-4o，平衡性能和成本',
+                },
+                {
+                    id: 'gpt-4o-mini',
+                    displayName: 'GPT-4o Mini (快速、经济)',
+                    contextWindow: 128000,
+                    description: 'Mini版本，快速且经济',
+                },
+                {
+                    id: 'o1',
+                    displayName: 'o1 (推理模型，200K)',
+                    contextWindow: 200000,
+                    description: '推理模型，适合复杂问题',
+                },
+                {
+                    id: 'o1-mini',
+                    displayName: 'o1 Mini (128K，经济推理)',
+                    contextWindow: 128000,
+                    description: '经济型推理模型',
+                },
+                {
+                    id: 'o3-mini',
+                    displayName: 'o3-mini (最新推理模型)',
+                    contextWindow: 128000,
+                    description: 'o3系列mini模型 (2025-01)',
+                },
+                {
+                    id: 'gpt-4-turbo',
+                    displayName: 'GPT-4 Turbo (128K)',
+                    contextWindow: 128000,
+                    description: 'GPT-4 Turbo，高性能',
+                },
+                {
+                    id: 'gpt-4',
+                    displayName: 'GPT-4 (8K)',
+                    contextWindow: 8192,
+                    description: 'GPT-4经典版本',
+                    deprecated: true,
+                },
+                {
+                    id: 'gpt-3.5-turbo',
+                    displayName: 'GPT-3.5 Turbo (16K，预算选择)',
+                    contextWindow: 16384,
+                    description: '预算友好型模型',
+                    deprecated: true,
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: true,
+                supportsFunctionCalling: true,
+            },
         };
     }
 

@@ -4,7 +4,7 @@
  */
 
 import { OpenAIProvider } from './OpenAIProvider';
-import type { AIModelConfig, ParameterLimits } from '../types';
+import type { AIModelConfig, ParameterLimits, ProviderMetadata } from '../types';
 
 export class XAIProvider extends OpenAIProvider {
     readonly providerType = 'xai' as const;
@@ -71,6 +71,39 @@ export class XAIProvider extends OpenAIProvider {
             temperature: { min: 0, max: 2, default: 1 },
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 8192 },
             topP: { min: 0, max: 1, default: 1 },
+        };
+    }
+
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'xai',
+            displayName: 'xAI Grok',
+            description: 'Grok 及其他 xAI 模型',
+            icon: '🚀',
+            apiKeyUrl: 'https://console.x.ai/api-keys',
+            defaultBaseURL: 'https://api.x.ai/v1',
+            defaultModel: 'grok-beta',
+            models: [
+                {
+                    id: 'grok-beta',
+                    displayName: 'Grok Beta (推荐)',
+                    contextWindow: 131072,
+                    description: 'Grok基础模型 (128K)',
+                    recommended: true,
+                },
+                {
+                    id: 'grok-vision-beta',
+                    displayName: 'Grok Vision Beta (视觉)',
+                    contextWindow: 131072,
+                    description: 'Grok视觉模型，支持图像理解',
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: true,
+                supportsFunctionCalling: false,
+            },
         };
     }
 }

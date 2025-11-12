@@ -5,7 +5,7 @@
 
 import { OpenAIProvider } from './OpenAIProvider';
 import type { Message } from '../../claude/types';
-import type { AIModelConfig, AIRequestOptions, ParameterLimits } from '../types';
+import type { AIModelConfig, AIRequestOptions, ParameterLimits, ProviderMetadata } from '../types';
 
 export class DeepSeekProvider extends OpenAIProvider {
     readonly providerType = 'deepseek' as const;
@@ -89,7 +89,7 @@ export class DeepSeekProvider extends OpenAIProvider {
         // Use safe defaults
         const modelId = this.config?.modelId || 'deepseek-chat';
         const isReasoning = modelId.includes('reasoner');
-        
+
         // Reasoning model doesn't support temperature/top_p
         if (isReasoning) {
             return {
@@ -103,6 +103,45 @@ export class DeepSeekProvider extends OpenAIProvider {
             temperature: { min: 0, max: 2, default: 1 },
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
             topP: { min: 0, max: 1, default: 1 },
+        };
+    }
+
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'deepseek',
+            displayName: 'DeepSeek',
+            description: 'DeepSeek Chat, Coder, Reasoner 模型',
+            icon: '🧠',
+            apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+            defaultBaseURL: 'https://api.deepseek.com/v1',
+            defaultModel: 'deepseek-chat',
+            models: [
+                {
+                    id: 'deepseek-chat',
+                    displayName: 'DeepSeek Chat (推荐)',
+                    contextWindow: 131072,
+                    description: 'DeepSeek对话模型 (128K)',
+                    recommended: true,
+                },
+                {
+                    id: 'deepseek-coder',
+                    displayName: 'DeepSeek Coder (编程)',
+                    contextWindow: 131072,
+                    description: 'DeepSeek编程专用模型',
+                },
+                {
+                    id: 'deepseek-reasoner',
+                    displayName: 'DeepSeek Reasoner (推理)',
+                    contextWindow: 131072,
+                    description: 'DeepSeek推理模型，不支持temperature/top_p',
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: false,
+                supportsFunctionCalling: false,
+            },
         };
     }
 

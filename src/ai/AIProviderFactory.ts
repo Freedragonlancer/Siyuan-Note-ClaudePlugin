@@ -3,7 +3,7 @@
  * Manages registration and creation of AI providers
  */
 
-import type { AIProvider, AIProviderType, AIModelConfig, ProviderRegistration } from './types';
+import type { AIProvider, AIProviderType, AIModelConfig, ProviderRegistration, ProviderMetadata } from './types';
 import { AnthropicProvider } from './AnthropicProvider';
 import { OpenAIProvider, GeminiProvider, XAIProvider, DeepSeekProvider, MoonshotProvider } from './providers';
 
@@ -105,6 +105,60 @@ export class AIProviderFactory {
      */
     static getRegistration(providerType: AIProviderType): ProviderRegistration | undefined {
         return this.registrations.get(providerType);
+    }
+
+    /**
+     * Get all registered provider types
+     * @returns Array of provider type strings
+     */
+    static getProviderTypes(): string[] {
+        return Array.from(this.registrations.keys());
+    }
+
+    /**
+     * Check if a provider is registered (alias for isRegistered)
+     * @param type Provider type to check
+     * @returns True if provider is registered
+     */
+    static hasProvider(type: string): boolean {
+        return this.registrations.has(type);
+    }
+
+    /**
+     * Get provider metadata by creating a temporary instance
+     * @param type Provider type
+     * @returns Provider metadata
+     */
+    static getMetadata(type: string): ProviderMetadata {
+        const registration = this.registrations.get(type);
+        if (!registration) {
+            throw new Error(`Provider "${type}" not registered. Available providers: ${this.getProviderTypes().join(', ')}`);
+        }
+
+        // Create temporary instance to get metadata
+        const tempConfig: AIModelConfig = {
+            provider: type,
+            apiKey: '',
+            modelId: '',
+        };
+        const instance = registration.factory(tempConfig);
+        return instance.getMetadata();
+    }
+
+    /**
+     * Get metadata for all registered providers
+     * @returns Map of provider type to metadata
+     */
+    static getAllMetadata(): Map<string, ProviderMetadata> {
+        const metadata = new Map<string, ProviderMetadata>();
+        for (const type of this.getProviderTypes()) {
+            try {
+                metadata.set(type, this.getMetadata(type));
+            } catch (error) {
+                console.error(`[AIProviderFactory] Failed to get metadata for ${type}:`, error);
+            }
+        }
+        return metadata;
     }
 }
 

@@ -10,7 +10,7 @@
  */
 
 import { BaseAIProvider } from '../BaseAIProvider';
-import type { AIModelConfig, Message, AIRequestOptions, AIProvider } from '../types';
+import type { AIModelConfig, Message, AIRequestOptions, AIProvider, ProviderMetadata, ParameterLimits } from '../types';
 
 export class MoonshotProvider extends BaseAIProvider implements AIProvider {
     readonly providerType = 'moonshot';
@@ -33,9 +33,6 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
         // Default to global if not specified
         this.baseURL = config.baseURL || 'https://api.moonshot.cn/v1';
 
-        console.log(`[MoonshotProvider] Initializing with API key: ${this.apiKey.substring(0, 10)}...`);
-        console.log(`[MoonshotProvider] Base URL: ${this.baseURL}`);
-        console.log(`[MoonshotProvider] Model ID: ${this.model}`);
     }
 
     /**
@@ -59,9 +56,6 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             max_tokens: options?.maxTokens || this.maxTokens,
             stream: false
         };
-
-        console.log(`[MoonshotProvider] Sending request to ${url}`);
-        console.log(`[MoonshotProvider] Request body:`, JSON.stringify(requestBody, null, 2));
 
         try {
             const response = await fetch(url, {
@@ -87,8 +81,6 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             }
 
             const data = await response.json();
-            console.log(`[MoonshotProvider] Response received:`, JSON.stringify(data, null, 2));
-
             return this.extractResponse(data);
 
         } catch (error) {
@@ -125,8 +117,6 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             max_tokens: options?.maxTokens || this.maxTokens,
             stream: true
         };
-
-        console.log(`[MoonshotProvider] Starting streaming request to ${url}`);
 
         try {
             const response = await fetch(url, {
@@ -185,7 +175,6 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
 
                             // Handle reasoning content from K2 Thinking models
                             if (delta?.reasoning_content) {
-                                console.log('[MoonshotProvider] Reasoning chunk:', delta.reasoning_content);
                                 // Optionally pass reasoning to callback if needed
                             }
                         } catch (parseError) {
@@ -327,6 +316,76 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
         return {
             temperature: { min: 0, max: 1, default: 1 },           // Moonshot限制 [0, 1]
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
+        };
+    }
+
+    /**
+     * Get provider metadata (single source of truth)
+     */
+    getMetadata(): ProviderMetadata {
+        return {
+            type: 'moonshot',
+            displayName: 'Moonshot AI (Kimi)',
+            description: 'Kimi K2 系列，支持256K上下文和推理模型',
+            icon: '🌙',
+            apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys',
+            defaultBaseURL: 'https://api.moonshot.cn/v1',
+            defaultModel: 'kimi-k2-0905-preview',
+            models: [
+                {
+                    id: 'kimi-k2-0905-preview',
+                    displayName: 'Kimi K2 0905 (256K上下文，最新推荐)',
+                    contextWindow: 262144,
+                    description: '最新K2模型，支持256K上下文窗口',
+                    recommended: true,
+                },
+                {
+                    id: 'kimi-k2-thinking',
+                    displayName: 'Kimi K2 Thinking (256K，推理模型)',
+                    contextWindow: 262144,
+                    description: '推理模型，暴露思考过程',
+                },
+                {
+                    id: 'kimi-k2-thinking-turbo',
+                    displayName: 'Kimi K2 Thinking Turbo (256K，快速推理)',
+                    contextWindow: 262144,
+                    description: '快速推理模型，平衡速度和质量',
+                },
+                {
+                    id: 'kimi-k2-0711-preview',
+                    displayName: 'Kimi K2 0711 (128K)',
+                    contextWindow: 131072,
+                    description: '早期K2模型',
+                    deprecated: true,
+                },
+                {
+                    id: 'moonshot-v1-128k',
+                    displayName: 'Moonshot V1 128K',
+                    contextWindow: 131072,
+                    description: '第一代128K模型',
+                    deprecated: true,
+                },
+                {
+                    id: 'moonshot-v1-32k',
+                    displayName: 'Moonshot V1 32K',
+                    contextWindow: 32768,
+                    description: '第一代32K模型',
+                    deprecated: true,
+                },
+                {
+                    id: 'moonshot-v1-8k',
+                    displayName: 'Moonshot V1 8K',
+                    contextWindow: 8192,
+                    description: '第一代8K模型',
+                    deprecated: true,
+                },
+            ],
+            features: {
+                supportsStreaming: true,
+                supportsSystemPrompt: true,
+                supportsVision: false,
+                supportsFunctionCalling: false,
+            },
         };
     }
 }

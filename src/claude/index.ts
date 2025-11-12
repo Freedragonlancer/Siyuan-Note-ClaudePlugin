@@ -23,6 +23,7 @@ export { DEFAULT_KEYBOARD_SHORTCUTS } from "./types";
 export { migrateToMultiProvider } from "./types";
 import { DEFAULT_EDIT_SETTINGS } from "../editor/types";
 import type { MultiProviderSettings } from "./types";
+import { ConfigGenerator } from "../settings/ConfigGenerator";
 
 export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
     // Legacy single-provider settings (for backward compatibility)
@@ -68,45 +69,9 @@ export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
     },
     
     // Multi-provider settings (new in v0.10.0+)
+    // Dynamically generated from registered providers (v0.12.0+)
     activeProvider: 'anthropic' as const,
-    providers: {
-        anthropic: {
-            apiKey: '',  // Will be set by user
-            baseURL: '',
-            model: 'claude-sonnet-4-5-20250929',
-            enabled: true,
-        },
-        openai: {
-            apiKey: '',
-            baseURL: '',
-            model: 'gpt-4-turbo-preview',
-            enabled: false,
-        },
-        gemini: {
-            apiKey: '',
-            baseURL: '',
-            model: 'gemini-pro',
-            enabled: false,
-        },
-        xai: {
-            apiKey: '',
-            baseURL: '',
-            model: 'grok-beta',
-            enabled: false,
-        },
-        deepseek: {
-            apiKey: '',
-            baseURL: '',
-            model: 'deepseek-chat',
-            enabled: false,
-        },
-        moonshot: {
-            apiKey: '',
-            baseURL: '',
-            model: 'kimi-k2-0905-preview',
-            enabled: false,
-        },
-    },
+    providers: ConfigGenerator.generateDefaultProviders(),
 };
 
 // Default fallback models if API fetch fails

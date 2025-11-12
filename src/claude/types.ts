@@ -82,118 +82,56 @@ export interface ProviderConfig {
 /**
  * Multi-Provider Settings
  * Extends ClaudeSettings to support multiple AI providers
+ *
+ * v0.12.0: Changed to Record type for dynamic provider support
  */
 export interface MultiProviderSettings extends ClaudeSettings {
     /** Currently active provider */
-    activeProvider?: AIProviderType;
+    activeProvider?: string;  // Changed from AIProviderType to string
 
-    /** Provider-specific configurations */
-    providers?: {
-        anthropic?: ProviderConfig;
-        openai?: ProviderConfig;
-        gemini?: ProviderConfig;
-        xai?: ProviderConfig;
-        deepseek?: ProviderConfig;
-        moonshot?: ProviderConfig;
-    };
+    /** Provider-specific configurations (dynamic) */
+    providers?: Record<string, ProviderConfig>;
 }
 
 /**
  * Migrate legacy ClaudeSettings to MultiProviderSettings
  * Preserves existing Claude configuration under 'anthropic' provider
+ *
+ * v0.12.0: Simplified using ConfigGenerator for dynamic provider support
  */
 export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderSettings {
+    // Import here to avoid circular dependency
+    const { ConfigGenerator } = require('../settings/ConfigGenerator');
+    const defaultProviders = ConfigGenerator.generateDefaultProviders();
+
     // Check if already migrated
     if ('activeProvider' in settings && 'providers' in settings) {
-        // Ensure all providers exist (merge with defaults)
         const migratedSettings = settings as MultiProviderSettings;
         return {
             ...migratedSettings,
-            // Ensure keyboardShortcuts always exists
             keyboardShortcuts: migratedSettings.keyboardShortcuts || DEFAULT_KEYBOARD_SHORTCUTS,
-            providers: {
-                anthropic: migratedSettings.providers?.anthropic || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'claude-sonnet-4-5-20250929',
-                    enabled: false,
-                },
-                openai: migratedSettings.providers?.openai || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'gpt-4-turbo-preview',
-                    enabled: false,
-                },
-                gemini: migratedSettings.providers?.gemini || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'gemini-pro',
-                    enabled: false,
-                },
-                xai: migratedSettings.providers?.xai || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'grok-beta',
-                    enabled: false,
-                },
-                deepseek: migratedSettings.providers?.deepseek || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'deepseek-chat',
-                    enabled: false,
-                },
-                moonshot: migratedSettings.providers?.moonshot || {
-                    apiKey: '',
-                    baseURL: '',
-                    model: 'kimi-k2-0905-preview',
-                    enabled: false,
-                },
-            },
+            // Deep merge: ensure new providers are added to existing configs
+            providers: ConfigGenerator.mergeProviderConfigs(
+                defaultProviders,
+                migratedSettings.providers
+            ),
         };
     }
 
     // Migrate legacy settings (first time)
     return {
         ...settings,
-        // Ensure keyboardShortcuts always exists
         keyboardShortcuts: settings.keyboardShortcuts || DEFAULT_KEYBOARD_SHORTCUTS,
         activeProvider: 'anthropic',
         providers: {
+            ...defaultProviders,
+            // Preserve legacy Anthropic config
             anthropic: {
+                ...defaultProviders.anthropic,
                 apiKey: settings.apiKey || '',
                 baseURL: settings.baseURL || '',
-                model: settings.model || 'claude-sonnet-4-5-20250929',
+                model: settings.model || defaultProviders.anthropic.model,
                 enabled: true,
-            },
-            openai: {
-                apiKey: '',
-                baseURL: '',
-                model: 'gpt-4-turbo-preview',
-                enabled: false,
-            },
-            gemini: {
-                apiKey: '',
-                baseURL: '',
-                model: 'gemini-pro',
-                enabled: false,
-            },
-            xai: {
-                apiKey: '',
-                baseURL: '',
-                model: 'grok-beta',
-                enabled: false,
-            },
-            deepseek: {
-                apiKey: '',
-                baseURL: '',
-                model: 'deepseek-chat',
-                enabled: false,
-            },
-            moonshot: {
-                apiKey: '',
-                baseURL: '',
-                model: 'kimi-k2-0905-preview',
-                enabled: false,
             },
         },
     };

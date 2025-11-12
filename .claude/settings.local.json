@@ -44,7 +44,8 @@
       "mcp__serena__replace_symbol_body",
       "Bash(npm run release:*)",
       "Bash(timeout 3 gh run:*)",
-      "Bash(npm run bump-version:*)"
+      "Bash(npm run bump-version:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

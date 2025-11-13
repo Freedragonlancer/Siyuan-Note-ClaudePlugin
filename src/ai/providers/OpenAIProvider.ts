@@ -21,12 +21,11 @@ export class OpenAIProvider extends BaseAIProvider {
 
     constructor(config: AIModelConfig) {
         super(config);
-        
-        // Debug: Log API key format (first 10 chars only for security)
-        console.log(`[OpenAIProvider] Initializing with API key: ${config.apiKey.substring(0, 10)}...`);
+
+        // Debug: Log configuration (API key excluded for security)
         console.log(`[OpenAIProvider] Model ID: ${config.modelId}`);
         console.log(`[OpenAIProvider] Base URL: ${config.baseURL || 'https://api.openai.com/v1'}`);
-        
+
         this.client = new OpenAI({
             apiKey: config.apiKey,
             baseURL: config.baseURL || 'https://api.openai.com/v1',

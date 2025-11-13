@@ -22,11 +22,10 @@ export class GeminiProvider extends BaseAIProvider {
 
     constructor(config: AIModelConfig) {
         super(config);
-        
-        // Debug: Log API key format (first 10 chars only for security)
-        console.log(`[GeminiProvider] Initializing with API key: ${config.apiKey.substring(0, 10)}...`);
+
+        // Debug: Log configuration (API key excluded for security)
         console.log(`[GeminiProvider] Model ID: ${config.modelId}`);
-        
+
         this.client = new GoogleGenerativeAI(config.apiKey);
         this.initializeModel();
     }

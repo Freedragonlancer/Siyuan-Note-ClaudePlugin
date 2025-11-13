@@ -155,20 +155,59 @@ AIProviderFactory
 **Key Interface**:
 ```typescript
 interface AIProvider {
+  // Core methods
   sendMessage(messages, options): Promise<string>
   streamMessage(messages, options): Promise<void>
-  validateConfig(config): boolean | string
+
+  // Configuration
+  validateConfig(config): true | string
   getAvailableModels(): string[]
+
+  // Required abstract methods (from BaseAIProvider)
+  getMaxTokenLimit(model: string): number
+  getParameterLimits(): ParameterLimits
+  getMetadata(): ProviderMetadata  // v0.12.0+ metadata-first architecture
+
+  // Feature detection
+  supportsStreaming(): boolean
+  supportsSystemPrompt(): boolean
 }
 ```
 
+**Full interface at**: `src/ai/types.ts` (lines 70-140)
+
 **Provider-Specific Features**:
-- **Moonshot (Kimi)**: K2 Thinking models expose `reasoning_content` in responses, automatically formatted in collapsible sections. Temperature auto-clamped to [0, 1] range. 256K context window support. See [MOONSHOT_API_SETUP.md](MOONSHOT_API_SETUP.md) for details.
-- **Anthropic (Claude)**: Native streaming support, tool use capabilities
-- **OpenAI (GPT)**: Function calling, vision support (GPT-4V)
-- **Gemini**: Multimodal input, long context (1M+ tokens for Gemini 1.5)
-- **xAI (Grok)**: Real-time data access, up-to-date information
-- **DeepSeek**: Specialized coding models, cost-effective pricing
+- **Anthropic (Claude)**:
+  - Native streaming support, tool use capabilities
+  - **BaseURL handling**: Automatically strips trailing `/v1` to prevent duplicate paths
+  - Temperature range: [0, 1], max output: 4096 tokens
+  - Models: Sonnet 4.5, Opus 4, Sonnet 3.7, Haiku 3.5
+
+- **OpenAI (GPT)**:
+  - Function calling, vision support (GPT-4V)
+  - Temperature range: [0, 2], max output: varies by model (4K-100K)
+  - O-series reasoning models support up to 100K output tokens
+
+- **Gemini**:
+  - Multimodal input, long context (1M-2M tokens)
+  - No dedicated system prompt field (merged with first user message)
+  - Temperature range: [0, 2], max output: 8192 tokens
+
+- **xAI (Grok)**:
+  - OpenAI-compatible API
+  - Vision support in grok-vision-beta
+  - Temperature range: [0, 2], context: 128K
+
+- **DeepSeek**:
+  - Specialized coding models, cost-effective pricing
+  - **Reasoning models** (deepseek-reasoner): Temperature/top_p disabled automatically
+  - Temperature range: [0, 2] (for non-reasoning models), context: 128K
+
+- **Moonshot (Kimi)**:
+  - K2 Thinking models expose `reasoning_content` in responses, automatically formatted in collapsible sections
+  - **Temperature range**: [0, 1] (auto-clamped with warning)
+  - Context window: 128K-256K
+  - See [MOONSHOT_API_SETUP.md](MOONSHOT_API_SETUP.md) for details
 
 **3. Quick Edit Pipeline (Modular)**
 ```
@@ -453,13 +492,15 @@ const blockId = blockElement.getAttribute('data-node-id');
 
 ---
 
-## Extensibility (v0.9.0+)
+## Extensibility
 
-### Adding AI Providers
+### Adding New AI Providers (v0.12.0+)
 
-The plugin supports multiple AI providers through an extensible architecture. Follow this **complete checklist** to add a new provider:
+**New in v0.12.0**: Simplified process with **metadata-first architecture**! Adding a provider follows a systematic 8-step process.
 
-#### Complete Integration Checklist
+The plugin uses a **single source of truth** approach: all provider information (models, URLs, features) is defined in `Provider.getMetadata()`, and the UI/configuration is dynamically generated.
+
+#### Complete Integration Guide (3 Steps Only!)
 
 **Step 1: Create Provider Implementation** (`src/ai/providers/NewProvider.ts`)
 
@@ -556,10 +597,14 @@ this.register({
 **Step 4: Add to Type Definitions** (`src/ai/types.ts`)
 
 ```typescript
-export type AIProviderType = 
-    'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'moonshot' | 
+export type AIProviderType =
+    'anthropic' | 'openai' | 'gemini' | 'xai' | 'deepseek' | 'moonshot' |
     'newprovider' |  // Add your new provider here
     'custom';
+
+// Note: AIProviderType is defined as `string` in code for runtime flexibility.
+// Providers are registered dynamically in AIProviderFactory.initialize().
+// This union type documents the available built-in providers.
 ```
 
 **Step 5: Add to DEFAULT_SETTINGS** (`src/claude/index.ts`) ⚠️ **CRITICAL**
@@ -682,6 +727,8 @@ Add badge color (around line 1856):
 4. **Must add to `DEFAULT_SETTINGS.providers`** - Otherwise config will be `undefined`
 5. **Type name must be lowercase** - e.g., `'newprovider'` not `'NewProvider'`
 6. **validateConfig must check `config.modelId`** - NOT `config.model`
+7. **API key logging in constructors** - Remove debug logs that include API key prefixes
+8. **Temperature validation** - Some providers have restricted ranges (e.g., Moonshot: [0,1], Anthropic: [0,1])
 
 #### Example: Moonshot Provider Integration
 
@@ -860,7 +907,7 @@ See [MODULAR_REFACTORING_GUIDE.md](MODULAR_REFACTORING_GUIDE.md) for detailed AP
 | Build fails | Run `npm install`, check Node 18+, clear `dist/` folder |
 | Changes not showing | Ensure `npm run deploy` succeeded, restart SiYuan (not just F5) |
 | Streaming timeout | Check API key, network, Anthropic status; increase timeout in ClaudeClient.ts |
-| **Reverse proxy 404 error** | **For Anthropic: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`. OpenAI/Gemini/xAI/DeepSeek/Moonshot: Use baseURL as provided by proxy service.** |
+| **Reverse proxy 404 error** | **Provider-specific baseURL handling:**<br>• **Anthropic**: Use full baseURL with `/v1` (e.g., `https://proxy.com/api/v1`). Plugin auto-strips to prevent `/v1/v1/messages`.<br>• **OpenAI/Gemini/xAI/DeepSeek/Moonshot**: Use baseURL as provided by proxy service (no auto-stripping). |
 | **Moonshot temperature warning** | **Plugin auto-clamps temperature to [0, 1] range (Moonshot limit). Values above 1.0 are automatically clamped with console warning. No action needed.** |
 | **Moonshot reasoning content** | **K2 Thinking models return reasoning in collapsible `<details>` section. Expand to view model's thought process. Use non-Thinking models if reasoning not needed (faster, cheaper).** |
 | **New provider not appearing** | **If a newly added provider (e.g., Moonshot) shows "AI provider is not configured" despite having API key set, this is the configuration migration bug. Fixed in v0.11.3. Solution: (1) Update to v0.11.3+, (2) Open Settings, (3) Re-save your API key for the new provider, (4) Restart SiYuan. The deep merge fix ensures new providers from DEFAULT_SETTINGS are preserved.** |

@@ -61,6 +61,10 @@ export interface AIRequestOptions {
     onStream?: StreamCallback;
     /** Abort signal for cancellation */
     signal?: AbortSignal;
+    /** Completion callback (optional, provider-specific) */
+    onComplete?: () => void;
+    /** Error callback (optional, provider-specific) */
+    onError?: (error: Error) => void;
 }
 
 /**

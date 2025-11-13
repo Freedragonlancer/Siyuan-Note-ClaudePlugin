@@ -42,11 +42,10 @@
     "make-link": "node scripts/make_dev_link.cjs",
     "make-link-win": "node scripts/make_dev_link.cjs",
     "bump-version": "node scripts/bump-version.cjs",
-    "release": "npm run bump-version && git add package.json plugin.json && git commit -m \"chore: bump version to $(node -p \\\"require('./package.json').version\\\")\" && git tag v$(node -p \"require('./package.json').version\") && git push origin main --tags",
-    "release:major": "npm run bump-version major && npm run release:commit-and-tag",
-    "release:minor": "npm run bump-version minor && npm run release:commit-and-tag",
-    "release:patch": "npm run bump-version patch && npm run release:commit-and-tag",
-    "release:commit-and-tag": "git add package.json plugin.json && git commit -m \"chore: bump version to $(node -p \\\"require('./package.json').version\\\")\" && git tag v$(node -p \"require('./package.json').version\") && git push origin main --tags",
+    "release": "node scripts/release.cjs",
+    "release:major": "node scripts/release.cjs major",
+    "release:minor": "node scripts/release.cjs minor",
+    "release:patch": "node scripts/release.cjs patch",
     "version:check": "node -p \"'package.json: ' + require('./package.json').version\" && node -p \"'plugin.json: ' + require('./plugin.json').version\""
   },
   "devDependencies": {

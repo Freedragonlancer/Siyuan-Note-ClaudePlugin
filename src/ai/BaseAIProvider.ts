@@ -24,10 +24,16 @@ export abstract class BaseAIProvider implements AIProvider {
     protected config: AIModelConfig;
 
     constructor(config: AIModelConfig) {
-        const validationResult = this.validateConfig(config);
-        if (validationResult !== true) {
-            throw new Error(`Invalid ${this.providerName} config: ${validationResult}`);
+        // Skip validation if this is a temporary config for metadata retrieval
+        const isMetadataRetrieval = config.apiKey === 'placeholder-key-for-metadata-retrieval';
+
+        if (!isMetadataRetrieval) {
+            const validationResult = this.validateConfig(config);
+            if (validationResult !== true) {
+                throw new Error(`Invalid ${this.providerName} config: ${validationResult}`);
+            }
         }
+
         this.config = config;
     }
 

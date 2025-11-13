@@ -5,6 +5,7 @@
 import type { EditSettings } from "../editor/types";
 import type { FilterRule } from "../filter";
 import type { AIProviderType } from "../ai/types";
+import { AIProviderFactory } from "../ai/AIProviderFactory";
 
 /**
  * Default keyboard shortcuts configuration
@@ -99,10 +100,71 @@ export interface MultiProviderSettings extends ClaudeSettings {
  *
  * v0.12.0: Simplified using ConfigGenerator for dynamic provider support
  */
+/**
+ * Generate default configuration for all registered providers (inlined version)
+ *
+ * NOTE: This is an inlined version of ConfigGenerator.generateDefaultProviders()
+ * to avoid circular dependency issues. Uses static import of AIProviderFactory.
+ *
+ * @returns Record of provider type to default config
+ */
+function generateDefaultProvidersInline(): Record<string, ProviderConfig> {
+    const providers: Record<string, ProviderConfig> = {};
+    const allMetadata = AIProviderFactory.getAllMetadata();
+
+    for (const [type, metadata] of allMetadata) {
+        providers[type] = {
+            apiKey: '',
+            baseURL: metadata.defaultBaseURL,
+            model: metadata.defaultModel,
+            enabled: type === 'anthropic', // Only Anthropic enabled by default
+        };
+    }
+
+    return providers;
+}
+
+/**
+ * Deep merge provider configurations (inlined version)
+ * 
+ * NOTE: This is an inlined version of ConfigGenerator.mergeProviderConfigs()
+ * to avoid circular dependency issues.
+ * 
+ * @param defaults Default provider configurations
+ * @param user User's saved configurations
+ * @returns Merged configuration
+ */
+function mergeProviderConfigsInline(
+    defaults: Record<string, ProviderConfig>,
+    user: Record<string, ProviderConfig> | undefined
+): Record<string, ProviderConfig> {
+    if (!user) {
+        return defaults;
+    }
+
+    const merged: Record<string, ProviderConfig> = { ...defaults };
+
+    // Merge user configs into defaults
+    for (const [key, value] of Object.entries(user)) {
+        if (merged[key]) {
+            // Provider exists in defaults, merge
+            merged[key] = {
+                ...defaults[key],
+                ...value,
+            };
+        } else {
+            // Provider doesn't exist in defaults (e.g., removed provider)
+            // Keep user's config anyway for backward compatibility
+            merged[key] = value;
+        }
+    }
+
+    return merged;
+}
+
 export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderSettings {
-    // Import here to avoid circular dependency
-    const { ConfigGenerator } = require('../settings/ConfigGenerator');
-    const defaultProviders = ConfigGenerator.generateDefaultProviders();
+    // Use inlined functions to avoid circular dependency with ConfigGenerator
+    const defaultProviders = generateDefaultProvidersInline();
 
     // Check if already migrated
     if ('activeProvider' in settings && 'providers' in settings) {
@@ -111,7 +173,7 @@ export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderS
             ...migratedSettings,
             keyboardShortcuts: migratedSettings.keyboardShortcuts || DEFAULT_KEYBOARD_SHORTCUTS,
             // Deep merge: ensure new providers are added to existing configs
-            providers: ConfigGenerator.mergeProviderConfigs(
+            providers: mergeProviderConfigsInline(
                 defaultProviders,
                 migratedSettings.providers
             ),

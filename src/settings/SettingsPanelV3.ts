@@ -423,6 +423,30 @@ export class SettingsPanelV3 {
     /**
      * Generate provider selector options HTML (dynamic from Factory)
      */
+    /**
+     * Get provider metadata from AIProviderFactory
+     * Returns display info (name, icon, URL, defaultBaseURL) for a provider type
+     */
+    private getProviderInfo(type: string): { name: string; icon: string; url: string; defaultBaseURL: string } {
+        try {
+            if (!AIProviderFactory.hasProvider(type)) {
+                console.warn(`[SettingsPanelV3] Provider "${type}" not registered, using fallback`);
+                return { name: 'Unknown Provider', icon: '❓', url: '', defaultBaseURL: '' };
+            }
+
+            const metadata = AIProviderFactory.getMetadata(type);
+            return {
+                name: metadata.displayName,
+                icon: metadata.icon,
+                url: metadata.apiKeyUrl,
+                defaultBaseURL: metadata.defaultBaseURL,
+            };
+        } catch (error) {
+            console.error(`[SettingsPanelV3] Failed to get provider info for ${type}:`, error);
+            return { name: 'Unknown Provider', icon: '❓', url: '', defaultBaseURL: '' };
+        }
+    }
+
     private getProviderSelectorOptions(activeProvider: string): string {
         try {
             const providerTypes = AIProviderFactory.getProviderTypes();

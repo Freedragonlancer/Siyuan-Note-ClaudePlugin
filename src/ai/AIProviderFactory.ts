@@ -136,10 +136,11 @@ export class AIProviderFactory {
         }
 
         // Create temporary instance to get metadata
+        // Use placeholder values to pass validation (not used for actual API calls)
         const tempConfig: AIModelConfig = {
             provider: type,
-            apiKey: '',
-            modelId: '',
+            apiKey: 'placeholder-key-for-metadata-retrieval',
+            modelId: 'placeholder-model-for-metadata-retrieval',
         };
         const instance = registration.factory(tempConfig);
         return instance.getMetadata();

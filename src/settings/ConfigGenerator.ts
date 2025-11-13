@@ -1,6 +1,12 @@
 /**
  * Configuration Generator
  * Dynamically generates configuration from Provider metadata
+ *
+ * NOTE: This class is used by src/claude/index.ts for DEFAULT_SETTINGS generation.
+ * However, src/claude/types.ts uses inlined versions of these methods to avoid
+ * circular dependency issues when migrateToMultiProvider() is called at runtime.
+ *
+ * DO NOT use require() to import this module in types.ts - use the inlined functions instead.
  */
 
 import { AIProviderFactory } from '../ai/AIProviderFactory';

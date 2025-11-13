@@ -97,8 +97,8 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
      * Send a streaming message
      */
     async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
-        if (!options?.onChunk) {
-            throw new Error('onChunk callback is required for streaming');
+        if (!options?.onStream) {
+            throw new Error('onStream callback is required for streaming');
         }
 
         const url = `${this.baseURL}/chat/completions`;
@@ -170,7 +170,7 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
                             const delta = jsonData.choices?.[0]?.delta;
 
                             if (delta?.content) {
-                                options.onChunk(delta.content);
+                                options.onStream!(delta.content);
                             }
 
                             // Handle reasoning content from K2 Thinking models

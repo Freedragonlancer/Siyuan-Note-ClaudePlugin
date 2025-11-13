@@ -205,6 +205,10 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     onLayoutReady() {
+        // CRITICAL: Clean DOM FIRST, before any checks or UI registration
+        // This ensures any leftover elements from incomplete unload are removed
+        this.cleanupTopbarIconsSync();
+
         // Prevent duplicate onLayoutReady calls
         if (this.layoutReadyCalled) {
             console.warn("[Plugin] onLayoutReady already called, skipping duplicate call");
@@ -214,23 +218,10 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         console.log("Claude Assistant Plugin layout ready");
 
-        // Check if topbar already exists
+        // Double-check: topbar should be null after cleanup
         if (this.topbarElement) {
-            console.warn("[Plugin] Topbar already exists, skipping addTopBar");
-            return;
-        }
-
-        // Clean up any existing Claude icons in DOM (防止残留)
-        const existingIcons = document.querySelectorAll('svg[data-icon="iconClaudeCode"]');
-        if (existingIcons.length > 0) {
-            console.warn(`[Plugin] Found ${existingIcons.length} existing topbar icons, cleaning up...`);
-            existingIcons.forEach(icon => {
-                const item = icon.closest('.toolbar__item');
-                if (item) {
-                    item.remove();
-                    console.log("[Plugin] Removed existing topbar icon from DOM");
-                }
-            });
+            console.error("[Plugin] ⚠️  Topbar still exists after cleanup! Forcing reset...");
+            this.topbarElement = null;
         }
 
         // Add unified dock (sidebar) - 必须在 onLayoutReady 中调用
@@ -313,8 +304,17 @@ export default class ClaudeAssistantPlugin extends Plugin {
         console.log("Claude AI Assistant initialized");
     }
 
-    async onunload() {
+    onunload() {
         console.log("Unloading Claude Assistant Plugin");
+
+        // CRITICAL: Clean DOM FIRST with synchronous cleanup
+        this.cleanupTopbarIconsSync();
+
+        // Reset instance state to allow re-initialization
+        this.layoutReadyCalled = false;
+        this.topbarElement = null;
+        this.dockElement = null;
+        this.dockModel = null;
 
         // Clean up event listeners to prevent memory leaks
         if (this.blockIconHandler) {
@@ -324,55 +324,6 @@ export default class ClaudeAssistantPlugin extends Plugin {
         if (this.contentMenuHandler) {
             this.eventBus.off("open-menu-content", this.contentMenuHandler);
             this.contentMenuHandler = null;
-        }
-
-        // Clean up topbar icon to prevent duplicates on reload (enhanced multi-strategy cleanup)
-        if (this.topbarElement) {
-            try {
-                // Strategy 1: Find and remove all Claude icons by data-icon attribute
-                const existingIcons = document.querySelectorAll('svg[data-icon="iconClaudeCode"]');
-                if (existingIcons.length > 0) {
-                    console.log(`[Plugin] Found ${existingIcons.length} Claude icon(s) in DOM, removing...`);
-                    existingIcons.forEach(icon => {
-                        const item = icon.closest('.toolbar__item');
-                        if (item) {
-                            item.remove();
-                            console.log("[Plugin] Removed topbar item via icon search");
-                        }
-                    });
-                }
-
-                // Strategy 2: Try direct element removal
-                try {
-                    this.topbarElement.remove();
-                    console.log("[Plugin] Topbar element removed via direct reference");
-                } catch (err) {
-                    console.warn("[Plugin] Direct element removal failed:", err);
-                }
-
-                // Strategy 3: Use multiple selectors as fallback
-                const fallbackSelectors = [
-                    '.toolbar__item[aria-label*="Claude"]',
-                    '[data-type="plugin-topbar"]'
-                ];
-
-                fallbackSelectors.forEach(selector => {
-                    const items = document.querySelectorAll(selector);
-                    items.forEach(item => {
-                        // Check if this item contains our icon
-                        if (item.querySelector('[xlink\\:href="#iconClaudeCode"]') ||
-                            item.querySelector('svg[data-icon="iconClaudeCode"]')) {
-                            item.remove();
-                            console.log(`[Plugin] Removed residual item via selector: ${selector}`);
-                        }
-                    });
-                });
-
-                this.topbarElement = null;
-                console.log("[Plugin] ✅ Topbar cleanup completed");
-            } catch (error) {
-                console.error("[Plugin] ❌ Error during topbar cleanup:", error);
-            }
         }
 
         // Cleanup UI components
@@ -396,6 +347,57 @@ export default class ClaudeAssistantPlugin extends Plugin {
         }
 
         console.log("[Plugin] Cleanup complete");
+    }
+
+    /**
+     * Synchronous, aggressive cleanup of topbar icons
+     * CRITICAL: Must be synchronous to ensure complete cleanup before reload
+     */
+    private cleanupTopbarIconsSync(): void {
+        try {
+            console.log("[Plugin] Starting synchronous topbar cleanup...");
+
+            // Strategy: Use multiple selectors to ensure we catch all possible icon locations
+            const selectors = [
+                'svg[data-icon="iconClaudeCode"]',
+                '.toolbar__item:has(svg[data-icon="iconClaudeCode"])',
+                '[aria-label*="Claude AI Assistant"]',
+                '[xlink\\:href="#iconClaudeCode"]'
+            ];
+
+            let removedCount = 0;
+
+            selectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    if (elements.length > 0) {
+                        console.log(`[Plugin] Found ${elements.length} element(s) matching: ${selector}`);
+                        elements.forEach(el => {
+                            // Find the toolbar item parent
+                            const toolbarItem = el.closest('.toolbar__item') || el;
+                            toolbarItem.remove();
+                            removedCount++;
+                        });
+                    }
+                } catch (err) {
+                    console.warn(`[Plugin] Failed to remove elements with selector ${selector}:`, err);
+                }
+            });
+
+            // Force null the reference
+            this.topbarElement = null;
+
+            if (removedCount > 0) {
+                console.log(`[Plugin] ✅ Removed ${removedCount} topbar element(s)`);
+            } else {
+                console.log("[Plugin] ✅ No topbar elements to remove");
+            }
+
+            console.log("[Plugin] ✅ Synchronous topbar cleanup complete");
+        } catch (error) {
+            console.error("[Plugin] ❌ Critical error during topbar cleanup:", error);
+            // Don't throw - continue with unload even if cleanup fails
+        }
     }
 
     uninstall() {

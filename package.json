@@ -34,7 +34,7 @@
     "test:integration": "vitest run integration",
     "test:coverage": "vitest run --coverage",
     "deploy": "npm run build && npm run copy-plugin",
-    "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\"",
+    "copy-plugin": "cp -v dist/index.js \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.js\" && cp -v dist/index.css \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/index.css\" && cp -v plugin.json \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/plugin.json\" && cp -v icon.png \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/icon.png\" && cp -v README.md \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/README.md\" && cp -rv i18n \"N:/Siyuan-Note/data/plugins/siyuan-plugin-claude-assistant/\"",
     "clean-cache": "node scripts/clean-cache.cjs",
     "clean-siyuan-cache": "node scripts/clean-siyuan-cache.cjs",
     "clean-deploy": "node scripts/clean-deploy.cjs",

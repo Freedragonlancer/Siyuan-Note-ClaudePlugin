@@ -21,6 +21,8 @@ import type { TextSelection } from "./editor/types";
 import { QuickEditManager } from "./quick-edit";
 import type { DockModel } from "@/types/siyuan";
 import { KeyboardShortcutFormatter } from "./utils/KeyboardShortcutFormatter";
+import { Logger, LogLevel } from "./utils/Logger";
+import { IS_DEV, getDefaultLogLevel } from "./config/environment";
 
 const PLUGIN_NAME = "siyuan-plugin-claude-assistant";
 
@@ -53,7 +55,49 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private initializationResolver: (() => void) | null = null;
 
     async onload() {
-        console.log("Loading Claude Assistant Plugin");
+        // Configure Logger based on environment
+        const logLevel = IS_DEV ? LogLevel.DEBUG : LogLevel.WARN;
+        Logger.configure({
+            level: logLevel,
+            prefix: '[ClaudePlugin]',
+            enableTimestamp: IS_DEV,
+            enableStackTrace: IS_DEV,
+        });
+
+        Logger.info("Loading Claude Assistant Plugin", {
+            environment: IS_DEV ? 'development' : 'production',
+            logLevel: getDefaultLogLevel(),
+        });
+
+        // Load i18n manually if not provided by SiYuan
+        // This fixes "Cannot read properties of undefined (reading 'local-plugintopunpin')" error
+        if (!this.i18n || Object.keys(this.i18n).length === 0) {
+            console.log('[Plugin] i18n not loaded by SiYuan, loading manually...');
+            try {
+                // Get current language from SiYuan config (fallback to en_US)
+                const lang = (window as any).siyuan?.config?.lang || 'en_US';
+                console.log(`[Plugin] Loading i18n for language: ${lang}`);
+
+                // Try to load i18n file using plugin's loadData method
+                const i18nPath = `i18n/${lang}.json`;
+                const i18nData = await this.loadData(i18nPath);
+
+                if (i18nData) {
+                    this.i18n = typeof i18nData === 'string' ? JSON.parse(i18nData) : i18nData;
+                    console.log(`[Plugin] Successfully loaded i18n from ${i18nPath} (${Object.keys(this.i18n).length} keys)`);
+                } else {
+                    console.warn(`[Plugin] i18n file ${i18nPath} not found, using empty object`);
+                    this.i18n = {};
+                }
+            } catch (error) {
+                console.error('[Plugin] Failed to load i18n manually:', error);
+                // Fallback to empty object to prevent undefined errors
+                this.i18n = {};
+                console.warn('[Plugin] Using empty i18n object as fallback');
+            }
+        } else {
+            console.log(`[Plugin] i18n already loaded by SiYuan (${Object.keys(this.i18n).length} keys)`);
+        }
 
         // Create initialization promise
         this.initializationComplete = new Promise<void>((resolve) => {

@@ -24,12 +24,29 @@ export class ConfigGenerator {
         const providers: Record<string, ProviderConfig> = {};
         const allMetadata = AIProviderFactory.getAllMetadata();
 
+        // Provider-specific default parameters (v0.13.0)
+        // Each provider has different limits, so we define them separately
+        const defaultParams: Record<string, { maxTokens: number; temperature: number }> = {
+            'anthropic': { maxTokens: 4096, temperature: 0.7 },
+            'openai': { maxTokens: 4096, temperature: 1.0 },
+            'gemini': { maxTokens: 8192, temperature: 0.9 },
+            'xai': { maxTokens: 4096, temperature: 0.7 },
+            'deepseek': { maxTokens: 4096, temperature: 0.7 },
+            'moonshot': { maxTokens: 4096, temperature: 0.7 },
+        };
+
         for (const [type, metadata] of allMetadata) {
+            const params = defaultParams[type] || { maxTokens: 4096, temperature: 0.7 };
+
             providers[type] = {
                 apiKey: '',
                 baseURL: metadata.defaultBaseURL,
                 model: metadata.defaultModel,
                 enabled: type === 'anthropic', // Only Anthropic enabled by default
+
+                // Per-provider parameters (v0.13.0)
+                maxTokens: params.maxTokens,
+                temperature: params.temperature,
             };
         }
 

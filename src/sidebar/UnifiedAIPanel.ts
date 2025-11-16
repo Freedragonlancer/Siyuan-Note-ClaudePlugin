@@ -1780,16 +1780,27 @@ export class UnifiedAIPanel {
             [/claude-3-haiku/, 'Haiku 3'],
             [/claude-2/, 'Claude 2'],
 
-            // OpenAI models
+            // OpenAI models - GPT-5.1 Series (Latest)
+            [/gpt-5\.1-chat-latest/, 'GPT-5.1 Chat'],
+            [/gpt-5\.1-codex-mini/, 'GPT-5.1 Codex Mini'],
+            [/gpt-5\.1-codex/, 'GPT-5.1 Codex'],
+            [/gpt-5\.1/, 'GPT-5.1'],
+            [/gpt-5/, 'GPT-5'],
+
+            // OpenAI models - GPT-4o Series
             [/gpt-4o-mini/, 'GPT-4o Mini'],
             [/gpt-4o/, 'GPT-4o'],
             [/gpt-4-turbo/, 'GPT-4 Turbo'],
             [/gpt-4/, 'GPT-4'],
             [/gpt-3\.5-turbo/, 'GPT-3.5'],
+
+            // OpenAI o-Series Reasoning Models
+            [/o4-mini/, 'o4 Mini'],
+            [/o3-mini/, 'o3 Mini'],
+            [/o3/, 'o3'],
             [/o1-preview/, 'o1 Preview'],
             [/o1-mini/, 'o1 Mini'],
             [/o1/, 'o1'],
-            [/o3-mini/, 'o3 Mini'],
 
             // Gemini models
             [/gemini-2\.5-pro/, '2.5 Pro'],

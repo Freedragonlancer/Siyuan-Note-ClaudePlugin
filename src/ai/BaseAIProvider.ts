@@ -24,17 +24,20 @@ export abstract class BaseAIProvider implements AIProvider {
     protected config: AIModelConfig;
 
     constructor(config: AIModelConfig) {
+        // Set config first so subclass methods can access it
+        this.config = config;
+
         // Skip validation if this is a temporary config for metadata retrieval
         const isMetadataRetrieval = config.apiKey === 'placeholder-key-for-metadata-retrieval';
 
         if (!isMetadataRetrieval) {
             const validationResult = this.validateConfig(config);
             if (validationResult !== true) {
-                throw new Error(`Invalid ${this.providerName} config: ${validationResult}`);
+                // providerName might still be undefined here, use config.provider as fallback
+                const providerName = this.providerName || config.provider || 'Unknown';
+                throw new Error(`Invalid ${providerName} config: ${validationResult}`);
             }
         }
-
-        this.config = config;
     }
 
     // Abstract methods that must be implemented by subclasses

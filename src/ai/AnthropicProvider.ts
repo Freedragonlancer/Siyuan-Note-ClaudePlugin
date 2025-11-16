@@ -146,7 +146,7 @@ export class AnthropicProvider extends BaseAIProvider {
     getParameterLimits(): ParameterLimits {
         return {
             temperature: { min: 0, max: 1, default: 0.7 },
-            maxTokens: { min: 1, max: 4096, default: 4096 },
+            maxTokens: { min: 1, max: 8192, default: 4096 },  // Updated 2025: Extended mode supports 8K
             topP: { min: 0, max: 1, default: 0.9 },
         };
     }

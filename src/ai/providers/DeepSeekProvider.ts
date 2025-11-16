@@ -64,9 +64,9 @@ export class DeepSeekProvider extends OpenAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            'deepseek-chat': 4096,
-            'deepseek-coder': 4096,
-            'deepseek-reasoner': 8192,
+            'deepseek-chat': 8192,      // Updated 2025: DeepSeek-V3 supports 8K output
+            'deepseek-coder': 8192,     // Updated 2025: Same as chat model
+            'deepseek-reasoner': 8192,  // DeepSeek-R1 can do 32K but 8K recommended for quality
         };
 
         // Try exact match first
@@ -81,7 +81,7 @@ export class DeepSeekProvider extends OpenAIProvider {
             }
         }
 
-        return 4096; // Safe default
+        return 8192; // Updated 2025: Safe default for all models
     }
 
     getParameterLimits(): ParameterLimits {

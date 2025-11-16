@@ -68,7 +68,6 @@ export class SettingsPanelV3 {
         const navigationBar = this.createNavigationBar();
         const profileSection = this.createProfileManagementSection();
         const connectionSection = this.createConnectionSection();
-        const modelSection = this.createModelSection();
         const promptEditorSection = this.createPromptEditorSection();
         const keyboardShortcutsSection = this.createKeyboardShortcutsSection();
         const loggingSection = this.createLoggingSection();
@@ -84,9 +83,6 @@ export class SettingsPanelV3 {
                     </div>
                     <div class="settings-section" id="section-connection">
                         ${connectionSection}
-                    </div>
-                    <div class="settings-section" id="section-model">
-                        ${modelSection}
                     </div>
                     <div class="settings-section" id="section-prompt">
                         ${promptEditorSection}
@@ -126,10 +122,6 @@ export class SettingsPanelV3 {
                 <div class="settings-nav-item" data-section="connection">
                     <svg class="settings-nav-icon"><use xlink:href="#iconLink"></use></svg>
                     <span>连接设置</span>
-                </div>
-                <div class="settings-nav-item" data-section="model">
-                    <svg class="settings-nav-icon"><use xlink:href="#iconRobot"></use></svg>
-                    <span>模型设置</span>
                 </div>
                 <div class="settings-nav-item" data-section="prompt">
                     <svg class="settings-nav-icon"><use xlink:href="#iconEdit"></use></svg>
@@ -228,6 +220,10 @@ export class SettingsPanelV3 {
         const currentInfo = this.getProviderInfo(activeProvider);
         const hasCustomBaseURL = !!(providerConfig?.baseURL && providerConfig.baseURL.trim());
 
+        // Get provider-specific parameter values
+        const providerMaxTokens = providerConfig?.maxTokens ?? settings.maxTokens ?? 4096;
+        const providerTemperature = providerConfig?.temperature ?? settings.temperature ?? 0.7;
+
         return `
             <div class=\"section-header\" style=\"margin-bottom: 16px;\">
                 <h3 style=\"margin: 0; font-size: 15px; font-weight: 500;\">
@@ -325,6 +321,55 @@ export class SettingsPanelV3 {
                 </select>
                 <div class=\"ft__smaller ft__secondary\" style=\"margin-top: 8px;\" id=\"model-help\">
                     选择此提供商的模型版本
+                </div>
+            </div>
+
+
+            <!-- Per-Provider Max Tokens -->
+            <div class="setting-item" style="margin-bottom: 16px;">
+                <div class="settings-slider-header">
+                    <span style="font-weight: 500;">最大输出长度 (此提供商)</span>
+                    <span class="ft__smaller ft__secondary" id="provider-max-tokens-value">${providerMaxTokens} tokens</span>
+                </div>
+                <input
+                    type="range"
+                    id="provider-max-tokens"
+                    min="256"
+                    max="8192"
+                    step="256"
+                    value="${providerMaxTokens}"
+                    class="settings-full-width"
+                >
+                <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                    <span class="ft__smaller ft__secondary" id="provider-max-tokens-min">256</span>
+                    <span class="ft__smaller ft__secondary" id="provider-max-tokens-max">8192</span>
+                </div>
+                <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    💡 不同提供商有不同的输出长度限制，切换提供商时会自动调整
+                </div>
+            </div>
+
+            <!-- Per-Provider Temperature -->
+            <div class="setting-item" style="margin-bottom: 16px;">
+                <div class="settings-slider-header">
+                    <span style="font-weight: 500;">Temperature (此提供商)</span>
+                    <span class="ft__smaller ft__secondary" id="provider-temperature-value">${providerTemperature}</span>
+                </div>
+                <input
+                    type="range"
+                    id="provider-temperature"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value="${providerTemperature}"
+                    class="settings-full-width"
+                >
+                <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                    <span class="ft__smaller ft__secondary">保守 (0.0)</span>
+                    <span class="ft__smaller ft__secondary">创造 (1.0)</span>
+                </div>
+                <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    💡 控制响应的随机性和创造性，不同提供商可能有不同范围
                 </div>
             </div>
 
@@ -467,79 +512,6 @@ export class SettingsPanelV3 {
         }
     }
 
-    private createModelSection(): string {
-        const settings = this.currentProfile.settings;
-
-        return `
-                <div class="settings-section-header">
-                    <h3>
-                        🤖 模型设置
-                    </h3>
-                    <div class="ft__secondary">
-                        选择模型并调整参数
-                    </div>
-                </div>
-
-                <!-- Model Selection -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span>模型</span>
-                    </div>
-                    <select class="b3-select settings-full-width" id="claude-model">
-                        ${this.availableModels.map(m => `
-                            <option value="${m.value}" ${m.value === settings.model ? 'selected' : ''}>
-                                ${m.label}
-                            </option>
-                        `).join('')}
-                    </select>
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;" id="model-info">
-                        ${this.getModelInfo(settings.model)}
-                    </div>
-                </div>
-
-                <!-- Max Tokens -->
-                <div class="setting-item">
-                    <div class="settings-slider-header">
-                        <span class="settings-label-weight">最大输出长度</span>
-                        <span class="ft__smaller ft__secondary" id="max-tokens-value">${settings.maxTokens} tokens</span>
-                    </div>
-                    <input
-                        type="range"
-                        id="claude-max-tokens"
-                        min="256"
-                        max="8192"
-                        step="256"
-                        value="${settings.maxTokens}"
-                        class="settings-full-width"
-                    >
-                    <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-                        <span class="ft__smaller ft__secondary">256</span>
-                        <span class="ft__smaller ft__secondary">8192</span>
-                    </div>
-                </div>
-
-                <!-- Temperature -->
-                <div class="setting-item">
-                    <div class="settings-slider-header">
-                        <span class="settings-label-weight">Temperature</span>
-                        <span class="ft__smaller ft__secondary" id="temperature-value">${settings.temperature}</span>
-                    </div>
-                    <input
-                        type="range"
-                        id="claude-temperature"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value="${settings.temperature}"
-                        class="settings-full-width"
-                    >
-                    <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-                        <span class="ft__smaller ft__secondary">保守 (0.0)</span>
-                        <span class="ft__smaller ft__secondary">创造 (1.0)</span>
-                    </div>
-                </div>
-        `;
-    }
 
     private createPromptEditorSection(): string {
         return `
@@ -826,8 +798,33 @@ export class SettingsPanelV3 {
                 testBtnHelp.textContent = `验证 ${currentInfo.name} API 连接是否正常`;
             }
 
+            // Update provider-specific parameter sliders
+            const providerMaxTokensSlider = container.querySelector("#provider-max-tokens") as HTMLInputElement;
+            const providerMaxTokensValue = container.querySelector("#provider-max-tokens-value");
+            const providerTemperatureSlider = container.querySelector("#provider-temperature") as HTMLInputElement;
+            const providerTemperatureValue = container.querySelector("#provider-temperature-value");
+
+            if (providerMaxTokensSlider && providerConfig) {
+                const maxTokens = providerConfig.maxTokens ?? settings.maxTokens ?? 4096;
+                providerMaxTokensSlider.value = String(maxTokens);
+                if (providerMaxTokensValue) {
+                    providerMaxTokensValue.textContent = `${maxTokens} tokens`;
+                }
+            }
+
+            if (providerTemperatureSlider && providerConfig) {
+                const temperature = providerConfig.temperature ?? settings.temperature ?? 0.7;
+                providerTemperatureSlider.value = String(temperature);
+                if (providerTemperatureValue) {
+                    providerTemperatureValue.textContent = temperature.toFixed(1);
+                }
+            }
+
             // Auto-save provider selection
             this.triggerSave();
+
+            // Update parameter limits for selected provider
+            this.updateProviderParameterLimits(selectedProvider, container);
         });
 
         // API Endpoint Type toggle
@@ -851,30 +848,30 @@ export class SettingsPanelV3 {
             apiKeyInput.type = apiKeyInput.type === "password" ? "text" : "password";
         });
 
+        // Provider-specific Max Tokens slider
+        const providerMaxTokensSlider = container.querySelector("#provider-max-tokens") as HTMLInputElement;
+        const providerMaxTokensValue = container.querySelector("#provider-max-tokens-value");
+
+        providerMaxTokensSlider?.addEventListener("input", (e) => {
+            const value = (e.target as HTMLInputElement).value;
+            if (providerMaxTokensValue) {
+                providerMaxTokensValue.textContent = `${value} tokens`;
+            }
+        });
+
+        // Provider-specific Temperature slider
+        const providerTemperatureSlider = container.querySelector("#provider-temperature") as HTMLInputElement;
+        const providerTemperatureValue = container.querySelector("#provider-temperature-value");
+
+        providerTemperatureSlider?.addEventListener("input", (e) => {
+            const value = (e.target as HTMLInputElement).value;
+            if (providerTemperatureValue) {
+                providerTemperatureValue.textContent = parseFloat(value).toFixed(1);
+            }
+        });
+
         // Model selection is now handled above in provider selector
         // (Legacy code removed - model is now selected per-provider)
-
-        // Max Tokens slider
-        const maxTokensSlider = container.querySelector("#claude-max-tokens") as HTMLInputElement;
-        const maxTokensValue = container.querySelector("#max-tokens-value");
-
-        maxTokensSlider?.addEventListener("input", (e) => {
-            const value = (e.target as HTMLInputElement).value;
-            if (maxTokensValue) {
-                maxTokensValue.textContent = `${value} tokens`;
-            }
-        });
-
-        // Temperature slider
-        const temperatureSlider = container.querySelector("#claude-temperature") as HTMLInputElement;
-        const temperatureValue = container.querySelector("#temperature-value");
-
-        temperatureSlider?.addEventListener("input", (e) => {
-            const value = (e.target as HTMLInputElement).value;
-            if (temperatureValue) {
-                temperatureValue.textContent = value;
-            }
-        });
 
         // Open Prompt Editor
         const openPromptEditorBtn = container.querySelector("#open-prompt-editor-btn");
@@ -995,6 +992,81 @@ export class SettingsPanelV3 {
             this.exportCurrentProfile();
         });
     }
+
+    /**
+     * Update parameter slider limits based on selected provider
+     * Auto-clamps values if they exceed new limits
+     */
+    private updateProviderParameterLimits(provider: AIProviderType, container: HTMLElement) {
+        try {
+            // Get parameter limits from provider
+            const metadata = AIProviderFactory.getMetadata(provider);
+            const limits = AIProviderFactory.getParameterLimits(provider);
+
+            // Get slider elements
+            const maxTokensSlider = container.querySelector("#provider-max-tokens") as HTMLInputElement;
+            const maxTokensMin = container.querySelector("#provider-max-tokens-min") as HTMLElement;
+            const maxTokensMax = container.querySelector("#provider-max-tokens-max") as HTMLElement;
+            const maxTokensValue = container.querySelector("#provider-max-tokens-value") as HTMLElement;
+
+            const temperatureSlider = container.querySelector("#provider-temperature") as HTMLInputElement;
+            const temperatureValue = container.querySelector("#provider-temperature-value") as HTMLElement;
+
+            if (!maxTokensSlider || !temperatureSlider) {
+                console.warn('[SettingsPanelV3] Parameter sliders not found');
+                return;
+            }
+
+            // Update max tokens slider
+            const tokenLimits = limits.maxTokens;
+            maxTokensSlider.min = String(tokenLimits.min);
+            maxTokensSlider.max = String(tokenLimits.max);
+
+            // Auto-clamp if current value exceeds new limit
+            let currentMaxTokens = parseInt(maxTokensSlider.value);
+            if (currentMaxTokens > tokenLimits.max) {
+                currentMaxTokens = tokenLimits.max;
+                maxTokensSlider.value = String(currentMaxTokens);
+                console.log(`[SettingsPanelV3] Auto-clamped maxTokens from ${maxTokensSlider.value} to ${currentMaxTokens} for ${provider}`);
+            }
+            if (currentMaxTokens < tokenLimits.min) {
+                currentMaxTokens = tokenLimits.min;
+                maxTokensSlider.value = String(currentMaxTokens);
+            }
+
+            // Update labels
+            if (maxTokensMin) maxTokensMin.textContent = String(tokenLimits.min);
+            if (maxTokensMax) maxTokensMax.textContent = String(tokenLimits.max);
+            if (maxTokensValue) maxTokensValue.textContent = `${currentMaxTokens} tokens`;
+
+            // Update temperature slider
+            const tempLimits = limits.temperature;
+            temperatureSlider.min = String(tempLimits.min);
+            temperatureSlider.max = String(tempLimits.max);
+            temperatureSlider.step = String(tempLimits.max <= 1 ? 0.1 : 0.1); // Keep 0.1 step
+
+            // Auto-clamp temperature
+            let currentTemp = parseFloat(temperatureSlider.value);
+            if (currentTemp > tempLimits.max) {
+                currentTemp = tempLimits.max;
+                temperatureSlider.value = String(currentTemp);
+                console.log(`[SettingsPanelV3] Auto-clamped temperature from ${temperatureSlider.value} to ${currentTemp} for ${provider}`);
+            }
+            if (currentTemp < tempLimits.min) {
+                currentTemp = tempLimits.min;
+                temperatureSlider.value = String(currentTemp);
+            }
+
+            // Update temperature display
+            if (temperatureValue) temperatureValue.textContent = currentTemp.toFixed(1);
+
+            console.log(`[SettingsPanelV3] Updated parameter limits for ${provider}: maxTokens [${tokenLimits.min}-${tokenLimits.max}], temperature [${tempLimits.min}-${tempLimits.max}]`);
+
+        } catch (error) {
+            console.error(`[SettingsPanelV3] Failed to update parameter limits for ${provider}:`, error);
+        }
+    }
+
 
     //#endregion
 
@@ -1261,6 +1333,10 @@ export class SettingsPanelV3 {
         const activeProvider = (container.querySelector("#ai-provider-selector") as HTMLSelectElement)?.value as AIProviderType || 'anthropic';
         const useCustomEndpoint = (container.querySelector('input[name="api-endpoint-type"]:checked') as HTMLInputElement)?.value === "custom";
 
+        // Read provider-specific parameters
+        const providerMaxTokens = parseInt((container.querySelector("#provider-max-tokens") as HTMLInputElement)?.value) || 4096;
+        const providerTemperature = parseFloat((container.querySelector("#provider-temperature") as HTMLInputElement)?.value) || 0.7;
+
         // Build provider config
         const providerConfig: ProviderConfig = {
             apiKey: (container.querySelector("#provider-api-key") as HTMLInputElement)?.value || "",
@@ -1269,6 +1345,8 @@ export class SettingsPanelV3 {
                 : "",
             model: (container.querySelector("#provider-model") as HTMLSelectElement)?.value || "",
             enabled: true,
+            maxTokens: providerMaxTokens,
+            temperature: providerTemperature,
         };
 
         // Update multi-provider settings
@@ -1278,9 +1356,12 @@ export class SettingsPanelV3 {
                 ...settings.providers,
                 [activeProvider]: providerConfig,
             },
-            // Keep other settings from legacy fields (for backward compatibility)
-            maxTokens: parseInt((container.querySelector("#claude-max-tokens") as HTMLInputElement)?.value) || settings.maxTokens,
-            temperature: parseFloat((container.querySelector("#claude-temperature") as HTMLInputElement)?.value) || settings.temperature,
+            // Keep global params for backward compatibility with old code paths
+            // NOTE: The old UI sliders (#claude-max-tokens, #claude-temperature) no longer exist.
+            // We preserve existing settings values here instead of reading from deleted UI elements.
+            // The provider-specific values (in providerConfig above) are what will actually be used by UniversalAIClient.
+            maxTokens: settings.maxTokens,
+            temperature: settings.temperature,
             enableRequestLogging: (container.querySelector("#enable-request-logging") as HTMLInputElement)?.checked ?? false,
             requestLogPath: (container.querySelector("#request-log-path") as HTMLInputElement)?.value || "",
             requestLogIncludeResponse: (container.querySelector("#log-include-response") as HTMLInputElement)?.checked ?? true,

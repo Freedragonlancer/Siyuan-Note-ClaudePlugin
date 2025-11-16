@@ -72,10 +72,19 @@ export class UniversalAIClient {
             console.log('[UniversalAIClient] DEBUG - apiKey exists:', providerConfig ? !!providerConfig.apiKey : 'no config');
             console.log('[UniversalAIClient] DEBUG - apiKey value:', providerConfig?.apiKey ? `${providerConfig.apiKey.substring(0, 10)}...` : 'empty');
 
+            // Validate critical configuration values
             if (!providerConfig || !providerConfig.apiKey || providerConfig.apiKey.trim() === '') {
                 console.log(`[UniversalAIClient] Provider ${activeProvider} not configured (API Key required)`);
                 this.provider = null;
                 return;
+            }
+
+            if (!providerConfig.model) {
+                console.warn(`[UniversalAIClient] Provider ${activeProvider} missing model ID, will use provider default`);
+            }
+
+            if (this.settings.maxTokens === undefined || this.settings.temperature === undefined) {
+                console.warn(`[UniversalAIClient] Global maxTokens or temperature undefined, using defaults`);
             }
 
             // FIX: Cancel any active requests before switching providers
@@ -92,13 +101,49 @@ export class UniversalAIClient {
                 // Future: if providers need cleanup, call oldProvider.dispose() here
             }
 
+            // v0.13.0: Use per-provider parameters with fallback to global settings
+            // Priority: providerConfig > global settings > hardcoded defaults
+            let maxTokens = providerConfig.maxTokens;
+            if (typeof maxTokens !== 'number' || maxTokens <= 0) {
+                maxTokens = this.settings.maxTokens;
+            }
+            if (typeof maxTokens !== 'number' || maxTokens <= 0) {
+                maxTokens = 4096; // Final fallback
+            }
+
+            let temperature = providerConfig.temperature;
+            if (typeof temperature !== 'number' || temperature < 0) {
+                temperature = this.settings.temperature;
+            }
+            if (typeof temperature !== 'number' || temperature < 0) {
+                temperature = 0.7; // Final fallback
+            }
+
+            // Choose appropriate default model based on provider
+            let defaultModel = 'claude-sonnet-4-5-20250929';  // Default for Anthropic
+            if (activeProvider === 'openai') defaultModel = 'gpt-4o';
+            else if (activeProvider === 'gemini') defaultModel = 'gemini-2.0-flash-exp';
+            else if (activeProvider === 'xai') defaultModel = 'grok-beta';
+            else if (activeProvider === 'deepseek') defaultModel = 'deepseek-chat';
+            else if (activeProvider === 'moonshot') defaultModel = 'moonshot-v1-8k';
+
+            const modelId = (providerConfig.model && providerConfig.model.trim() !== '')
+                ? providerConfig.model
+                : defaultModel;
+
+            // Log the actual values being used (v0.13.0: shows per-provider vs global)
+            console.log(`[UniversalAIClient] Config values: maxTokens=${maxTokens}, temperature=${temperature}, modelId=${modelId}`);
+            console.log(`[UniversalAIClient] Provider config: maxTokens=${providerConfig.maxTokens}, temperature=${providerConfig.temperature}, model=${providerConfig.model}`);
+            console.log(`[UniversalAIClient] Global settings: maxTokens=${this.settings.maxTokens}, temperature=${this.settings.temperature}`);
+
+            // Create provider config with defensive defaults
             const config: AIModelConfig = {
                 provider: activeProvider,
-                modelId: providerConfig.model,
+                modelId: modelId,
                 apiKey: providerConfig.apiKey,
                 baseURL: providerConfig.baseURL,
-                maxTokens: this.settings.maxTokens,
-                temperature: this.settings.temperature,
+                maxTokens: maxTokens,
+                temperature: temperature,
             };
 
             this.provider = AIProviderFactory.create(config);
@@ -262,10 +307,16 @@ export class UniversalAIClient {
         console.log(`[UniversalAIClient] Starting request ${requestId} with ${this.getProviderName()}`);
 
         try {
+            // v0.13.0: Use per-provider parameters
+            const activeProvider = this.settings.activeProvider || 'anthropic';
+            const providerConfig = this.settings.providers?.[activeProvider];
+            const maxTokens = providerConfig?.maxTokens ?? this.settings.maxTokens ?? 4096;
+            const temperature = providerConfig?.temperature ?? this.settings.temperature ?? 0.7;
+
             const options: AIRequestOptions = {
                 systemPrompt: systemPrompt || this.settings.systemPrompt,
-                maxTokens: this.settings.maxTokens,
-                temperature: this.settings.temperature,
+                maxTokens: maxTokens,
+                temperature: temperature,
                 signal: this.activeAbortController.signal,
                 onStream: (chunk: string) => {
                     // Check if cancelled
@@ -417,13 +468,17 @@ export class UniversalAIClient {
             const activeProvider = this.settings.activeProvider || 'anthropic';
             const providerConfig = this.settings.providers?.[activeProvider];
 
+            // v0.13.0: Use per-provider parameters
+            const maxTokens = providerConfig?.maxTokens ?? this.settings.maxTokens ?? 4096;
+            const temperature = providerConfig?.temperature ?? this.settings.temperature ?? 0.7;
+
             console.log(`[UniversalAIClient] Sending request to ${this.getProviderName()}`);
             console.log(`[UniversalAIClient] Messages count: ${messages.length}, Model: ${providerConfig?.model}`);
 
             const options: AIRequestOptions = {
                 systemPrompt: systemPrompt || this.settings.systemPrompt,
-                maxTokens: this.settings.maxTokens,
-                temperature: this.settings.temperature,
+                maxTokens: maxTokens,
+                temperature: temperature,
             };
 
             const responseText = await this.provider!.sendMessage(messages, options);

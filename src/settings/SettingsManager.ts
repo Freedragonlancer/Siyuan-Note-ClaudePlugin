@@ -1,5 +1,6 @@
 import type { ClaudeSettings } from "../claude";
 import { DEFAULT_SETTINGS } from "../claude";
+import { validateProviderParameters } from "../claude/types";
 import type { ISiYuanPlugin } from "@/types/siyuan";
 
 const STORAGE_KEY = "claude-assistant-settings";
@@ -78,6 +79,14 @@ export class SettingsManager {
                     },
                 };
                 
+                
+                
+                // Apply validation to fix any out-of-range parameters
+
+                
+                this.settings = validateProviderParameters(this.settings as any);
+
+                
                 // DEBUG: Verify deep merge worked
                 console.log('[SettingsManager] DEBUG - After deep merge, providers keys:', Object.keys(this.settings.providers));
                 console.log('[SettingsManager] DEBUG - moonshot config exists:', !!this.settings.providers.moonshot);
@@ -121,7 +130,7 @@ export class SettingsManager {
             if (typeof window !== 'undefined' && (window as any).__CLAUDE_SETTINGS__) {
                 console.log("[SettingsManager] Found in window.__CLAUDE_SETTINGS__");
                 const cached = (window as any).__CLAUDE_SETTINGS__;
-                return {
+                const merged = {
                     ...DEFAULT_SETTINGS,
                     ...cached,
                     providers: {
@@ -129,6 +138,7 @@ export class SettingsManager {
                         ...cached.providers,
                     },
                 };
+                return validateProviderParameters(merged as any);
             }
         } catch (error) {
             console.error("[SettingsManager] Failed to load from global variable:", error);
@@ -140,7 +150,7 @@ export class SettingsManager {
             if (sessionStored) {
                 console.log("[SettingsManager] Found in sessionStorage");
                 const parsed = JSON.parse(sessionStored);
-                return {
+                const merged = {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
                     providers: {
@@ -148,6 +158,7 @@ export class SettingsManager {
                         ...parsed.providers,
                     },
                 };
+                return validateProviderParameters(merged as any);
             }
         } catch (error) {
             console.error("[SettingsManager] Failed to load from sessionStorage:", error);
@@ -171,12 +182,16 @@ export class SettingsManager {
                     },
                 };
                 
+                
+                // Apply validation to fix any out-of-range parameters
+                const validated = validateProviderParameters(merged as any);
+                
                 // DEBUG: Log localStorage deep merge result
                 console.log('[SettingsManager] DEBUG (localStorage) - Parsed providers keys:', parsed.providers ? Object.keys(parsed.providers) : 'no providers');
                 console.log('[SettingsManager] DEBUG (localStorage) - After deep merge, providers keys:', Object.keys(merged.providers));
                 console.log('[SettingsManager] DEBUG (localStorage) - moonshot exists:', !!merged.providers.moonshot);
                 
-                return merged;
+                return validated;
             } else {
                 console.log("[SettingsManager] localStorage is empty");
             }

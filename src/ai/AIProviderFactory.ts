@@ -161,6 +161,29 @@ export class AIProviderFactory {
         }
         return metadata;
     }
+
+    /**
+     * Get parameter limits for a provider by creating a temporary instance
+     * @param type Provider type
+     * @returns Parameter limits (temperature and maxTokens ranges)
+     */
+    static getParameterLimits(type: string) {
+        const registration = this.registrations.get(type);
+        if (!registration) {
+            throw new Error(`Provider "${type}" not registered. Available providers: ${this.getProviderTypes().join(', ')}`);
+        }
+
+        // Create temporary instance to get parameter limits
+        // Use placeholder values to pass validation (not used for actual API calls)
+        const tempConfig: AIModelConfig = {
+            provider: type,
+            // IMPORTANT: Use same placeholder key as getMetadata() to bypass validation
+            apiKey: 'placeholder-key-for-metadata-retrieval',
+            modelId: 'placeholder-model-for-limits-retrieval',
+        };
+        const instance = registration.factory(tempConfig);
+        return instance.getParameterLimits();
+    }
 }
 
 // Initialize factory on module load

@@ -35,6 +35,49 @@ export class OpenAIProvider extends BaseAIProvider {
         });
     }
 
+    /**
+     * Check if model is GPT-5.1 series (uses max_completion_tokens instead of max_tokens)
+     */
+    private isGPT51Model(): boolean {
+        const modelId = this.config.modelId.toLowerCase();
+        return modelId.startsWith('gpt-5.1') || modelId.startsWith('gpt-5-1');
+    }
+
+    /**
+     * Build completion parameters based on model type
+     */
+    private buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
+        const isGPT51 = this.isGPT51Model();
+
+        const baseParams: any = {
+            model: this.config.modelId,
+            messages: this.convertMessages(messages, options?.systemPrompt),
+            stop: options?.stopSequences,
+        };
+
+        // GPT-5.1 models only support temperature = 1 (default)
+        // For other models, send temperature parameter
+        if (!isGPT51) {
+            baseParams.temperature = this.getEffectiveTemperature(options);
+        }
+        // For GPT-5.1: omit temperature parameter to use default (1)
+
+        // Add streaming flag if needed
+        if (streaming) {
+            baseParams.stream = true;
+        }
+
+        // GPT-5.1 models use max_completion_tokens instead of max_tokens
+        const maxTokens = this.getEffectiveMaxTokens(options);
+        if (isGPT51) {
+            baseParams.max_completion_tokens = maxTokens;
+        } else {
+            baseParams.max_tokens = maxTokens;
+        }
+
+        return baseParams;
+    }
+
     async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
         if (options?.onStream) {
             // If streaming callback provided, use streaming mode
@@ -51,15 +94,10 @@ export class OpenAIProvider extends BaseAIProvider {
 
         // Non-streaming mode
         try {
-            const completion = await this.client.chat.completions.create({
-                model: this.config.modelId,
-                messages: this.convertMessages(messages, options?.systemPrompt),
-                max_tokens: this.getEffectiveMaxTokens(options),
-                temperature: this.getEffectiveTemperature(options),
-                stop: options?.stopSequences,
-            }, {
-                signal: options?.signal,
-            });
+            const completion = await this.client.chat.completions.create(
+                this.buildCompletionParams(messages, options, false),
+                { signal: options?.signal }
+            );
 
             return completion.choices[0]?.message?.content || '';
         } catch (error) {
@@ -71,16 +109,10 @@ export class OpenAIProvider extends BaseAIProvider {
         this.validateStreamingOptions(options);
 
         try {
-            const stream = await this.client.chat.completions.create({
-                model: this.config.modelId,
-                messages: this.convertMessages(messages, options?.systemPrompt),
-                max_tokens: this.getEffectiveMaxTokens(options),
-                temperature: this.getEffectiveTemperature(options),
-                stop: options?.stopSequences,
-                stream: true,
-            }, {
-                signal: options?.signal,
-            });
+            const stream = await this.client.chat.completions.create(
+                this.buildCompletionParams(messages, options, true),
+                { signal: options?.signal }
+            );
 
             for await (const chunk of stream) {
                 const content = chunk.choices[0]?.delta?.content;
@@ -212,7 +244,7 @@ export class OpenAIProvider extends BaseAIProvider {
         const modelId = this.config?.modelId || 'gpt-4-turbo-preview';
         return {
             temperature: { min: 0, max: 2, default: 1 },
-            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
+            maxTokens: { min: 1, max: 100000, default: 4096 },  // Updated 2025: o-series supports 100K, GPT-5.1 supports 64K
             topP: { min: 0, max: 1, default: 1 },
         };
     }

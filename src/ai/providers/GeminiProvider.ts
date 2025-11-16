@@ -19,9 +19,15 @@ export class GeminiProvider extends BaseAIProvider {
 
     private client: GoogleGenerativeAI;
     private model: any; // GenerativeModel type
+    private thinkingMode: boolean;
+    private thinkingBudget: number;
 
     constructor(config: AIModelConfig) {
         super(config);
+
+        // v0.13.0: Thinking mode support (Gemini 2.5+)
+        this.thinkingMode = config.thinkingMode ?? false;
+        this.thinkingBudget = config.thinkingBudget ?? 8192;  // Default 8K, max 24576 for 2.5 Flash
 
         // Debug: Log configuration (API key excluded for security)
         console.log(`[GeminiProvider] Model ID: ${config.modelId}`);
@@ -76,6 +82,10 @@ export class GeminiProvider extends BaseAIProvider {
                     maxOutputTokens: this.getEffectiveMaxTokens(options),
                     temperature: this.getEffectiveTemperature(options),
                     stopSequences: options?.stopSequences,
+                    // v0.13.0: Thinking mode (Gemini 2.5+ supports thought budgets)
+                    ...(this.thinkingMode && {
+                        thoughtBudget: this.thinkingBudget,  // Budget for reasoning process
+                    }),
                 },
             });
 
@@ -83,7 +93,7 @@ export class GeminiProvider extends BaseAIProvider {
             const lastMessage = messages[messages.length - 1];
             const result = await chat.sendMessage(lastMessage.content);
             const response = await result.response;
-            
+
             return response.text();
         } catch (error) {
             this.handleError(error, 'sendMessage');
@@ -100,6 +110,10 @@ export class GeminiProvider extends BaseAIProvider {
                     maxOutputTokens: this.getEffectiveMaxTokens(options),
                     temperature: this.getEffectiveTemperature(options),
                     stopSequences: options?.stopSequences,
+                    // v0.13.0: Thinking mode (Gemini 2.5+ supports thought budgets)
+                    ...(this.thinkingMode && {
+                        thoughtBudget: this.thinkingBudget,  // Budget for reasoning process
+                    }),
                 },
             });
 

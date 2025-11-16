@@ -144,6 +144,11 @@ export class UniversalAIClient {
                 baseURL: providerConfig.baseURL,
                 maxTokens: maxTokens,
                 temperature: temperature,
+
+                // v0.13.0: Thinking/Reasoning mode parameters
+                thinkingMode: providerConfig.thinkingMode ?? false,
+                thinkingBudget: providerConfig.thinkingBudget,
+                reasoningEffort: providerConfig.reasoningEffort,
             };
 
             this.provider = AIProviderFactory.create(config);

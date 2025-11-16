@@ -4,11 +4,15 @@
  */
 
 import { OpenAIProvider } from './OpenAIProvider';
-import type { AIModelConfig, ParameterLimits, ProviderMetadata } from '../types';
+import type { AIModelConfig, AIRequestOptions, ParameterLimits, ProviderMetadata } from '../types';
+import type { Message } from '../../claude/types';
 
 export class XAIProvider extends OpenAIProvider {
     readonly providerType = 'xai' as const;
     readonly providerName = 'xAI Grok';
+
+    private thinkingMode: boolean;
+    private reasoningEffort: 'low' | 'high';
 
     constructor(config: AIModelConfig) {
         // Override baseURL to xAI endpoint if not provided
@@ -17,6 +21,24 @@ export class XAIProvider extends OpenAIProvider {
             baseURL: config.baseURL || 'https://api.x.ai/v1',
         };
         super(xaiConfig);
+
+        // v0.13.0: Reasoning mode support (Grok 3+, Grok 4 Fast)
+        this.thinkingMode = config.thinkingMode ?? false;
+        this.reasoningEffort = config.reasoningEffort ?? 'low';  // 'low' for speed, 'high' for depth
+    }
+
+    /**
+     * Override to add reasoning_effort parameter
+     */
+    protected buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
+        const baseParams = super['buildCompletionParams'](messages, options, streaming);
+
+        // v0.13.0: Add reasoning_effort parameter if thinking mode enabled
+        if (this.thinkingMode) {
+            baseParams.reasoning_effort = this.reasoningEffort;
+        }
+
+        return baseParams;
     }
 
     validateConfig(config: AIModelConfig): true | string {

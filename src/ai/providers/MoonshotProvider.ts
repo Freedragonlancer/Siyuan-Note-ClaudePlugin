@@ -21,6 +21,7 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
     private model: string;
     private temperature: number;
     private maxTokens: number;
+    private thinkingMode: boolean;
 
     constructor(config: AIModelConfig) {
         super(config);
@@ -28,6 +29,9 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
         this.model = config.modelId || 'kimi-k2-0905-preview';
         this.temperature = config.temperature ?? 1;
         this.maxTokens = config.maxTokens ?? 4096;
+
+        // v0.13.0: Reasoning mode support (K2 Thinking models)
+        this.thinkingMode = config.thinkingMode ?? false;
 
         // Allow user to choose between global and China API
         // Default to global if not specified
@@ -54,7 +58,11 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             })),
             temperature: clampedTemperature,
             max_tokens: options?.maxTokens || this.maxTokens,
-            stream: false
+            stream: false,
+            // v0.13.0: Reasoning mode (K2 Thinking models expose reasoning_content)
+            ...(this.thinkingMode && {
+                reasoning: true,  // Enable reasoning mode
+            }),
         };
 
         try {
@@ -115,7 +123,11 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
             })),
             temperature: clampedTemperature,
             max_tokens: options?.maxTokens || this.maxTokens,
-            stream: true
+            stream: true,
+            // v0.13.0: Reasoning mode (K2 Thinking models expose reasoning_content)
+            ...(this.thinkingMode && {
+                reasoning: true,  // Enable reasoning mode
+            }),
         };
 
         try {

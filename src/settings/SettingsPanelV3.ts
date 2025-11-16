@@ -224,6 +224,11 @@ export class SettingsPanelV3 {
         const providerMaxTokens = providerConfig?.maxTokens ?? settings.maxTokens ?? 4096;
         const providerTemperature = providerConfig?.temperature ?? settings.temperature ?? 0.7;
 
+        // v0.13.0: Thinking/Reasoning mode values
+        const thinkingMode = providerConfig?.thinkingMode ?? false;
+        const thinkingBudget = providerConfig?.thinkingBudget ?? 10000;
+        const reasoningEffort = providerConfig?.reasoningEffort ?? 'low';
+
         return `
             <div class=\"section-header\" style=\"margin-bottom: 16px;\">
                 <h3 style=\"margin: 0; font-size: 15px; font-weight: 500;\">
@@ -370,6 +375,67 @@ export class SettingsPanelV3 {
                 </div>
                 <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
                     💡 控制响应的随机性和创造性，不同提供商可能有不同范围
+                </div>
+            </div>
+
+            <!-- Thinking/Reasoning Mode (v0.13.0) -->
+            <div class="setting-item" style="margin-bottom: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--b3-border-color);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                    <div>
+                        <span style="font-weight: 500;">🧠 Thinking/Reasoning Mode</span>
+                        <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                            启用深度推理模式（仅支持特定模型）
+                        </div>
+                    </div>
+                    <input type="checkbox" id="thinking-mode-toggle" class="b3-switch fn__flex-center" ${thinkingMode ? 'checked' : ''}>
+                </div>
+
+                <!-- Thinking Budget (Anthropic/Gemini only) -->
+                <div id="thinking-budget-container" class="setting-item" style="margin-top: 16px; margin-left: 20px; display: ${thinkingMode && (activeProvider === 'anthropic' || activeProvider === 'gemini') ? 'block' : 'none'};">
+                    <div class="settings-slider-header">
+                        <span class="ft__smaller" style="font-weight: 500;">推理 Token 预算</span>
+                        <span class="ft__smaller ft__secondary" id="thinking-budget-value">${thinkingBudget} tokens</span>
+                    </div>
+                    <input
+                        type="range"
+                        id="thinking-budget"
+                        min="1000"
+                        max="24576"
+                        step="1000"
+                        value="${thinkingBudget}"
+                        class="settings-full-width"
+                    >
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                        <span class="ft__smaller ft__secondary">1K</span>
+                        <span class="ft__smaller ft__secondary">24K</span>
+                    </div>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        💡 控制推理过程可使用的最大 token 数（Anthropic/Gemini）
+                    </div>
+                </div>
+
+                <!-- Reasoning Effort (xAI only) -->
+                <div id="reasoning-effort-container" class="setting-item" style="margin-top: 16px; margin-left: 20px; display: ${thinkingMode && activeProvider === 'xai' ? 'block' : 'none'};">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span class="ft__smaller" style="font-weight: 500;">推理强度</span>
+                        <select id="reasoning-effort" class="b3-select">
+                            <option value="low" ${reasoningEffort === 'low' ? 'selected' : ''}>Low (快速)</option>
+                            <option value="high" ${reasoningEffort === 'high' ? 'selected' : ''}>High (深度)</option>
+                        </select>
+                    </div>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                        💡 'low' 快速响应，'high' 深度推理（xAI Grok）
+                    </div>
+                </div>
+
+                <!-- Provider Support Hint -->
+                <div class="ft__smaller ft__secondary" style="margin-top: 12px; padding: 8px; background: var(--b3-card-info-background); border-radius: 4px;">
+                    <strong>📌 支持情况：</strong><br>
+                    • Anthropic (Claude): Extended Thinking (Sonnet 4+, Opus 4)<br>
+                    • Gemini: Thinking Budget (2.5+)<br>
+                    • xAI (Grok): Reasoning Effort<br>
+                    • Moonshot (Kimi): K2 Thinking 模型<br>
+                    • OpenAI/DeepSeek: 通过选择推理模型（o1/o3, deepseek-reasoner）
                 </div>
             </div>
 
@@ -820,6 +886,44 @@ export class SettingsPanelV3 {
                 }
             }
 
+            // v0.13.0: Update thinking mode controls when switching providers
+            const thinkingModeToggle = container.querySelector("#thinking-mode-toggle") as HTMLInputElement;
+            const thinkingBudgetSlider = container.querySelector("#thinking-budget") as HTMLInputElement;
+            const thinkingBudgetValue = container.querySelector("#thinking-budget-value");
+            const reasoningEffortSelect = container.querySelector("#reasoning-effort") as HTMLSelectElement;
+            const thinkingBudgetContainer = container.querySelector("#thinking-budget-container") as HTMLElement;
+            const reasoningEffortContainer = container.querySelector("#reasoning-effort-container") as HTMLElement;
+
+            if (providerConfig) {
+                // Update thinking mode toggle
+                if (thinkingModeToggle) {
+                    thinkingModeToggle.checked = providerConfig.thinkingMode ?? false;
+                }
+
+                // Update thinking budget
+                const budget = providerConfig.thinkingBudget ?? 10000;
+                if (thinkingBudgetSlider) {
+                    thinkingBudgetSlider.value = String(budget);
+                }
+                if (thinkingBudgetValue) {
+                    thinkingBudgetValue.textContent = `${budget} tokens`;
+                }
+
+                // Update reasoning effort
+                if (reasoningEffortSelect) {
+                    reasoningEffortSelect.value = providerConfig.reasoningEffort ?? 'low';
+                }
+
+                // Show/hide provider-specific controls
+                const thinkingEnabled = providerConfig.thinkingMode ?? false;
+                if (thinkingBudgetContainer) {
+                    thinkingBudgetContainer.style.display = thinkingEnabled && (selectedProvider === 'anthropic' || selectedProvider === 'gemini') ? 'block' : 'none';
+                }
+                if (reasoningEffortContainer) {
+                    reasoningEffortContainer.style.display = thinkingEnabled && selectedProvider === 'xai' ? 'block' : 'none';
+                }
+            }
+
             // Auto-save provider selection
             this.triggerSave();
 
@@ -869,6 +973,37 @@ export class SettingsPanelV3 {
                 providerTemperatureValue.textContent = parseFloat(value).toFixed(1);
             }
         });
+
+        // v0.13.0: Thinking Mode Toggle
+        const thinkingModeToggle = container.querySelector("#thinking-mode-toggle") as HTMLInputElement;
+        const thinkingBudgetContainer = container.querySelector("#thinking-budget-container") as HTMLElement;
+        const reasoningEffortContainer = container.querySelector("#reasoning-effort-container") as HTMLElement;
+
+        thinkingModeToggle?.addEventListener("change", (e) => {
+            const enabled = (e.target as HTMLInputElement).checked;
+            const activeProvider = (container.querySelector("#ai-provider-selector") as HTMLSelectElement)?.value || 'anthropic';
+
+            // Show/hide provider-specific controls
+            if (thinkingBudgetContainer) {
+                thinkingBudgetContainer.style.display = enabled && (activeProvider === 'anthropic' || activeProvider === 'gemini') ? 'block' : 'none';
+            }
+            if (reasoningEffortContainer) {
+                reasoningEffortContainer.style.display = enabled && activeProvider === 'xai' ? 'block' : 'none';
+            }
+        });
+
+        // v0.13.0: Thinking Budget Slider
+        const thinkingBudgetSlider = container.querySelector("#thinking-budget") as HTMLInputElement;
+        const thinkingBudgetValue = container.querySelector("#thinking-budget-value");
+
+        thinkingBudgetSlider?.addEventListener("input", (e) => {
+            const value = (e.target as HTMLInputElement).value;
+            if (thinkingBudgetValue) {
+                thinkingBudgetValue.textContent = `${value} tokens`;
+            }
+        });
+
+        // v0.13.0: Reasoning Effort Select (no live update needed)
 
         // Model selection is now handled above in provider selector
         // (Legacy code removed - model is now selected per-provider)
@@ -1337,6 +1472,11 @@ export class SettingsPanelV3 {
         const providerMaxTokens = parseInt((container.querySelector("#provider-max-tokens") as HTMLInputElement)?.value) || 4096;
         const providerTemperature = parseFloat((container.querySelector("#provider-temperature") as HTMLInputElement)?.value) || 0.7;
 
+        // v0.13.0: Read thinking/reasoning mode parameters
+        const thinkingMode = (container.querySelector("#thinking-mode-toggle") as HTMLInputElement)?.checked ?? false;
+        const thinkingBudget = parseInt((container.querySelector("#thinking-budget") as HTMLInputElement)?.value) || 10000;
+        const reasoningEffort = (container.querySelector("#reasoning-effort") as HTMLSelectElement)?.value as 'low' | 'high' || 'low';
+
         // Build provider config
         const providerConfig: ProviderConfig = {
             apiKey: (container.querySelector("#provider-api-key") as HTMLInputElement)?.value || "",
@@ -1347,6 +1487,11 @@ export class SettingsPanelV3 {
             enabled: true,
             maxTokens: providerMaxTokens,
             temperature: providerTemperature,
+
+            // v0.13.0: Thinking/Reasoning mode parameters
+            thinkingMode: thinkingMode,
+            thinkingBudget: thinkingBudget,
+            reasoningEffort: reasoningEffort,
         };
 
         // Update multi-provider settings

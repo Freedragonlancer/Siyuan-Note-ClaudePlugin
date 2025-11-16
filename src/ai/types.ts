@@ -29,6 +29,14 @@ export interface AIModelConfig {
     temperature?: number;
     /** Additional provider-specific options */
     options?: Record<string, any>;
+
+    // ==================== Thinking/Reasoning Mode (v0.13.0) ====================
+    /** Enable thinking/reasoning mode (Anthropic, Gemini, xAI, Moonshot) */
+    thinkingMode?: boolean;
+    /** Thinking budget in tokens (Anthropic, Gemini) - max tokens for reasoning process */
+    thinkingBudget?: number;
+    /** Reasoning effort level (xAI) - 'low' for speed, 'high' for depth */
+    reasoningEffort?: 'low' | 'high';
 }
 
 /**

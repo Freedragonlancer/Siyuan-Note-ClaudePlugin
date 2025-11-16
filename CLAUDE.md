@@ -180,33 +180,49 @@ interface AIProvider {
 - **Anthropic (Claude)**:
   - Native streaming support, tool use capabilities
   - **BaseURL handling**: Automatically strips trailing `/v1` to prevent duplicate paths
-  - Temperature range: [0, 1], max output: 4096 tokens
+  - Temperature range: [0, 1], max output: 4096 tokens (8192 in extended thinking mode)
   - Models: Sonnet 4.5, Opus 4, Sonnet 3.7, Haiku 3.5
+  - **🧠 Thinking Mode** (v0.13.0): Extended Thinking for Sonnet 4+, Opus 4
+    - Configurable thinking budget (up to 128K tokens)
+    - Model deeply considers and iterates before answering
 
 - **OpenAI (GPT)**:
   - Function calling, vision support (GPT-4V)
   - Temperature range: [0, 2], max output: varies by model (4K-100K)
   - O-series reasoning models support up to 100K output tokens
+  - **🧠 Thinking Mode** (v0.13.0): Model-level (select o1/o3/o3-mini models)
+    - No parameter needed - thinking built into model architecture
 
 - **Gemini**:
   - Multimodal input, long context (1M-2M tokens)
   - No dedicated system prompt field (merged with first user message)
   - Temperature range: [0, 2], max output: 8192 tokens
+  - **🧠 Thinking Mode** (v0.13.0): Thinking Budget for Gemini 2.5+
+    - Configurable budget (up to 24576 tokens for 2.5 Flash)
+    - Enables step-by-step reasoning with thought summaries
 
 - **xAI (Grok)**:
   - OpenAI-compatible API
   - Vision support in grok-vision-beta
   - Temperature range: [0, 2], context: 128K
+  - **🧠 Thinking Mode** (v0.13.0): Reasoning Effort parameter
+    - 'low' for speed, 'high' for depth
+    - Available in Grok 3+, Grok 4 Fast models
 
 - **DeepSeek**:
   - Specialized coding models, cost-effective pricing
   - **Reasoning models** (deepseek-reasoner): Temperature/top_p disabled automatically
   - Temperature range: [0, 2] (for non-reasoning models), context: 128K
+  - **🧠 Thinking Mode** (v0.13.0): Model-level (select deepseek-reasoner)
+    - Exposes reasoning_content separate from final answer
 
 - **Moonshot (Kimi)**:
   - K2 Thinking models expose `reasoning_content` in responses, automatically formatted in collapsible sections
   - **Temperature range**: [0, 1] (auto-clamped with warning)
   - Context window: 128K-256K
+  - **🧠 Thinking Mode** (v0.13.0): Boolean reasoning parameter
+    - Enables K2 Thinking models to expose reasoning process
+    - Supports 200-300 sequential tool calls without drift
   - See [MOONSHOT_API_SETUP.md](MOONSHOT_API_SETUP.md) for details
 
 **3. Quick Edit Pipeline (Modular)**
@@ -1066,5 +1082,5 @@ For detailed architecture information:
 
 ---
 
-**Last Updated**: 2025-01-12
-**Version**: 0.11.3 (Critical Fix: Configuration Deep Merge + Moonshot AI Integration)
+**Last Updated**: 2025-01-17
+**Version**: 0.13.0 (Feature: Thinking/Reasoning Mode for All Providers)

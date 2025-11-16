@@ -18,10 +18,16 @@ export class AnthropicProvider extends BaseAIProvider {
     readonly providerName = 'Anthropic Claude';
 
     private client: Anthropic;
+    private thinkingMode: boolean;
+    private thinkingBudget: number;
 
     constructor(config: AIModelConfig) {
         super(config);
-        
+
+        // v0.13.0: Extended Thinking mode support
+        this.thinkingMode = config.thinkingMode ?? false;
+        this.thinkingBudget = config.thinkingBudget ?? 10000;  // Default 10K tokens
+
         // Normalize baseURL to prevent duplicate /v1 paths
         // Users commonly provide "https://proxy.com/api/v1" for reverse proxies
         // But Anthropic SDK automatically appends "/v1/messages"
@@ -35,7 +41,7 @@ export class AnthropicProvider extends BaseAIProvider {
                 normalizedBaseURL = normalizedBaseURL.slice(0, -3);
             }
         }
-        
+
         this.client = new Anthropic({
             apiKey: config.apiKey,
             baseURL: normalizedBaseURL,
@@ -70,11 +76,18 @@ export class AnthropicProvider extends BaseAIProvider {
                 content: m.content,
             })),
             stop_sequences: options?.stopSequences,
-        }, {
+            // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)
+            ...(this.thinkingMode && {
+                thinking: {
+                    type: 'enabled' as const,
+                    budget_tokens: this.thinkingBudget,
+                },
+            }),
+        } as any, {
             signal: options?.signal,
         });
 
-        // Extract text from response
+        // Extract text from response (thinking blocks are separate)
         const textContent = response.content.find(c => c.type === 'text');
         return textContent && 'text' in textContent ? textContent.text : '';
     }
@@ -91,7 +104,14 @@ export class AnthropicProvider extends BaseAIProvider {
             })),
             stop_sequences: options?.stopSequences,
             stream: true,
-        }, {
+            // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)
+            ...(this.thinkingMode && {
+                thinking: {
+                    type: 'enabled' as const,
+                    budget_tokens: this.thinkingBudget,
+                },
+            }),
+        } as any, {
             signal: options?.signal,
         });
 
@@ -101,6 +121,8 @@ export class AnthropicProvider extends BaseAIProvider {
                     const text = chunk.delta.text || '';
                     options?.onStream?.(text);
                 }
+                // v0.13.0: Thinking deltas can be captured here if needed
+                // Currently we only stream the final text output, not thinking process
             }
         }
     }

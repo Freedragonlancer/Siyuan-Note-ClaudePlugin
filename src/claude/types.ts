@@ -73,6 +73,7 @@ export type CompleteCallback = () => void;
 /**
  * Single AI Provider Configuration
  * v0.13.0: Added per-provider maxTokens and temperature parameters
+ * v0.13.0: Added thinking/reasoning mode parameters
  */
 export interface ProviderConfig {
     apiKey: string;
@@ -84,6 +85,11 @@ export interface ProviderConfig {
     // Each provider has different limits, so store separately
     maxTokens?: number;      // Max output tokens for this provider
     temperature?: number;    // Temperature setting for this provider
+
+    // Thinking/Reasoning mode parameters (v0.13.0)
+    thinkingMode?: boolean;           // Enable thinking/reasoning mode
+    thinkingBudget?: number;          // Thinking budget in tokens (Anthropic, Gemini)
+    reasoningEffort?: 'low' | 'high'; // Reasoning effort level (xAI)
 }
 
 /**
@@ -120,13 +126,46 @@ function generateDefaultProvidersInline(): Record<string, ProviderConfig> {
 
     // Provider-specific default parameters (v0.13.0)
     // Each provider has different limits, so we define them separately
-    const defaultParams: Record<string, { maxTokens: number; temperature: number }> = {
-        'anthropic': { maxTokens: 4096, temperature: 0.7 },
-        'openai': { maxTokens: 4096, temperature: 1.0 },
-        'gemini': { maxTokens: 8192, temperature: 0.9 },
-        'xai': { maxTokens: 4096, temperature: 0.7 },
-        'deepseek': { maxTokens: 4096, temperature: 0.7 },
-        'moonshot': { maxTokens: 4096, temperature: 0.7 },
+    const defaultParams: Record<string, {
+        maxTokens: number;
+        temperature: number;
+        thinkingMode?: boolean;
+        thinkingBudget?: number;
+        reasoningEffort?: 'low' | 'high';
+    }> = {
+        'anthropic': {
+            maxTokens: 4096,
+            temperature: 0.7,
+            thinkingMode: false,
+            thinkingBudget: 10000  // Default 10K tokens for extended thinking
+        },
+        'openai': {
+            maxTokens: 4096,
+            temperature: 1.0
+            // No thinking params - use o1/o3 models instead
+        },
+        'gemini': {
+            maxTokens: 8192,
+            temperature: 0.9,
+            thinkingMode: false,
+            thinkingBudget: 8192  // Default 8K, max 24576 for 2.5 Flash
+        },
+        'xai': {
+            maxTokens: 4096,
+            temperature: 0.7,
+            thinkingMode: false,
+            reasoningEffort: 'low'  // 'low' for speed, 'high' for depth
+        },
+        'deepseek': {
+            maxTokens: 4096,
+            temperature: 0.7
+            // No thinking params - use deepseek-reasoner model instead
+        },
+        'moonshot': {
+            maxTokens: 4096,
+            temperature: 0.7,
+            thinkingMode: false  // K2 Thinking model support
+        },
     };
 
     for (const [type, metadata] of allMetadata) {
@@ -141,6 +180,11 @@ function generateDefaultProvidersInline(): Record<string, ProviderConfig> {
             // Per-provider parameters (v0.13.0)
             maxTokens: params.maxTokens,
             temperature: params.temperature,
+
+            // Thinking/Reasoning mode parameters (v0.13.0)
+            thinkingMode: params.thinkingMode,
+            thinkingBudget: params.thinkingBudget,
+            reasoningEffort: params.reasoningEffort,
         };
     }
 

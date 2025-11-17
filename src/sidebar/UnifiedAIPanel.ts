@@ -27,6 +27,7 @@ import { SecurityUtils } from "../utils/Security";
 import { UnifiedPanelUIBuilder } from "./unified/ui/UnifiedPanelUIBuilder";
 import { UnifiedPanelHelpers } from "./unified/UnifiedPanelHelpers";
 import { MessageRenderer } from "./unified/MessageRenderer";
+import { SelectionManager } from "./unified/SelectionManager";
 import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -187,9 +188,7 @@ export class UnifiedAIPanel {
      * Get currently selected blocks from the editor
      */
     private getSelectedBlocks(): Element[] {
-        // Query all selected blocks in the SiYuan editor
-        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
-        return Array.from(selectedBlocks);
+        return SelectionManager.getSelectedBlocks();
     }
 
     /**
@@ -199,20 +198,15 @@ export class UnifiedAIPanel {
         const selectedBlocks = this.getSelectedBlocks();
 
         if (selectedBlocks.length > 0) {
-            // Extract block IDs and text content
-            const blockIds = selectedBlocks
-                .map(block => block.getAttribute('data-node-id'))
-                .filter(id => id !== null) as string[];
-
-            const texts = selectedBlocks
-                .map(block => (block.textContent || '').trim())
-                .filter(text => text.length > 0);
-
-            const text = texts.join('\n\n');
+            // Extract block IDs and text content using SelectionManager
+            const blockIds = SelectionManager.extractBlockIds(selectedBlocks);
+            const text = SelectionManager.extractBlockText(selectedBlocks);
 
             // Check if selection changed
-            const selectionChanged = !this.currentSelection ||
-                JSON.stringify(blockIds) !== JSON.stringify(this.currentSelection.blockIds);
+            const selectionChanged = SelectionManager.hasSelectionChanged(
+                this.currentSelection?.blockIds || null,
+                blockIds
+            );
 
             if (selectionChanged) {
                 this.currentSelection = {
@@ -266,28 +260,9 @@ export class UnifiedAIPanel {
      */
     private updateModeUI(): void {
         const modeBadge = this.element.querySelector('#claude-mode-badge') as HTMLElement;
-
-        if (!modeBadge) {
-            return; // Badge not created yet
-        }
-
-        if (this.panelMode === 'selectionQA' && this.currentSelection) {
-            // Show selection badge
-            const blockCount = this.currentSelection.blockIds.length;
-            modeBadge.textContent = `📝 已选中 ${blockCount} 个块`;
-            modeBadge.classList.remove('fading-out');
-            modeBadge.style.display = 'inline-block';
-        } else {
-            // Hide badge in free chat mode with fade-out animation
-            if (modeBadge.style.display !== 'none') {
-                modeBadge.classList.add('fading-out');
-                // Wait for animation to complete before hiding
-                setTimeout(() => {
-                    modeBadge.style.display = 'none';
-                    modeBadge.classList.remove('fading-out');
-                }, 300); // Match CSS animation duration
-            }
-        }
+        const blockCount = this.currentSelection?.blockIds.length;
+        
+        SelectionManager.updateModeBadge(modeBadge, this.panelMode, blockCount);
     }
 
     /**
@@ -298,18 +273,8 @@ export class UnifiedAIPanel {
         const blockCount = this.currentSelection?.blockIds.length || 0;
 
         // ===== STEP 1: Clear DOM Selection States =====
-
-        // 1a. Clear text selection (window.getSelection)
-        const windowSelection = window.getSelection();
-        if (windowSelection) {
-            windowSelection.removeAllRanges();
-        }
-
-        // 1b. Clear block selection (SiYuan's block selection)
-        const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
-        selectedBlocks.forEach(block => {
-            block.classList.remove('protyle-wysiwyg--select');
-        });
+        
+        SelectionManager.clearDOMSelection();
 
         // ===== STEP 2: Update Internal State =====
 

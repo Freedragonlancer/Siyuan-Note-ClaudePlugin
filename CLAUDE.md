@@ -248,8 +248,57 @@ FilterPipeline
   └── CustomFunctionMiddleware (user-defined)
 ```
 
-**5. UI Panels**
-- `UnifiedAIPanel` - Main chat interface (sidebar dock)
+**5. UI Panels (Modular Architecture v0.14.0)**
+
+`UnifiedAIPanel` - Main chat interface (sidebar dock)
+- **Architecture**: Coordinator pattern with 6 specialized utility modules
+- **Current size**: 1,718 lines (reduced from 2,038 lines, 15.7% reduction)
+- **Target achieved**: <1,800 lines ✅
+
+**Extracted Modules** (`src/sidebar/unified/`):
+- `UnifiedPanelUIBuilder` (280 lines) - HTML generation for panel UI
+  - createPanel() - Main panel structure
+  - createProviderBadge() - Provider/model badge HTML
+  - createSystemMessage() - System message styling
+  - createEmptyQueueMessage() - Empty state messaging
+  - createModeBadge() - Selection mode badge
+  - createPresetOption() - Preset dropdown options
+
+- `PresetManager` (258 lines) - Preset selection & synchronization
+  - populatePresetSelector() - Load presets with retry logic
+  - subscribeToPresetEvents() - Auto-sync with PresetEventBus
+  - savePresetSelection() / loadPresetSelection() - Dual-storage persistence
+  - notifyPresetSelection() - Event bus integration
+
+- `QueueRenderer` (218 lines) - Edit queue UI management
+  - refreshQueueUI() - Update queue display and stats
+  - createQueueItem() - Generate queue item HTML
+  - toggleQueueExpansion() / setQueueExpanded() - Expand/collapse
+  - toggleQueuePause() / updatePauseButtonIcon() - Pause/resume
+  - clearEditQueue() - Clear all items
+  - loadQueueState() / saveQueueState() - State persistence
+
+- `MessageRenderer` (172 lines) - Markdown rendering & streaming
+  - configureMarkdown() - marked.js + highlight.js setup
+  - renderMarkdown() - Markdown to sanitized HTML
+  - updateStreamingMessage() - Live streaming updates
+  - finalizeStreamingMessage() - Complete streaming
+  - createStreamingMessageDOM() - DOM structure for streaming
+
+- `UnifiedPanelHelpers` (145 lines) - Utility functions
+  - getShortModelName() - Model name abbreviation (25+ patterns)
+  - getQueueItemStatusIcon() - Status icon mapping
+  - getEditStatusText() - Edit status display text
+  - getProviderBadgeColors() - Provider color schemes
+  - truncate() - String truncation
+
+- `SelectionManager` (123 lines) - Block selection utilities
+  - getSelectedBlocks() - Query DOM for selected blocks
+  - extractBlockIds() / extractBlockText() - Extract block data
+  - clearDOMSelection() - Clear selection states
+  - updateModeBadge() - Update selection badge UI
+  - hasSelectionChanged() - Compare selections
+  - createSelectionState() - Build selection state object
 
 ---
 
@@ -1135,12 +1184,37 @@ The plugin has undergone significant architectural refactoring to improve mainta
 - Easier to maintain and update security utilities
 - Clearer codebase structure
 
-### Next Steps (Phase 2 - Planned)
+### Phase 2 - Complete ✅ (v0.14.0)
 
-- Split UnifiedAIPanel (2252 lines) into modular components
-- Build UI component library for reusable interface elements
+**Modularization of UnifiedAIPanel** - Successfully extracted 1,211 lines into 6 specialized modules:
+
+**Results**:
+- UnifiedAIPanel reduced from 2,038 → 1,718 lines (320 lines, 15.7% reduction)
+- Target achieved: <1,800 lines ✅
+- Improved code reusability and testability
+- Consistent context pattern for module communication
+- All modules use static utility methods (stateless design)
+
+**Modules Created**:
+1. `UnifiedPanelUIBuilder` (280 lines) - HTML generation
+2. `PresetManager` (258 lines) - Preset selection & sync
+3. `QueueRenderer` (218 lines) - Edit queue UI
+4. `MessageRenderer` (172 lines) - Markdown rendering
+5. `UnifiedPanelHelpers` (145 lines) - Utility functions
+6. `SelectionManager` (123 lines) - Block selection
+
+**Architecture Pattern**:
+- Coordinator pattern: UnifiedAIPanel orchestrates, modules execute
+- Context-based communication: Pass context objects to modules
+- No side effects: All module methods are pure static utilities
+- Delegation: Main class delegates to specialized modules
+
+### Next Steps (Phase 3 - Planned)
+
+- Further extract core business logic (sendMessage, addChatMessageToUI, addEditMessageToUI)
 - Implement Dependency Injection container for better testability
-- Unified configuration migration utilities
+- Build reusable component library for settings UI
+- Create automated integration tests for modular components
 
 ---
 
@@ -1164,4 +1238,4 @@ The plugin has undergone significant architectural refactoring to improve mainta
 ---
 
 **Last Updated**: 2025-01-17
-**Version**: 0.14.0-dev (Architecture: Phase 1 Refactoring Complete - SettingsPanelV3 Modularization + Type Safety + Cleanup)
+**Version**: 0.14.0-dev (Architecture: Phase 2 Complete - UnifiedAIPanel Modularization - 1,718 lines, 6 modules extracted)

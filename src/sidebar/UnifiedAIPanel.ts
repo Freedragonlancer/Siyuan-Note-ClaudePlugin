@@ -893,14 +893,7 @@ export class UnifiedAIPanel {
 
         const messageDiv = document.createElement("div");
         messageDiv.className = "claude-message claude-message-system";
-        messageDiv.style.cssText = `
-            margin-bottom: 12px;
-            padding: 8px 12px;
-            border-radius: 4px;
-            color: var(--b3-theme-error);
-            font-size: 12px;
-        `;
-        messageDiv.textContent = message;
+        messageDiv.innerHTML = UnifiedPanelUIBuilder.createSystemMessage(message, 'info');
 
         this.messagesContainer.appendChild(messageDiv);
         this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;

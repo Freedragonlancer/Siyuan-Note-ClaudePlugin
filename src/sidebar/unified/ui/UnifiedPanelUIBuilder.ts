@@ -199,6 +199,79 @@ export class UnifiedPanelUIBuilder {
     }
 
     /**
+     * Create provider info badge HTML
+     */
+    static createProviderBadge(providerName: string, modelName: string): string {
+        return `
+            <span class="provider-icon" style="margin-right: 4px;">🤖</span>
+            <span class="provider-text">${SecurityUtils.escapeHtml(providerName)}</span>
+            <span class="model-badge" style="margin-left: 6px; padding: 2px 6px; background: rgba(255, 255, 255, 0.1); border-radius: 8px; font-size: 10px;">
+                ${SecurityUtils.escapeHtml(modelName)}
+            </span>
+        `;
+    }
+
+    /**
+     * Create system message HTML
+     */
+    static createSystemMessage(message: string, type: 'info' | 'error' | 'warning' = 'info'): string {
+        const colors = {
+            info: 'var(--b3-theme-primary)',
+            error: 'var(--b3-theme-error)',
+            warning: 'var(--b3-theme-warning)'
+        };
+
+        const icons = {
+            info: 'ℹ️',
+            error: '❌',
+            warning: '⚠️'
+        };
+
+        return `
+            <div class="claude-system-message" style="padding: 8px; margin-bottom: 8px; background: var(--b3-theme-background-light); border-left: 3px solid ${colors[type]}; border-radius: 4px;">
+                <div style="font-size: 12px; color: var(--b3-theme-on-surface);">
+                    <span style="margin-right: 6px;">${icons[type]}</span>
+                    <span>${SecurityUtils.escapeHtml(message)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Create empty queue placeholder HTML
+     */
+    static createEmptyQueueMessage(): string {
+        return `
+            <div class="ft__secondary" style="text-align: center; padding: 12px;">
+                选择文本并右键发送到 AI 编辑
+            </div>
+        `;
+    }
+
+    /**
+     * Create mode badge HTML
+     */
+    static createModeBadge(blockCount: number): string {
+        return `📝 已选中 ${blockCount} 个块`;
+    }
+
+    /**
+     * Create preset selector option HTML
+     */
+    static createPresetOption(
+        presetId: string,
+        presetName: string,
+        icon: string = '📝',
+        selected: boolean = false
+    ): string {
+        const escapedId = SecurityUtils.escapeHtml(presetId);
+        const escapedName = SecurityUtils.escapeHtml(presetName);
+        const escapedIcon = SecurityUtils.escapeHtml(icon);
+
+        return `<option value="${escapedId}" ${selected ? 'selected' : ''}>${escapedIcon} ${escapedName}</option>`;
+    }
+
+    /**
      * Truncate text to specified length
      */
     private static truncate(text: string, maxLength: number): string {

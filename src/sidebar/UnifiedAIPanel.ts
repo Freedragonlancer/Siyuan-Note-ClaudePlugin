@@ -14,6 +14,7 @@ import type {
     UnifiedPanelConfig
 } from "./unified-types";
 import type { TextSelection, EditEvent } from "../editor/types";
+import type { IProtyle } from "../types/siyuan";
 import { isChatMessage, isEditMessage, DEFAULT_UNIFIED_PANEL_CONFIG } from "./unified-types";
 import { TextSelectionManager } from "../editor/TextSelectionManager";
 import { AIEditProcessor } from "../editor/AIEditProcessor";
@@ -31,7 +32,7 @@ export class UnifiedAIPanel {
     // Core dependencies
     private element: HTMLElement;
     private claudeClient: ClaudeClient;
-    private currentProtyle: any = null;
+    private currentProtyle: IProtyle | null = null;
 
     // Chat state
     private messages: UnifiedMessage[] = [];
@@ -2098,7 +2099,7 @@ export class UnifiedAIPanel {
     //#endregion
 
     //#region Public API
-    setProtyle(protyle: any) {
+    setProtyle(protyle: IProtyle) {
         this.currentProtyle = protyle;
     }
 

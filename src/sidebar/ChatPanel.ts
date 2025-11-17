@@ -1,5 +1,6 @@
 import type { Message } from "../claude";
 import type { ClaudeClient } from "../claude/ClaudeClient";
+import type { IProtyle } from "../types/siyuan";
 import { EditorHelper } from "../editor";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -12,7 +13,7 @@ export class ChatPanel {
     private element: HTMLElement;
     private claudeClient: ClaudeClient;
     private messages: Message[] = [];
-    private currentProtyle: any = null;
+    private currentProtyle: IProtyle | null = null;
     private isStreaming: boolean = false;
     private onSettingsCallback?: () => void;
 
@@ -517,7 +518,7 @@ export class ChatPanel {
         );
     }
 
-    setProtyle(protyle: any) {
+    setProtyle(protyle: IProtyle) {
         this.currentProtyle = protyle;
     }
 

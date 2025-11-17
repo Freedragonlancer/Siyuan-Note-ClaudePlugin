@@ -19,7 +19,7 @@ import {
 } from "./editor";
 import type { TextSelection } from "./editor/types";
 import { QuickEditManager } from "./quick-edit";
-import type { DockModel } from "@/types/siyuan";
+import type { DockModel, BlockIconEvent, ContentMenuEvent } from "@/types/siyuan";
 import { KeyboardShortcutFormatter } from "./utils/KeyboardShortcutFormatter";
 import { Logger, LogLevel } from "./utils/Logger";
 import { IS_DEV, getDefaultLogLevel } from "./config/environment";
@@ -47,8 +47,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private quickEditManager: QuickEditManager | null = null;
 
     // Event handlers for cleanup
-    private blockIconHandler: ((event: any) => void) | null = null;
-    private contentMenuHandler: ((event: any) => void) | null = null;
+    private blockIconHandler: ((event: CustomEvent<BlockIconEvent>) => void) | null = null;
+    private contentMenuHandler: ((event: CustomEvent<ContentMenuEvent>) => void) | null = null;
 
     // Initialization promise to track when onload completes
     private initializationComplete: Promise<void> | null = null;
@@ -724,9 +724,11 @@ export default class ClaudeAssistantPlugin extends Plugin {
     /**
      * Handle block icon click event (for context menu)
      */
-    private onBlockIconClick(event: any): void {
+    private onBlockIconClick(event: CustomEvent<BlockIconEvent>): void {
         const detail = event.detail;
-        const { menu, protyle, blockElements } = detail;
+        const { menu, blockElements } = detail;
+        // Note: protyle is provided by SiYuan but not in BlockIconEvent type definition
+        const protyle = (detail as any).protyle;
 
         console.log("[AIEdit] Block icon clicked");
         console.log("[AIEdit] blockElements:", blockElements);
@@ -788,7 +790,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     /**
      * Handle editor content menu event (right-click on selected text)
      */
-    private onEditorContentMenu(event: any): void {
+    private onEditorContentMenu(event: CustomEvent<ContentMenuEvent>): void {
         const detail = event.detail;
         const { menu, range, protyle } = detail;
 

@@ -14,6 +14,7 @@ import { Dialog, showMessage, confirm } from "siyuan";
 import type { ConfigManager } from "./ConfigManager";
 import type { PromptTemplate } from "./config-types";
 import type { ClaudeSettings } from "../claude";
+import type { FilterRule } from "../filter/types";
 import { BUILTIN_FILTER_TEMPLATES } from "../filter/types";
 import { responseFilter } from "../filter";
 
@@ -540,7 +541,7 @@ export class PromptEditorPanel {
         const view = this.filterRulesView;
 
         // Get rules based on current view
-        let displayRules: any[] = [];
+        let displayRules: FilterRule[] = [];
         let presetName = '';
 
         if (view === 'global') {
@@ -555,7 +556,7 @@ export class PromptEditorPanel {
             }
 
             if (this.selectedPresetForFilters) {
-                const preset = this.configManager.getAllTemplates().find((p: any) => p.id === this.selectedPresetForFilters);
+                const preset = this.configManager.getAllTemplates().find((p: PromptTemplate) => p.id === this.selectedPresetForFilters);
                 if (preset) {
                     displayRules = preset.filterRules || [];
                     presetName = preset.name;
@@ -2004,7 +2005,7 @@ export class PromptEditorPanel {
     private showFilterRuleDialog(ruleIndex?: number): void {
         // Get filter rules based on current scope
         const scope = this.filterRulesView;
-        let filterRules: any[] = [];
+        let filterRules: FilterRule[] = [];
         let targetPreset: any = null;
 
         if (scope === 'global') {
@@ -2222,7 +2223,7 @@ export class PromptEditorPanel {
 
         // Get filter rules based on current scope
         const scope = this.filterRulesView;
-        let filterRules: any[] = [];
+        let filterRules: FilterRule[] = [];
         let targetPreset: any = null;
 
         if (scope === 'global') {
@@ -2278,7 +2279,7 @@ export class PromptEditorPanel {
     private toggleFilterRule(index: number, enabled: boolean): void {
         // Get filter rules based on current scope
         const scope = this.filterRulesView;
-        let filterRules: any[] = [];
+        let filterRules: FilterRule[] = [];
         let targetPreset: any = null;
 
         if (scope === 'global') {
@@ -2313,7 +2314,7 @@ export class PromptEditorPanel {
     private deleteFilterRule(index: number): void {
         // Get filter rules based on current scope
         const scope = this.filterRulesView;
-        let filterRules: any[] = [];
+        let filterRules: FilterRule[] = [];
         let targetPreset: any = null;
 
         if (scope === 'global') {
@@ -2359,7 +2360,7 @@ export class PromptEditorPanel {
     private showFilterRuleTest(index: number): void {
         // Get filter rules based on current scope
         const scope = this.filterRulesView;
-        let filterRules: any[] = [];
+        let filterRules: FilterRule[] = [];
 
         if (scope === 'global') {
             filterRules = this.currentSettings.filterRules || [];

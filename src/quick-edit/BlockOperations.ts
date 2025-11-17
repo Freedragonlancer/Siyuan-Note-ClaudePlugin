@@ -7,19 +7,19 @@ export interface BlockInsertResult {
     success: boolean;
     blockId?: string;
     index?: number;
-    error?: any;
+    error?: Error;
 }
 
 export interface BlockDeleteResult {
     success: boolean;
     blockId: string;
-    error?: any;
+    error?: Error;
 }
 
 export interface BlockUpdateResult {
     success: boolean;
     blockId: string;
-    error?: any;
+    error?: Error;
 }
 
 export class BlockOperations {

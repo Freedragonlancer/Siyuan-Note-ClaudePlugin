@@ -7,7 +7,7 @@ import "@/index.scss";
 
 import { ClaudeClient, DEFAULT_SETTINGS } from "./claude";
 import type { ClaudeSettings } from "./claude";
-import { SettingsManager, SettingsPanelV2, SettingsPanelV3, ConfigManager, PromptEditorPanel } from "./settings";
+import { SettingsManager, SettingsPanelV3, ConfigManager, PromptEditorPanel } from "./settings";
 import { UnifiedAIPanel } from "./sidebar/UnifiedAIPanel";
 import { CLAUDE_ICON_SVG } from "./assets/icons";
 import {

@@ -10,6 +10,7 @@ import type {
     StreamingChunkCallback
 } from './inline-types';
 import * as DiffMatchPatch from 'diff-match-patch';
+import { SecurityUtils } from '@/utils/Security';
 
 export class InlineEditRenderer {
     private dmp: DiffMatchPatch.diff_match_patch;
@@ -432,9 +433,7 @@ export class InlineEditRenderer {
      * Escape HTML for safe rendering
      */
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     /**

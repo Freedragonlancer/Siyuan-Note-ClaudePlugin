@@ -23,6 +23,7 @@ import { DiffRenderer } from "../editor/DiffRenderer";
 import { EditorHelper } from "../editor";
 import { ContextExtractor } from "../quick-edit/ContextExtractor";
 import { DEFAULT_SELECTION_QA_TEMPLATE } from "../settings/config-types";
+import { SecurityUtils } from "../utils/Security";
 import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -1761,9 +1762,7 @@ export class UnifiedAIPanel {
     }
 
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     /**

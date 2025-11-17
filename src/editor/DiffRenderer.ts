@@ -8,6 +8,7 @@ import type {
     IDiffRenderer
 } from './types';
 import type { EditHistory, HistoryEntry } from './EditHistory';
+import { SecurityUtils } from '../utils/Security';
 
 export class DiffRenderer implements IDiffRenderer {
     private editHistory?: EditHistory;
@@ -397,9 +398,7 @@ export class DiffRenderer implements IDiffRenderer {
      * Escape HTML to prevent XSS
      */
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     /**

@@ -10,6 +10,7 @@ import type {
 import { TextSelectionManager } from "../editor/TextSelectionManager";
 import { DiffRenderer } from "../editor/DiffRenderer";
 import { EditQueue } from "../editor/EditQueue";
+import { SecurityUtils } from "../utils/Security";
 
 export class EditPanel {
     private element: HTMLElement;
@@ -435,9 +436,7 @@ export class EditPanel {
      * Utility: Escape HTML
      */
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     /**

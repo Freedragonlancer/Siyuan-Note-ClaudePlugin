@@ -1063,6 +1063,87 @@ For detailed architecture information:
 
 ---
 
+## Recent Architecture Improvements (v0.14.0 - Phase 1 Complete)
+
+**Completed**: 2025-01-17
+
+The plugin has undergone significant architectural refactoring to improve maintainability, type safety, and code organization. Phase 1 of the improvement plan is now complete:
+
+### Task 1.1: SettingsPanelV3 Modularization ✅
+
+**Objective**: Split monolithic 1788-line SettingsPanelV3 into focused modules
+
+**Results**:
+- Created **5 specialized modules** (1975 lines total)
+  - `SettingsUIBuilder.ts` (690 lines) - Pure HTML generation
+  - `SettingsEventHandler.ts` (600 lines) - Event handling
+  - `ProfileManager.ts` (318 lines) - Profile CRUD operations
+  - `PresetInfoLoader.ts` (170 lines) - Async preset loading
+  - `SettingsPersistence.ts` (197 lines) - Save/load/test operations
+- Reduced main coordinator to **244 lines** (86% reduction)
+- Implemented **Facade/Coordinator pattern** for clean module orchestration
+- Followed **Single Responsibility Principle** throughout
+
+**Benefits**:
+- Easier testing (each module independently testable)
+- Better code reusability (modules can be used separately)
+- Clearer separation of concerns (UI, business logic, data)
+- Improved maintainability (smaller, focused files)
+
+### Task 1.2: TypeScript Type Safety Enhancement ✅
+
+**Objective**: Eliminate critical `any` type usages
+
+**Results**:
+- Created `IConfigManager` interface for type-safe dependency injection
+- Fixed **20+ `any` type occurrences** across 10 files:
+  - `configManager: IConfigManager` (was `any`)
+  - `protyle: IProtyle` (was `any`)
+  - Event handlers: `CustomEvent<BlockIconEvent>`, `CustomEvent<ContentMenuEvent>` (were `any`)
+  - Data structures: `FilterRule[]`, `PromptTemplate` (were `any[]`, `any`)
+  - Error types: `Error` (was `any`)
+- Improved IDE autocomplete and refactoring support
+- Prevented runtime type errors through compile-time checks
+
+**Files Modified**:
+- `src/claude/types.ts` - Added IConfigManager interface
+- `src/claude/UniversalAIClient.ts` - Fixed configManager typing
+- `src/claude/ClaudeClient.ts` - Fixed configManager and Anthropic SDK config
+- `src/index.ts` - Fixed event handler types
+- `src/sidebar/{ChatPanel,UnifiedAIPanel}.ts` - Fixed protyle types
+- `src/editor/EditorHelper.ts` - Fixed protyle parameter types
+- `src/quick-edit/SelectionHandler.ts` - Fixed protyle parameter types
+- `src/settings/PromptEditorPanel.ts` - Fixed FilterRule array types
+- `src/quick-edit/BlockOperations.ts` - Fixed error types
+
+### Task 1.3: Code Cleanup and Deduplication ✅
+
+**Objective**: Remove obsolete code and consolidate duplicates
+
+**Results**:
+- **Removed obsolete files**: `SettingsPanel.ts` (v1), `SettingsPanelV2.ts` (v2)
+- **Consolidated 7 duplicate `escapeHtml` implementations** to single source (`SecurityUtils`)
+  - Removed duplicates from: SettingsUIBuilder, DiffRenderer, UnifiedAIPanel, PromptEditorPanel, EditPanel, InstructionInputPopup, InlineEditRenderer
+  - All now use canonical `SecurityUtils.escapeHtml()` (6 escape replacements including `/`)
+  - Improved security consistency across codebase
+- Updated exports in `src/settings/index.ts`
+- Cleaned up imports across affected files
+
+**Impact**:
+- Reduced code duplication
+- Improved XSS protection consistency
+- Easier to maintain and update security utilities
+- Clearer codebase structure
+
+### Next Steps (Phase 2 - Planned)
+
+- Split UnifiedAIPanel (2252 lines) into modular components
+- Build UI component library for reusable interface elements
+- Implement Dependency Injection container for better testability
+- Unified configuration migration utilities
+
+---
+
 ## Known Limitations
 
 - Hot reload not supported (must restart SiYuan after code changes)
@@ -1083,4 +1164,4 @@ For detailed architecture information:
 ---
 
 **Last Updated**: 2025-01-17
-**Version**: 0.13.0 (Feature: Thinking/Reasoning Mode for All Providers)
+**Version**: 0.14.0-dev (Architecture: Phase 1 Refactoring Complete - SettingsPanelV3 Modularization + Type Safety + Cleanup)

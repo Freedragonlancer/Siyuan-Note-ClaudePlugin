@@ -13,21 +13,18 @@ import type { ConfigProfile } from "../config-types";
 import type { AIProviderType } from "../../ai/types";
 import { AIProviderFactory } from "../../ai/AIProviderFactory";
 import { KeyboardShortcutFormatter } from "../../utils/KeyboardShortcutFormatter";
+import { SecurityUtils } from "../../utils/Security";
 
 /**
  * Utility class for building settings UI HTML
  */
 export class SettingsUIBuilder {
     /**
-     * Escape HTML to prevent XSS attacks
+     * Escape HTML to prevent XSS
+     * @deprecated Use SecurityUtils.escapeHtml directly
      */
     static escapeHtml(unsafe: string): string {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+        return SecurityUtils.escapeHtml(unsafe);
     }
 
     /**

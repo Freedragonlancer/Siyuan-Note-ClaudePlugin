@@ -17,6 +17,7 @@ import type { ClaudeSettings } from "../claude";
 import type { FilterRule } from "../filter/types";
 import { BUILTIN_FILTER_TEMPLATES } from "../filter/types";
 import { responseFilter } from "../filter";
+import { SecurityUtils } from "../utils/Security";
 
 type TabType = "templates" | "system" | "appended" | "quickEditPrompt" | "responseFilters";
 
@@ -2470,9 +2471,7 @@ export class PromptEditorPanel {
      * Escape HTML to prevent XSS
      */
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     //#endregion

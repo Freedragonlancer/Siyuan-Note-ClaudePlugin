@@ -8,6 +8,7 @@ import type { ConfigManager } from '@/settings/ConfigManager';
 import type { PresetSelectionManager } from '@/settings/PresetSelectionManager';
 import { InstructionHistoryManager } from './InstructionHistoryManager';
 import { showMessage } from 'siyuan';
+import { SecurityUtils } from '@/utils/Security';
 
 export class InstructionInputPopup {
     private element: HTMLElement | null = null;
@@ -594,9 +595,7 @@ export class InstructionInputPopup {
      * FIX 1.4: Escape HTML for safe rendering
      */
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return SecurityUtils.escapeHtml(text);
     }
 
     /**

@@ -26,6 +26,7 @@ import { DEFAULT_SELECTION_QA_TEMPLATE } from "../settings/config-types";
 import { SecurityUtils } from "../utils/Security";
 import { UnifiedPanelUIBuilder } from "./unified/ui/UnifiedPanelUIBuilder";
 import { UnifiedPanelHelpers } from "./unified/UnifiedPanelHelpers";
+import { MessageRenderer } from "./unified/MessageRenderer";
 import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -334,28 +335,11 @@ export class UnifiedAIPanel {
 
     //#region Markdown Configuration
     private configureMarkdown() {
-        marked.setOptions({
-            highlight: function (code, lang) {
-                if (lang && hljs.getLanguage(lang)) {
-                    try {
-                        return hljs.highlight(code, { language: lang }).value;
-                    } catch (err) {
-                        console.error("Highlight error:", err);
-                    }
-                }
-                return hljs.highlightAuto(code).value;
-            },
-            breaks: true,
-            gfm: true,
-        });
+        MessageRenderer.configureMarkdown();
     }
 
     private renderMarkdown(content: string): string {
-        const rawHtml = marked.parse(content) as string;
-        return DOMPurify.sanitize(rawHtml, {
-            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span'],
-            ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
-        });
+        return MessageRenderer.renderMarkdown(content);
     }
     //#endregion
 
@@ -826,67 +810,12 @@ export class UnifiedAIPanel {
 
     private createStreamingChatMessage(): string {
         if (!this.messagesContainer) return "";
-
-        const messageId = `streaming-${Date.now()}`;
-        const messageDiv = document.createElement("div");
-        messageDiv.id = messageId;
-        messageDiv.className = "claude-message claude-message-chat claude-message-assistant";
-        messageDiv.style.cssText = `
-            margin-bottom: 12px;
-            padding: 8px 12px;
-            border-radius: 4px;
-        `;
-
-        const headerDiv = document.createElement("div");
-        headerDiv.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;";
-
-        const roleLabel = document.createElement("div");
-        roleLabel.className = "ft__smaller ft__secondary";
-        roleLabel.textContent = this.claudeClient.getProviderName();
-
-        const typingIndicator = document.createElement("span");
-        typingIndicator.className = "claude-typing-indicator ft__smaller ft__secondary";
-        typingIndicator.textContent = "typing...";
-        typingIndicator.style.cssText = "animation: pulse 1.5s ease-in-out infinite;";
-
-        headerDiv.appendChild(roleLabel);
-        headerDiv.appendChild(typingIndicator);
-
-        const contentDiv = document.createElement("div");
-        contentDiv.className = "claude-message-content";
-        contentDiv.innerHTML = '<span class="claude-cursor">▋</span>';
-
-        messageDiv.appendChild(headerDiv);
-        messageDiv.appendChild(contentDiv);
-        this.messagesContainer.appendChild(messageDiv);
-
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-
-        return messageId;
+        const providerName = this.claudeClient.getProviderName();
+        return MessageRenderer.createStreamingMessageDOM(this.messagesContainer, providerName);
     }
 
     private updateStreamingMessage(messageId: string, content: string) {
-        const messageDiv = this.element.querySelector(`#${messageId}`);
-        if (!messageDiv) return;
-
-        const contentDiv = messageDiv.querySelector(".claude-message-content");
-        if (contentDiv) {
-            // Render markdown with cursor
-            contentDiv.innerHTML = this.renderMarkdown(content) + '<span class="claude-cursor">▋</span>';
-        }
-
-        // Remove typing indicator once content starts
-        if (content.length > 0) {
-            const typingIndicator = messageDiv.querySelector(".claude-typing-indicator");
-            if (typingIndicator) {
-                typingIndicator.remove();
-            }
-        }
-
-        // Scroll to bottom
-        if (this.messagesContainer) {
-            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-        }
+        MessageRenderer.updateStreamingMessage(this.element, messageId, content);
     }
 
     private addSystemMessage(message: string) {

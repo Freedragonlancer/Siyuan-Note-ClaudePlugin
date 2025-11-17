@@ -28,6 +28,8 @@ import { UnifiedPanelUIBuilder } from "./unified/ui/UnifiedPanelUIBuilder";
 import { UnifiedPanelHelpers } from "./unified/UnifiedPanelHelpers";
 import { MessageRenderer } from "./unified/MessageRenderer";
 import { SelectionManager } from "./unified/SelectionManager";
+import { PresetManager } from "./unified/PresetManager";
+import { QueueRenderer } from "./unified/QueueRenderer";
 import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -1230,92 +1232,17 @@ export class UnifiedAIPanel {
     }
 
     private refreshQueueUI() {
-        const queueDetails = this.element.querySelector("#claude-queue-details") as HTMLElement;
-        const queueCountSpan = this.element.querySelector("#queue-count");
-        const queueStatsSpan = this.element.querySelector("#queue-stats");
-
-        if (!queueDetails) return;
-
-        const selections = this.textSelectionManager.getAllSelections();
-        const queueStats = this.editQueue.getStatistics();
-
-        // Update count
-        if (queueCountSpan) {
-            queueCountSpan.textContent = `编辑队列 (${selections.length})`;
-        }
-
-        // Update stats
-        if (queueStatsSpan) {
-            const managerStats = this.textSelectionManager.getStatistics();
-            queueStatsSpan.textContent = `处理中: ${queueStats.processing}`;
-
-            if (queueStats.isPaused) {
-                queueStatsSpan.textContent += ' (已暂停)';
-            }
-        }
-
-        // Update list
-        if (selections.length === 0) {
-            queueDetails.innerHTML = `
-                <div class="ft__secondary" style="text-align: center; padding: 12px;">
-                    选择文本并右键发送到 AI 编辑
-                </div>
-            `;
-        } else {
-            queueDetails.innerHTML = selections.map(s => this.createQueueItem(s)).join('');
-
-            // Bind click events
-            selections.forEach(selection => {
-                const item = queueDetails.querySelector(`[data-selection-id="${selection.id}"]`);
-                item?.addEventListener('click', () => {
-                    if (selection.status === 'completed' && selection.editResult) {
-                        // Scroll to the edit message in the stream
-                        const editMsg = this.messages.find(m =>
-                            isEditMessage(m) && m.selection.id === selection.id
-                        );
-                        if (editMsg) {
-                            // Auto-scroll to this message
-                            // (Implementation could be enhanced)
-                        }
-                    }
-                });
-            });
-        }
-
-        // Show/hide queue controls
-        const pauseBtn = this.element.querySelector("#queue-pause-btn") as HTMLElement;
-        const clearBtn = this.element.querySelector("#queue-clear-btn") as HTMLElement;
-
-        if (pauseBtn && clearBtn) {
-            const hasItems = selections.length > 0;
-            pauseBtn.style.display = hasItems ? "block" : "none";
-            clearBtn.style.display = hasItems ? "block" : "none";
-        }
-
-        // Update pause button icon
-        this.updatePauseButtonIcon();
-
-        // Update state
-        this.editQueueState.queueSize = selections.length;
-        this.editQueueState.processingCount = queueStats.processing;
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.refreshQueueUI(context);
     }
 
     private createQueueItem(selection: TextSelection): string {
-        const statusIcon = this.getQueueItemStatusIcon(selection.status);
-        const lineInfo = `第 ${selection.startLine + 1}-${selection.endLine + 1} 行`;
-        const preview = this.truncate(selection.selectedText, 40);
-
-        return `
-            <div class="b3-list-item" data-selection-id="${selection.id}" style="padding: 6px; margin-bottom: 2px; cursor: pointer; font-size: 12px;">
-                <div class="fn__flex" style="align-items: center; gap: 6px;">
-                    <span>${statusIcon}</span>
-                    <div class="fn__flex-column" style="flex: 1;">
-                        <span class="ft__smaller">${lineInfo}</span>
-                        <span class="ft__smaller ft__secondary">${this.escapeHtml(preview)}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        return QueueRenderer.createQueueItem(selection);
     }
 
     private getQueueItemStatusIcon(status: TextSelection['status']): string {
@@ -1323,83 +1250,75 @@ export class UnifiedAIPanel {
     }
 
     private toggleQueueExpansion() {
-        const newState = !this.editQueueState.expanded;
-        this.setQueueExpanded(newState);
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.toggleQueueExpansion(context);
     }
 
     private setQueueExpanded(expanded: boolean) {
-        this.editQueueState.expanded = expanded;
-
-        const queueDetails = this.element.querySelector("#claude-queue-details") as HTMLElement;
-        const queueToggle = this.element.querySelector("#claude-queue-toggle") as HTMLElement;
-
-        if (queueDetails) {
-            queueDetails.style.display = expanded ? "block" : "none";
-        }
-
-        if (queueToggle) {
-            queueToggle.textContent = expanded ? "▼" : "▶";
-        }
-
-        this.saveQueueState();
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.setQueueExpanded(context, expanded);
     }
 
     private toggleQueuePause() {
-        if (this.editQueue.isPaused()) {
-            this.editQueue.resumeQueue();
-        } else {
-            this.editQueue.pauseQueue();
-        }
-
-        this.updatePauseButtonIcon();
-        this.refreshQueueUI();
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.toggleQueuePause(context);
     }
 
     private updatePauseButtonIcon() {
-        const pauseBtn = this.element.querySelector("#queue-pause-btn") as HTMLButtonElement;
-        if (!pauseBtn) return;
-
-        if (this.editQueue.isPaused()) {
-            pauseBtn.innerHTML = '<svg><use xlink:href="#iconPlay"></use></svg>';
-            pauseBtn.title = '恢复队列';
-        } else {
-            pauseBtn.innerHTML = '<svg><use xlink:href="#iconPause"></use></svg>';
-            pauseBtn.title = '暂停队列';
-        }
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.updatePauseButtonIcon(context);
     }
 
     private clearEditQueue() {
-        const confirmed = confirm('确定要清空所有编辑任务吗？');
-        if (!confirmed) return;
-
-        this.editQueue.cancelAll();
-        this.textSelectionManager.clearAll();
-
-        this.refreshQueueUI();
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.clearEditQueue(context);
     }
     //#endregion
 
     //#region State Persistence
     private loadQueueState() {
-        try {
-            const saved = localStorage.getItem('claude-queue-state');
-            if (saved) {
-                const state = JSON.parse(saved);
-                this.editQueueState.expanded = state.expanded ?? true;
-            }
-        } catch (error) {
-            console.warn('[UnifiedAIPanel] Failed to load queue state:', error);
-        }
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.loadQueueState(context);
     }
 
     private saveQueueState() {
-        try {
-            localStorage.setItem('claude-queue-state', JSON.stringify({
-                expanded: this.editQueueState.expanded
-            }));
-        } catch (error) {
-            console.warn('[UnifiedAIPanel] Failed to save queue state:', error);
-        }
+        const context = {
+            element: this.element,
+            textSelectionManager: this.textSelectionManager,
+            editQueue: this.editQueue,
+            queueState: this.editQueueState
+        };
+        QueueRenderer.saveQueueState(context);
     }
 
     /**
@@ -1407,26 +1326,7 @@ export class UnifiedAIPanel {
      * @param presetId - The preset ID to save
      */
     private async saveAIDockPresetSelection(presetId: string): Promise<void> {
-        try {
-            // Save to localStorage (fast, synchronous)
-            localStorage.setItem('claude-ai-dock-preset-id', presetId);
-
-            // Save to file storage (reliable, async)
-            const plugin = this.claudeClient.plugin;
-
-            if (plugin && typeof plugin.saveData === 'function') {
-                try {
-                    await plugin.saveData('ai-dock-preset.json', { presetId });
-                    console.log(`[UnifiedAIPanel] ✅ Saved AI Dock preset to file storage: ${presetId}`);
-                } catch (err) {
-                    console.warn('[UnifiedAIPanel] ❌ Failed to save AI Dock preset to file storage:', err);
-                }
-            } else {
-                console.warn('[UnifiedAIPanel] ⚠️ Cannot save to file storage - plugin not available');
-            }
-        } catch (error) {
-            console.warn('[UnifiedAIPanel] Failed to save AI Dock preset:', error);
-        }
+        return PresetManager.savePresetSelection(this.claudeClient, presetId);
     }
 
     /**
@@ -1436,56 +1336,7 @@ export class UnifiedAIPanel {
      * @returns The saved preset ID or 'default' if none found
      */
     private async loadAIDockPresetSelection(timeoutMs: number = 3000): Promise<string> {
-        const plugin = this.claudeClient.plugin;
-        let filePresetId: string | null = null;
-        let localStoragePresetId: string | null = null;
-
-        // Try loading from file storage first (most reliable)
-        if (plugin && typeof plugin.loadData === 'function') {
-            try {
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(() => reject(new Error('File load timeout')), timeoutMs);
-                });
-
-                const loadPromise = plugin.loadData('ai-dock-preset.json') as Promise<{ presetId: string } | null>;
-                const stored = await Promise.race([loadPromise, timeoutPromise]);
-
-                if (stored && typeof stored === 'object' && stored.presetId) {
-                    filePresetId = stored.presetId;
-                    console.log(`[UnifiedAIPanel] ✅ Loaded AI Dock preset from file: ${filePresetId}`);
-                }
-            } catch (error) {
-                if (error instanceof Error && error.message === 'File load timeout') {
-                    console.warn('[UnifiedAIPanel] ⏱️ File load timed out, using localStorage');
-                } else {
-                    console.warn('[UnifiedAIPanel] ❌ Failed to load AI Dock preset from file:', error);
-                }
-            }
-        } else {
-            console.warn('[UnifiedAIPanel] ⚠️ Cannot load from file storage - plugin not available');
-        }
-
-        // Fallback to localStorage
-        try {
-            localStoragePresetId = localStorage.getItem('claude-ai-dock-preset-id');
-        } catch (error) {
-            console.warn('[UnifiedAIPanel] Failed to load AI Dock preset from localStorage:', error);
-        }
-
-        // Use file storage if available, otherwise localStorage
-        const resultPresetId = filePresetId ?? localStoragePresetId ?? 'default';
-
-        // Sync localStorage with file storage value (file storage takes precedence)
-        if (filePresetId && filePresetId !== localStoragePresetId) {
-            try {
-                localStorage.setItem('claude-ai-dock-preset-id', filePresetId);
-            } catch (error) {
-                console.warn('[UnifiedAIPanel] Failed to sync localStorage:', error);
-            }
-        }
-
-        console.log(`[UnifiedAIPanel] Final loaded preset: ${resultPresetId}`);
-        return resultPresetId;
+        return PresetManager.loadPresetSelection(this.claudeClient, timeoutMs);
     }
 
     /**
@@ -1495,36 +1346,7 @@ export class UnifiedAIPanel {
      * @param presetId - The preset ID to notify
      */
     private notifyAIDockPresetSelection(presetId: string): void {
-        // Don't notify for default preset (avoid unnecessary events)
-        if (!presetId || presetId === 'default') {
-            console.log('[UnifiedAIPanel] No custom preset to notify (using default)');
-            return;
-        }
-
-        try {
-            // Get ConfigManager and PresetEventBus
-            const configManager = (this.claudeClient as any).configManager;
-            if (!configManager || !configManager.getEventBus) {
-                console.warn('[UnifiedAIPanel] ConfigManager or event bus not available');
-                return;
-            }
-
-            const eventBus = configManager.getEventBus();
-            const preset = configManager.getTemplateById?.(presetId);
-
-            // Publish 'selected' event to notify other components
-            eventBus.publish({
-                type: 'selected',
-                presetId: presetId,
-                preset: preset,
-                timestamp: Date.now(),
-                source: 'UnifiedAIPanel.loadAIDockPresetSelection'
-            });
-
-            console.log(`[UnifiedAIPanel] Notified AI Dock preset selection: ${presetId}`);
-        } catch (error) {
-            console.warn('[UnifiedAIPanel] Failed to notify preset selection:', error);
-        }
+        PresetManager.notifyPresetSelection(this.claudeClient, presetId);
     }
     //#endregion
 
@@ -1611,54 +1433,14 @@ export class UnifiedAIPanel {
      * Includes retry mechanism for initialization timing issues
      */
     private populatePresetSelector(): void {
-        const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
-        if (!selector) return;
-
-        // Get config manager from claude client
-        const configManager = (this.claudeClient as any).configManager;
-        if (!configManager || !configManager.getAllTemplates) {
-            // Retry if ConfigManager not ready yet (initialization timing issue)
-            if (this.populateSelectorRetries < this.MAX_POPULATE_RETRIES) {
-                this.populateSelectorRetries++;
-                console.warn(`[UnifiedAIPanel] ConfigManager not ready, retrying (${this.populateSelectorRetries}/${this.MAX_POPULATE_RETRIES})...`);
-                setTimeout(() => this.populatePresetSelector(), 100);
-                return;
-            }
-            console.warn('[UnifiedAIPanel] ConfigManager not available after retries, using default preset only');
-            return;
-        }
-
-        // Get all templates
-        const templates = configManager.getAllTemplates();
-        if (!templates || templates.length === 0) {
-            // Retry if templates not loaded yet
-            if (this.populateSelectorRetries < this.MAX_POPULATE_RETRIES) {
-                this.populateSelectorRetries++;
-                console.warn(`[UnifiedAIPanel] No presets found, retrying (${this.populateSelectorRetries}/${this.MAX_POPULATE_RETRIES})...`);
-                setTimeout(() => this.populatePresetSelector(), 100);
-                return;
-            }
-            console.warn('[UnifiedAIPanel] No presets found after retries');
-            return;
-        }
-
-        // Reset retry counter on success
-        this.populateSelectorRetries = 0;
-
-        // Clear existing options
-        selector.innerHTML = '';
-
-        // Add templates as options
-        templates.forEach((template: any) => {
-            const option = document.createElement('option');
-            option.value = template.id;
-            option.textContent = `${template.icon || '📝'} ${template.name}`;
-            selector.appendChild(option);
-        });
-
-        // Set current selection
-        selector.value = this.activeChatPresetId;
-        console.log('[UnifiedAIPanel] Preset selector populated, active preset:', this.activeChatPresetId);
+        const context = {
+            element: this.element,
+            claudeClient: this.claudeClient,
+            activeChatPresetId: this.activeChatPresetId,
+            onPresetChange: (presetId: string) => { this.activeChatPresetId = presetId; }
+        };
+        PresetManager.populatePresetSelector(context, this.populateSelectorRetries);
+        this.populateSelectorRetries = 0; // Reset counter after call
     }
 
     /**
@@ -1673,49 +1455,13 @@ export class UnifiedAIPanel {
      * Eliminates manual refresh requirements
      */
     private subscribeToPresetEvents(): void {
-        const configManager = (this.claudeClient as any).configManager;
-        if (!configManager || !configManager.getEventBus) {
-            console.warn('[UnifiedAIPanel] ConfigManager or event bus not available');
-            return;
-        }
-
-        const eventBus = configManager.getEventBus();
-
-        // Subscribe to all preset change events
-        this.presetEventUnsubscribe = eventBus.subscribeAll(async (event: PresetEvent) => {
-            console.log(`[UnifiedAIPanel] Preset event received: ${event.type} (${event.presetId})`);
-
-            // Auto-refresh preset selector when any change occurs
-            switch (event.type) {
-                case 'created':
-                case 'updated':
-                case 'deleted':
-                case 'imported':
-                    this.refreshPresetSelector();
-                    console.log(`[UnifiedAIPanel] Auto-refreshed preset selector after ${event.type} event`);
-                    break;
-                case 'selected':
-                    // Update preset selection and sync UI
-                    if (event.presetId) {
-                        this.activeChatPresetId = event.presetId;
-
-                        // Update dropdown UI to match
-                        const selector = this.element.querySelector('#claude-preset-selector') as HTMLSelectElement;
-                        if (selector) {
-                            selector.value = event.presetId;
-                        }
-
-                        // Persist to localStorage and file storage
-                        await this.saveAIDockPresetSelection(event.presetId)
-                            .catch(err => console.error('[UnifiedAIPanel] Preset save failed:', err));
-
-                        console.log(`[UnifiedAIPanel] Preset selection changed to: ${event.presetId}`);
-                    }
-                    break;
-            }
-        });
-
-        console.log('[UnifiedAIPanel] Subscribed to preset events for automatic UI sync');
+        const context = {
+            element: this.element,
+            claudeClient: this.claudeClient,
+            activeChatPresetId: this.activeChatPresetId,
+            onPresetChange: (presetId: string) => { this.activeChatPresetId = presetId; }
+        };
+        this.presetEventUnsubscribe = PresetManager.subscribeToPresetEvents(context);
     }
     //#endregion
 

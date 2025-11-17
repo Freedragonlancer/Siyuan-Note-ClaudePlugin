@@ -24,6 +24,7 @@ import { EditorHelper } from "../editor";
 import { ContextExtractor } from "../quick-edit/ContextExtractor";
 import { DEFAULT_SELECTION_QA_TEMPLATE } from "../settings/config-types";
 import { SecurityUtils } from "../utils/Security";
+import { UnifiedPanelUIBuilder } from "./unified/ui/UnifiedPanelUIBuilder";
 import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -359,93 +360,7 @@ export class UnifiedAIPanel {
 
     //#region Panel Creation
     private createPanel(): HTMLElement {
-        const container = document.createElement("div");
-        container.className = "claude-unified-panel fn__flex-column";
-        container.style.cssText = "height: 100%; display: flex; flex-direction: column;";
-
-        container.innerHTML = `
-            <!-- Compact Header -->
-            <div class="claude-unified-header" style="padding: 4px 6px; border-bottom: 1px solid var(--b3-border-color); flex-shrink: 0;">
-                <div class="fn__flex" style="align-items: center; justify-content: space-between; gap: 6px;">
-                    <div class="fn__flex" style="align-items: center; gap: 6px; flex: 1;">
-                        <select class="b3-select" id="claude-preset-selector" title="选择预设" style="max-width: 150px; font-size: 12px;">
-                            <option value="default">默认</option>
-                        </select>
-                        <span id="claude-mode-badge" class="claude-mode-badge" style="display: none; font-size: 11px; padding: 2px 8px; background: var(--b3-theme-primary-lighter); color: var(--b3-theme-primary); border-radius: 10px; white-space: nowrap;">📝 已选中 0 个块</span>
-                    </div>
-                    <div class="fn__flex" style="align-items: center; gap: 3px;">
-                        <div class="provider-info-badge" data-provider-badge style="display: inline-flex; align-items: center; padding: 4px 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; font-size: 11px; font-weight: 500; color: var(--b3-theme-on-surface); white-space: nowrap;">
-                            <span class="provider-text">Loading...</span>
-                        </div>
-                        <button class="b3-button b3-button--text" id="claude-settings-btn" title="设置" style="padding: 2px 4px;">
-                            <svg class="fn__size200"><use xlink:href="#iconSettings"></use></svg>
-                        </button>
-                        <button class="b3-button b3-button--text" id="claude-clear-chat" title="清空对话" style="padding: 2px 4px;">
-                            <svg class="fn__size200"><use xlink:href="#iconTrashcan"></use></svg>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Collapsible Edit Queue Region -->
-            <div class="claude-queue-region" id="claude-queue-region" style="flex-shrink: 0; border-bottom: 1px solid var(--b3-border-color); display: ${this.config.showEditQueue ? 'block' : 'none'};">
-                <!-- Queue Summary (Always Visible) - Compact Single Line -->
-                <div class="claude-queue-summary" id="claude-queue-summary" style="padding: 4px 8px; cursor: pointer; background: var(--b3-list-hover);">
-                    <div class="fn__flex" style="align-items: center; justify-content: space-between;">
-                        <div class="fn__flex" style="align-items: center; gap: 6px; font-size: 12px;">
-                            <span class="claude-queue-toggle" id="claude-queue-toggle" style="font-size: 10px;">▶</span>
-                            <span style="font-weight: 500;">📝</span>
-                            <span class="ft__secondary" id="queue-count">编辑队列 (0)</span>
-                            <span class="ft__secondary" id="queue-stats" style="font-size: 11px; opacity: 0.7;">处理中: 0</span>
-                        </div>
-                        <div class="fn__flex" style="align-items: center; gap: 4px;">
-                            <button class="b3-button b3-button--text" id="queue-pause-btn" title="暂停队列" style="display: none; padding: 1px 3px;">
-                                <svg class="fn__size200"><use xlink:href="#iconPause"></use></svg>
-                            </button>
-                            <button class="b3-button b3-button--text" id="queue-clear-btn" title="清空队列" style="display: none; padding: 1px 3px;">
-                                <svg class="fn__size200"><use xlink:href="#iconTrashcan"></use></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Queue Details (Collapsible) -->
-                <div class="claude-queue-details" id="claude-queue-details" style="max-height: 150px; overflow-y: auto; padding: 6px; display: none;">
-                    <div class="ft__secondary" style="text-align: center; padding: 8px; font-size: 12px;">
-                        选择文本并右键发送到 AI 编辑
-                    </div>
-                </div>
-            </div>
-
-            <!-- Messages Container -->
-            <div class="claude-messages" id="claude-messages" style="flex: 1; overflow-y: auto; padding: 6px;">
-
-            </div>
-
-            <!-- Compact Input Area -->
-            <div class="claude-input-area" style="flex-shrink: 0; padding: 6px; border-top: 1px solid var(--b3-border-color);">
-                <div class="fn__flex-column" style="gap: 6px;">
-                    <textarea class="b3-text-field" id="claude-input"
-                              placeholder="Ask Claude anything..."
-                              rows="3"
-                              style="resize: vertical; min-height: 54px; font-size: 13px;"></textarea>
-                    <div class="fn__flex" style="justify-content: space-between; align-items: center;">
-                        <div class="ft__smaller ft__secondary" id="claude-context-info" style="font-size: 11px;"></div>
-                        <div class="fn__flex" style="gap: 6px;">
-                            <button class="b3-button b3-button--outline b3-button--small" id="claude-insert-btn" title="Insert response at cursor" style="display: none; padding: 2px 8px;">
-                                Insert
-                            </button>
-                            <button class="b3-button b3-button--outline b3-button--small" id="claude-replace-btn" title="Replace selected text" style="display: none; padding: 2px 8px;">
-                                Replace
-                            </button>
-                            <button class="b3-button b3-button--text" id="claude-send-btn" style="padding: 3px 10px;">
-                                Send
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        const container = UnifiedPanelUIBuilder.createPanel(this.config);
 
         // Store references
         this.queueRegion = container.querySelector("#claude-queue-region") as HTMLElement;

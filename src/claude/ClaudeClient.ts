@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Message, ClaudeSettings, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
+import type { Message, ClaudeSettings, MessageCallback, ErrorCallback, CompleteCallback, IConfigManager } from "./types";
 import { RequestLogger, type LogEntry } from "../logger/RequestLogger";
 import { responseFilter, type FilterRule } from "../filter";
 import type { ISiYuanPlugin } from "@/types/siyuan";
@@ -13,10 +13,10 @@ export class ClaudeClient {
     private settings: ClaudeSettings;
     private logger: RequestLogger;
     private activeAbortController: AbortController | null = null;
-    private configManager: any = null; // ConfigManager reference for preset-level filterRules
+    private configManager: IConfigManager | null = null; // ConfigManager reference for preset-level filterRules
     public plugin: ISiYuanPlugin | null = null; // Plugin instance for file storage access
 
-    constructor(settings: ClaudeSettings, configManager?: any) {
+    constructor(settings: ClaudeSettings, configManager?: IConfigManager) {
         this.settings = settings;
         this.configManager = configManager || null;
         this.logger = new RequestLogger();
@@ -29,7 +29,7 @@ export class ClaudeClient {
     /**
      * Update config manager reference (for lazy initialization)
      */
-    setConfigManager(configManager: any): void {
+    setConfigManager(configManager: IConfigManager): void {
         this.configManager = configManager;
     }
 
@@ -41,7 +41,7 @@ export class ClaudeClient {
     }
 
     private initializeClient() {
-        const config: any = {
+        const config: Anthropic.ClientOptions = {
             apiKey: this.settings.apiKey,
             dangerouslyAllowBrowser: true, // Enable browser usage
             timeout: 120000, // 120 seconds timeout for long AI responses

@@ -1,3 +1,5 @@
+import type { IProtyle } from '../types/siyuan';
+
 /**
  * Helper class for interacting with SiYuan's Protyle editor
  */
@@ -5,7 +7,7 @@ export class EditorHelper {
     /**
      * Get the currently selected text in the active editor
      */
-    static getSelectedText(protyle?: any): string {
+    static getSelectedText(protyle?: IProtyle): string {
         try {
             if (protyle?.wysiwyg?.element) {
                 const selection = window.getSelection();
@@ -32,7 +34,7 @@ export class EditorHelper {
     /**
      * Replace the currently selected text with new content
      */
-    static replaceSelectedText(newText: string, protyle?: any): boolean {
+    static replaceSelectedText(newText: string, protyle?: IProtyle): boolean {
         try {
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) {
@@ -62,7 +64,7 @@ export class EditorHelper {
     /**
      * Insert text at the current cursor position
      */
-    static insertTextAtCursor(text: string, protyle?: any): boolean {
+    static insertTextAtCursor(text: string, protyle?: IProtyle): boolean {
         try {
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) {
@@ -89,7 +91,7 @@ export class EditorHelper {
     /**
      * Get the entire content of the current document
      */
-    static getDocumentContent(protyle?: any): string {
+    static getDocumentContent(protyle?: IProtyle): string {
         try {
             if (protyle?.wysiwyg?.element) {
                 return protyle.wysiwyg.element.textContent || "";

@@ -1,5 +1,6 @@
 import type { ISiYuanPlugin } from '@/types/siyuan';
 import type { PromptTemplate } from './config-types';
+import type { IConfigManager } from '../claude/types';
 import { Logger } from '@/utils/Logger';
 import { getPresetEventBus, type PresetEvent } from './PresetEventBus';
 
@@ -45,14 +46,14 @@ const STORAGE_KEYS = {
  */
 export class PresetSelectionManager {
     private plugin: ISiYuanPlugin | null;
-    private configManager: any; // Will type properly when integrating
+    private configManager: IConfigManager | null;
     private logger = Logger.createScoped('PresetSelection');
     private eventBus = getPresetEventBus();
     private currentPresetId: string | null = null;
     private initialized = false;
     private initPromise: Promise<void> | null = null;
 
-    constructor(plugin?: ISiYuanPlugin, configManager?: any) {
+    constructor(plugin?: ISiYuanPlugin, configManager?: IConfigManager) {
         this.plugin = plugin ?? null;
         this.configManager = configManager ?? null;
     }

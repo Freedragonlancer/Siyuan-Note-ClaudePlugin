@@ -4,7 +4,7 @@
  * Replaces ClaudeClient with multi-provider support
  */
 
-import type { Message, MultiProviderSettings, MessageCallback, ErrorCallback, CompleteCallback } from "./types";
+import type { Message, MultiProviderSettings, MessageCallback, ErrorCallback, CompleteCallback, IConfigManager } from "./types";
 import { migrateToMultiProvider } from "./types";
 import { RequestLogger, type LogEntry } from "../logger/RequestLogger";
 import { responseFilter, type FilterRule } from "../filter";
@@ -21,11 +21,11 @@ export class UniversalAIClient {
     private settings: MultiProviderSettings;
     private logger: RequestLogger;
     private activeAbortController: AbortController | null = null;
-    private configManager: any = null; // ConfigManager reference for preset-level filterRules
+    private configManager: IConfigManager | null = null; // ConfigManager reference for preset-level filterRules
     public plugin: ISiYuanPlugin | null = null; // Plugin instance for file storage access
     private isInitializing: boolean = false; // FIX Race Condition: Track initialization state
 
-    constructor(settings: MultiProviderSettings, configManager?: any) {
+    constructor(settings: MultiProviderSettings, configManager?: IConfigManager) {
         // Ensure settings are migrated to multi-provider format
         this.settings = migrateToMultiProvider(settings);
         this.configManager = configManager || null;
@@ -37,7 +37,7 @@ export class UniversalAIClient {
     /**
      * Update config manager reference (for lazy initialization)
      */
-    setConfigManager(configManager: any): void {
+    setConfigManager(configManager: IConfigManager): void {
         this.configManager = configManager;
     }
 

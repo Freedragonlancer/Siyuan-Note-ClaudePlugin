@@ -4,6 +4,7 @@
  */
 
 import type { InlineEditSelection } from './inline-types';
+import type { IProtyle } from '../types/siyuan';
 
 export class SelectionHandler {
     /**
@@ -11,7 +12,7 @@ export class SelectionHandler {
      * @param protyle SiYuan editor instance
      * @returns Selection object or null if no valid selection
      */
-    getSelection(protyle: any): InlineEditSelection | null {
+    getSelection(protyle: IProtyle): InlineEditSelection | null {
         if (!protyle?.wysiwyg?.element) {
             console.warn('[SelectionHandler] Protyle or wysiwyg element not found');
             return null;
@@ -81,7 +82,7 @@ export class SelectionHandler {
     /**
      * Fallback: Try to get block-level selection (no text selection)
      */
-    private getBlockSelectionFallback(protyle: any): InlineEditSelection | null {
+    private getBlockSelectionFallback(protyle: IProtyle): InlineEditSelection | null {
         const selectedBlocks = this.getSelectedBlocks();
         if (selectedBlocks.length === 0) {
             return null;

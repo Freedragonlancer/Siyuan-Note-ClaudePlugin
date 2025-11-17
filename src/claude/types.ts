@@ -6,6 +6,18 @@ import type { EditSettings } from "../editor/types";
 import type { FilterRule } from "../filter";
 import type { AIProviderType } from "../ai/types";
 import { AIProviderFactory } from "../ai/AIProviderFactory";
+import type { PromptTemplate } from "../settings/config-types";
+
+/**
+ * Minimal ConfigManager interface for type safety
+ * Avoids circular dependencies while providing type checking
+ *
+ * @see ConfigManager (full implementation in settings/)
+ */
+export interface IConfigManager {
+    getAllTemplates?(): PromptTemplate[];
+    getTemplateById?(id: string): PromptTemplate | undefined;
+}
 
 /**
  * Default keyboard shortcuts configuration

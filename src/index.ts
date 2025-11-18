@@ -289,6 +289,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             type: "claude-dock",
             init() {
                 const plugin = this.data.plugin;
+                const element = this.element;  // Capture element reference before async context
 
                 console.log("[Dock] Initializing dock panel...");
 
@@ -320,18 +321,18 @@ export default class ClaudeAssistantPlugin extends Plugin {
                                 plugin.diffRenderer,
                                 () => plugin.openSettings()
                             );
-                            this.element.innerHTML = '';
-                            this.element.appendChild(plugin.unifiedPanel.getElement());
-                            plugin.dockElement = this.element;
+                            element.innerHTML = '';
+                            element.appendChild(plugin.unifiedPanel.getElement());
+                            plugin.dockElement = element;
 
                             console.log("[Dock] ✅ Claude AI unified panel ready");
                         } else {
                             console.error("[Dock] ❌ Missing required dependencies, cannot initialize panel");
-                            this.element.innerHTML = '<div style="padding: 20px; color: orange;">缺少必要组件，请重启插件</div>';
+                            element.innerHTML = '<div style="padding: 20px; color: orange;">缺少必要组件，请重启插件</div>';
                         }
                     } catch (error) {
                         console.error("[Dock] ❌ Failed to initialize UnifiedAIPanel:", error);
-                        this.element.innerHTML = '<div style="padding: 20px; color: red;">初始化失败: ' + (error as Error).message + '</div>';
+                        element.innerHTML = '<div style="padding: 20px; color: red;">初始化失败: ' + (error as Error).message + '</div>';
                     }
                 })();
             },

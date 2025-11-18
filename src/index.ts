@@ -249,16 +249,22 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     onLayoutReady() {
-        // CRITICAL: Clean DOM FIRST, before any checks or UI registration
-        // This ensures any leftover elements from incomplete unload are removed
-        this.cleanupTopbarIconsSync();
-
-        // Prevent duplicate onLayoutReady calls
+        // CRITICAL: Check for duplicate call FIRST, before ANY operations
+        // This prevents creating duplicate dock instances
         if (this.layoutReadyCalled) {
             console.warn("[Plugin] onLayoutReady already called, skipping duplicate call");
             return;
         }
         this.layoutReadyCalled = true;
+
+        // Ensure i18n is initialized (defensive check for edge cases)
+        if (!this.i18n || typeof this.i18n !== 'object') {
+            console.warn("[Plugin] i18n not initialized in onLayoutReady, using empty object");
+            this.i18n = {};
+        }
+
+        // THEN clean DOM - ensures any leftover elements from incomplete unload are removed
+        this.cleanupTopbarIconsSync();
 
         console.log("Claude Assistant Plugin layout ready");
 
@@ -349,10 +355,18 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     onunload() {
-        console.log("Unloading Claude Assistant Plugin");
+        console.log("[Plugin] 🧹 Starting unload sequence...");
 
         // CRITICAL: Clean DOM FIRST with synchronous cleanup
         this.cleanupTopbarIconsSync();
+
+        // Verify cleanup succeeded
+        const remainingElements = document.querySelectorAll('[aria-label*="Claude AI Assistant"]');
+        if (remainingElements.length > 0) {
+            console.error(`[Plugin] ⚠️ Failed to remove ${remainingElements.length} topbar elements`);
+        } else {
+            console.log("[Plugin] ✅ Topbar cleanup verified");
+        }
 
         // Reset instance state to allow re-initialization
         this.layoutReadyCalled = false;
@@ -390,7 +404,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             }
         }
 
-        console.log("[Plugin] Cleanup complete");
+        console.log("[Plugin] ✅ Unload complete");
     }
 
     /**

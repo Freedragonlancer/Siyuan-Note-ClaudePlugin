@@ -88,6 +88,9 @@ export class UnifiedAIPanel {
     private populateSelectorRetries = 0;
     private readonly MAX_POPULATE_RETRIES = 3;
 
+    // Initialization flag to prevent event loops during startup
+    private isInitializing: boolean = true;
+
     constructor(
         claudeClient: ClaudeClient,
         textSelectionManager: TextSelectionManager,
@@ -128,11 +131,18 @@ export class UnifiedAIPanel {
                     selector.value = presetId;
                 }
 
-                // Notify preset selection to synchronize with Settings Panel
-                this.notifyAIDockPresetSelection(presetId);
+                // ONLY notify if not initializing (prevents event loop during startup)
+                if (!this.isInitializing) {
+                    this.notifyAIDockPresetSelection(presetId);
+                }
             })
             .catch((error) => {
                 console.warn('[UnifiedAIPanel] Failed to load AI Dock preset:', error);
+            })
+            .finally(() => {
+                // Clear initialization flag after preset loading completes
+                this.isInitializing = false;
+                console.log('[UnifiedAIPanel] Initialization complete, event notifications enabled');
             });
 
         // Populate preset selector

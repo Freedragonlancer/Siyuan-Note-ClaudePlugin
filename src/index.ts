@@ -34,7 +34,6 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private dockElement: HTMLElement | null = null;
     private dockModel: DockModel | null = null;
     private topbarElement: HTMLElement | null = null;
-    private layoutReadyCalled: boolean = false; // Prevent duplicate onLayoutReady calls
 
     // AI Text Editing feature (initialized for UnifiedPanel)
     private textSelectionManager: TextSelectionManager | null = null;
@@ -117,47 +116,51 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         // Initialize settings with callback to update ClaudeClient when async load completes
         this.settingsManager = new SettingsManager(this, (loadedSettings) => {
-            console.log("[Plugin] Settings loaded asynchronously, updating ClaudeClient");
+            console.log("[Plugin] Settings loaded asynchronously from file");
+
+            // Update ClaudeClient if already initialized
             if (this.claudeClient) {
                 this.claudeClient.updateSettings(loadedSettings);
-            } else {
-                console.log("[Plugin] ClaudeClient not yet initialized, will use loaded settings on init");
+                console.log("[Plugin] Updated ClaudeClient with loaded settings");
+
+                // Refresh UI badge if UnifiedAIPanel is already initialized
+                if (this.unifiedPanel && typeof this.unifiedPanel.updateProviderInfoBadge === 'function') {
+                    this.unifiedPanel.updateProviderInfoBadge();
+                    console.log("[Plugin] Refreshed UnifiedAIPanel provider badge");
+                }
             }
-        });
 
-        // Wait for async settings load to complete before proceeding
-        // The SettingsManager exposes a waitForLoad() promise that ensures file loading is complete
-        let settings: ClaudeSettings;
-
-        try {
-            await this.settingsManager.waitForLoad();
-            console.log("[Plugin] Settings async load complete");
-
-            // Get settings from SettingsManager (which has now loaded from file)
-            const loadedSettings = this.settingsManager.getSettings();
-            console.log("[Plugin] Loaded settings from SettingsManager:", { hasApiKey: !!loadedSettings.apiKey });
-
-            // Sync loaded settings to ConfigManager active profile if needed
-            const activeProfile = this.configManager.getActiveProfile();
-
-            // Only update ConfigManager if the loaded settings have an API key
-            // (indicates they are real saved settings, not just defaults)
-            if (loadedSettings.apiKey) {
-                console.log("[Plugin] Syncing loaded settings to ConfigManager");
+            // Sync to ConfigManager only on first migration (not every load)
+            const migrationDone = localStorage.getItem('claude-settings-sync-done');
+            if (!migrationDone && loadedSettings.apiKey) {
+                console.log("[Plugin] First-time sync: SettingsManager → ConfigManager");
+                const activeProfile = this.configManager.getActiveProfile();
                 this.configManager.updateProfile(activeProfile.id, {
                     settings: { ...activeProfile.settings, ...loadedSettings }
                 });
-            } else {
-                console.log("[Plugin] No saved settings found, using ConfigManager defaults");
+                localStorage.setItem('claude-settings-sync-done', 'true');
             }
+        });
 
-            // Use the loaded settings for initialization
-            settings = loadedSettings.apiKey ? loadedSettings : activeProfile.settings;
+        // Get initial settings from cache (file load continues in background)
+        // The callback above will update ClaudeClient when async file load completes
+        let settings: ClaudeSettings;
+
+        try {
+            // Get cached settings immediately (may be defaults if first load)
+            const cachedSettings = this.settingsManager.getSettings();
+            console.log("[Plugin] Using cached settings for initialization:", { hasApiKey: !!cachedSettings.apiKey });
+
+            // Get active profile from ConfigManager
+            const activeProfile = this.configManager.getActiveProfile();
+
+            // Use cached settings if available, otherwise use ConfigManager defaults
+            settings = cachedSettings.apiKey ? cachedSettings : activeProfile.settings;
 
             // Migrate quickEditPromptTemplate from EditSettings to ClaudeSettings
             settings = this.migrateQuickEditPromptTemplate(settings);
         } catch (error) {
-            console.error("[Plugin] Error during settings load, using defaults:", error);
+            console.error("[Plugin] Error during settings initialization, using defaults:", error);
             // Fallback to defaults if anything fails
             settings = this.configManager.getActiveProfile().settings;
         }
@@ -234,13 +237,6 @@ export default class ClaudeAssistantPlugin extends Plugin {
             },
         });
 
-        // Check if API key is configured
-        if (!settings.apiKey) {
-            setTimeout(() => {
-                showMessage("Claude Assistant: Please configure your API key in settings", 5000, "info");
-            }, 1000);
-        }
-
         // Signal that initialization is complete
         if (this.initializationResolver) {
             this.initializationResolver();
@@ -249,21 +245,14 @@ export default class ClaudeAssistantPlugin extends Plugin {
     }
 
     onLayoutReady() {
-        // CRITICAL: Check for duplicate call FIRST, before ANY operations
-        // This prevents creating duplicate dock instances
-        if (this.layoutReadyCalled) {
-            console.warn("[Plugin] onLayoutReady already called, skipping duplicate call");
-            return;
-        }
-        this.layoutReadyCalled = true;
-
         // Ensure i18n is initialized (defensive check for edge cases)
         if (!this.i18n || typeof this.i18n !== 'object') {
             console.warn("[Plugin] i18n not initialized in onLayoutReady, using empty object");
             this.i18n = {};
         }
 
-        // THEN clean DOM - ensures any leftover elements from incomplete unload are removed
+        // CRITICAL: Clean DOM FIRST - ensures any leftover elements from incomplete unload are removed
+        // This is the real protection against duplicate UI elements
         this.cleanupTopbarIconsSync();
 
         console.log("Claude Assistant Plugin layout ready");
@@ -325,6 +314,14 @@ export default class ClaudeAssistantPlugin extends Plugin {
                             element.appendChild(plugin.unifiedPanel.getElement());
                             plugin.dockElement = element;
 
+                            // Ensure provider badge reflects current state (in case settings loaded after initial render)
+                            setTimeout(() => {
+                                if (plugin.unifiedPanel && plugin.claudeClient.isConfigured()) {
+                                    plugin.unifiedPanel.updateProviderInfoBadge();
+                                    console.log("[Dock] Refreshed provider badge after panel initialization");
+                                }
+                            }, 200);
+
                             console.log("[Dock] ✅ Claude AI unified panel ready");
                         } else {
                             console.error("[Dock] ❌ Missing required dependencies, cannot initialize panel");
@@ -370,7 +367,6 @@ export default class ClaudeAssistantPlugin extends Plugin {
         }
 
         // Reset instance state to allow re-initialization
-        this.layoutReadyCalled = false;
         this.topbarElement = null;
         this.dockElement = null;
         this.dockModel = null;

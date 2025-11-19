@@ -23,7 +23,6 @@ export class UniversalAIClient {
     private activeAbortController: AbortController | null = null;
     private configManager: IConfigManager | null = null; // ConfigManager reference for preset-level filterRules
     public plugin: ISiYuanPlugin | null = null; // Plugin instance for file storage access
-    private isInitializing: boolean = false; // FIX Race Condition: Track initialization state
 
     constructor(settings: MultiProviderSettings, configManager?: IConfigManager) {
         // Ensure settings are migrated to multi-provider format
@@ -50,17 +49,9 @@ export class UniversalAIClient {
 
     /**
      * Initialize AI provider based on current settings
-     * FIX Race Condition: Protected against concurrent initialization
      */
     private initializeProvider(): void {
-        // FIX: Prevent concurrent initialization
-        if (this.isInitializing) {
-            console.warn('[UniversalAIClient] Provider initialization already in progress, skipping');
-            return;
-        }
-
         try {
-            this.isInitializing = true;
 
             const activeProvider = this.settings.activeProvider || 'anthropic';
             const providerConfig = this.settings.providers?.[activeProvider];
@@ -156,8 +147,6 @@ export class UniversalAIClient {
         } catch (error) {
             console.error(`[UniversalAIClient] Failed to initialize provider:`, error);
             this.provider = null;
-        } finally {
-            this.isInitializing = false;
         }
     }
 

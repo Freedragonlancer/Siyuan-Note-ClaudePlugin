@@ -421,7 +421,7 @@ export class UnifiedAIPanel {
         }
 
         if (!this.claudeClient.isConfigured()) {
-            this.addSystemMessage("Please configure your Claude API key in settings first.");
+            this.addSystemMessage("AI provider not configured. Please check settings or wait for initialization to complete.");
             return;
         }
 

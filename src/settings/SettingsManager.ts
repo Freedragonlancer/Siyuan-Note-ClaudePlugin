@@ -95,13 +95,9 @@ export class SettingsManager {
                     console.log('[SettingsManager] DEBUG - moonshot model:', this.settings.providers.moonshot.model);
                 }
                 
-                // Save to memory caches (deep merged settings, not raw parsed)
+                // Cache to localStorage (in-memory cache is `this.settings`)
                 const serialized = JSON.stringify(this.settings);
                 localStorage.setItem(STORAGE_KEY, serialized);
-                sessionStorage.setItem(STORAGE_KEY, serialized);
-                if (typeof window !== 'undefined') {
-                    (window as any).__CLAUDE_SETTINGS__ = this.settings;
-                }
                 
                 console.log("[SettingsManager] ✅ Settings loaded from file and cached");
                 
@@ -218,12 +214,11 @@ export class SettingsManager {
             const serialized = JSON.stringify(newSettings, null, 2);
             console.log("[SettingsManager] Serialized settings (length:", serialized.length, ")");
 
-            // FIX Critical 1.5: Save to all storages BEFORE updating in-memory state
+            // FIX Critical 1.5: Save to storage BEFORE updating in-memory state
             // This ensures atomicity - either all succeed or none succeed
 
-            // Save to memory storages
+            // Save to localStorage cache
             localStorage.setItem(STORAGE_KEY, serialized);
-            sessionStorage.setItem(STORAGE_KEY, serialized);
 
             // Save to file system using SiYuan plugin API (most likely to fail)
             if (this.plugin && typeof this.plugin.saveData === 'function') {
@@ -245,12 +240,11 @@ export class SettingsManager {
             console.log("[SettingsManager] ✅ Settings saved successfully");
 
         } catch (error) {
-            // FIX Critical 1.5: Rollback localStorage/sessionStorage on failure
+            // FIX Critical 1.5: Rollback localStorage on failure
             console.error("[SettingsManager] ❌ Failed to save settings, rolling back:", error);
             try {
                 const oldSerialized = JSON.stringify(oldSettings, null, 2);
                 localStorage.setItem(STORAGE_KEY, oldSerialized);
-                sessionStorage.setItem(STORAGE_KEY, oldSerialized);
                 console.log("[SettingsManager] ✅ Rolled back to previous settings");
             } catch (rollbackError) {
                 console.error("[SettingsManager] ❌ Failed to rollback settings:", rollbackError);

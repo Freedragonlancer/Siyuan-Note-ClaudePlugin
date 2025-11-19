@@ -31,8 +31,7 @@ export class ConfigManager {
     private profiles: Map<string, ConfigProfile> = new Map();
     private activeProfileId: string = "";
     private promptTemplates: Map<string, PromptTemplate> = new Map();
-    private templatesLoaded: boolean = false;
-    private templatesLoadPromise: Promise<void> | null = null;
+    private templatesLoadPromise: Promise<void> | null = null; // null = loaded, non-null = loading
     private logger = Logger.createScoped('ConfigManager');
     private eventBus: PresetEventBus = getPresetEventBus(); // Event bus for preset synchronization
 
@@ -64,33 +63,31 @@ export class ConfigManager {
 
     /**
      * Wait for async initialization to complete (if needed)
-     * FIX Critical 1.2: Added timeout protection to prevent indefinite waiting
+     * FIX Critical 1.2: Added timeout protection with proper cleanup
      */
     async waitForInit(timeoutMs: number = 5000): Promise<void> {
-        // If templates are already loaded, return immediately
-        if (this.templatesLoaded) {
+        // If templates are already loaded (promise is null), return immediately
+        if (!this.templatesLoadPromise) {
             return;
         }
 
-        // FIX Critical 1.2: Add timeout protection
+        // Add timeout protection with proper cleanup
+        let timeoutHandle: NodeJS.Timeout;
         const timeoutPromise = new Promise<void>((_, reject) => {
-            setTimeout(() => reject(new Error('Template loading timeout')), timeoutMs);
+            timeoutHandle = setTimeout(() => reject(new Error('Template loading timeout')), timeoutMs);
         });
 
         try {
-            // If loading is in progress, wait for it with timeout
-            if (this.templatesLoadPromise) {
-                await Promise.race([this.templatesLoadPromise, timeoutPromise]);
-                return;
-            }
-
-            // Otherwise, start loading with timeout
-            await Promise.race([this.loadTemplates(), timeoutPromise]);
+            // Wait for loading to complete with timeout
+            await Promise.race([this.templatesLoadPromise, timeoutPromise]);
         } catch (error) {
             this.logger.error('waitForInit failed:', error);
-            // Mark as loaded to prevent future waits from blocking
-            this.templatesLoaded = true;
+            // Force-complete the promise to prevent future waits from blocking
+            this.templatesLoadPromise = null;
             throw error;
+        } finally {
+            // Always cleanup the timeout handle
+            clearTimeout(timeoutHandle!);
         }
     }
 
@@ -695,21 +692,21 @@ export class ConfigManager {
      * Load custom templates from storage (async)
      */
     private async loadTemplates(): Promise<void> {
-        // Prevent concurrent loading
-        if (this.templatesLoaded) {
-            console.log('[ConfigManager] Templates already loaded, skipping');
-            return;
-        }
-
+        // If already loading, wait for it to complete
         if (this.templatesLoadPromise) {
             console.log('[ConfigManager] Templates loading in progress, waiting...');
             await this.templatesLoadPromise;
             return;
         }
 
+        // Start loading (promise will be null when complete)
         this.templatesLoadPromise = this._loadTemplatesImpl();
-        await this.templatesLoadPromise;
-        this.templatesLoadPromise = null;
+        try {
+            await this.templatesLoadPromise;
+        } finally {
+            // Mark as complete by nulling the promise
+            this.templatesLoadPromise = null;
+        }
     }
 
     private async _loadTemplatesImpl(): Promise<void> {
@@ -770,8 +767,6 @@ export class ConfigManager {
 
             // Run migration for v1.1.0: Add filterRules field to existing templates
             this.migrateToV1_1_0();
-
-            this.templatesLoaded = true;
         } catch (error) {
             console.error('[ConfigManager] ❌ Failed to load custom templates:', error);
             throw error;

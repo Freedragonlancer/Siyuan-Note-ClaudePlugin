@@ -51,7 +51,7 @@ export class ConfigGenerator {
                 thinkingBudget: 8192  // Default 8K, max 24576 for 2.5 Flash
             },
             'xai': {
-                maxTokens: 4096,
+                maxTokens: 16384,  // Updated for Grok 4+ (supports up to 16K output tokens)
                 temperature: 0.7,
                 thinkingMode: false,
                 reasoningEffort: 'low'  // 'low' for speed, 'high' for depth

@@ -164,26 +164,30 @@ export class GeminiProvider extends BaseAIProvider {
 
     getAvailableModels(): string[] {
         return [
-            // Gemini 2.5 Series (Latest - 2025)
+            // Gemini 3.0 Series (Latest - November 2025)
+            'gemini-3-pro-preview-11-2025',      // Latest Gemini 3 Pro preview (PREVIEW)
+            'gemini-3-pro',                      // Gemini 3 Pro (if stable release is available)
+
+            // Gemini 2.5 Series (2025)
             'gemini-2.5-pro',                    // State-of-the-art thinking model (STABLE)
             'gemini-2.5-flash',                  // Best price-performance (STABLE)
             'gemini-2.5-flash-lite',             // Fastest, cost-efficient (STABLE)
             'gemini-2.5-flash-image',            // Image generation & understanding (STABLE)
             'gemini-2.5-flash-preview-09-2025', // Preview version (PREVIEW)
-            
+
             // Gemini 2.0 Series
             'gemini-2.0-flash',                  // Next-gen features (STABLE)
             'gemini-2.0-flash-001',              // Latest 2.0 Flash version
             'gemini-2.0-flash-exp',              // Experimental 2.0 Flash
             'gemini-2.0-flash-lite',             // 2.0 Lite version (STABLE)
-            
+
             // Gemini 1.5 Series (Previous generation)
             'gemini-1.5-pro-latest',             // Latest 1.5 Pro
             'gemini-1.5-pro',                    // 1.5 Pro
             'gemini-1.5-flash-latest',           // Latest 1.5 Flash
             'gemini-1.5-flash',                  // 1.5 Flash
             'gemini-1.5-flash-8b',               // 1.5 Flash 8B
-            
+
             // Legacy models (may be deprecated soon)
             'gemini-pro',                        // Legacy Pro
             'gemini-pro-vision',                 // Legacy Pro Vision
@@ -192,26 +196,30 @@ export class GeminiProvider extends BaseAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
+            // Gemini 3.0 models (1M token context window)
+            'gemini-3-pro': 8192,                // Max output tokens
+            'gemini-3-pro-preview': 8192,
+
             // Gemini 2.5 models (1M token context window)
             'gemini-2.5-pro': 8192,              // Max output tokens
             'gemini-2.5-flash': 8192,
             'gemini-2.5-flash-lite': 8192,
             'gemini-2.5-flash-image': 8192,
             'gemini-2.5-flash-preview': 8192,
-            
+
             // Gemini 2.0 models (1M token context window)
             'gemini-2.0-flash': 8192,
             'gemini-2.0-flash-001': 8192,
             'gemini-2.0-flash-exp': 8192,
             'gemini-2.0-flash-lite': 8192,
-            
+
             // Gemini 1.5 models
             'gemini-1.5-pro': 8192,
             'gemini-1.5-pro-latest': 8192,
             'gemini-1.5-flash': 8192,
             'gemini-1.5-flash-latest': 8192,
             'gemini-1.5-flash-8b': 8192,
-            
+
             // Legacy models
             'gemini-pro': 8192,
             'gemini-pro-vision': 4096,
@@ -254,6 +262,13 @@ export class GeminiProvider extends BaseAIProvider {
             defaultBaseURL: 'https://generativelanguage.googleapis.com',
             defaultModel: 'gemini-2.5-flash',
             models: [
+                {
+                    id: 'gemini-3-pro-preview-11-2025',
+                    displayName: 'Gemini 3 Pro Preview (最新，2025年11月)',
+                    contextWindow: 1000000,
+                    description: '最新Gemini 3 Pro预览版，先进推理能力',
+                    recommended: false,
+                },
                 {
                     id: 'gemini-2.5-flash',
                     displayName: 'Gemini 2.5 Flash (推荐，性价比最高)',

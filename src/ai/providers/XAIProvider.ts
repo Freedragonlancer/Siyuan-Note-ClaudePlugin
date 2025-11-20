@@ -59,13 +59,31 @@ export class XAIProvider extends OpenAIProvider {
 
     getAvailableModels(): string[] {
         return [
-            'grok-beta',
-            'grok-vision-beta',
+            // Grok 4.1 Series (Latest - November 2025)
+            'grok-4-1-fast-reasoning',           // Latest Grok 4.1 with reasoning (STABLE)
+            'grok-4-1-fast-non-reasoning',       // Latest Grok 4.1 non-reasoning (STABLE)
+
+            // Grok 4 Series (July 2025)
+            'grok-4-0709',                       // Grok 4 original release (STABLE)
+            'grok-4',                            // Grok 4 alias
+
+            // Legacy models
+            'grok-beta',                         // Legacy Grok Beta
+            'grok-vision-beta',                  // Legacy Grok Vision Beta
         ];
     }
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
+            // Grok 4.1 models
+            'grok-4-1-fast-reasoning': 16384,
+            'grok-4-1-fast-non-reasoning': 16384,
+
+            // Grok 4 models (256K context window)
+            'grok-4-0709': 16384,
+            'grok-4': 16384,
+
+            // Legacy models
             'grok-beta': 8192,
             'grok-vision-beta': 8192,
         };
@@ -82,16 +100,16 @@ export class XAIProvider extends OpenAIProvider {
             }
         }
 
-        return 8192; // Safe default
+        return 16384; // Safe default (updated for Grok 4+)
     }
 
     getParameterLimits(): ParameterLimits {
         // Note: this.config might not be set yet if called during construction validation
         // Use safe defaults for max tokens
-        const modelId = this.config?.modelId || 'grok-beta';
+        const modelId = this.config?.modelId || 'grok-4-1-fast-reasoning';
         return {
             temperature: { min: 0, max: 2, default: 1 },
-            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 8192 },
+            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 16384 },
             topP: { min: 0, max: 1, default: 1 },
         };
     }
@@ -104,20 +122,40 @@ export class XAIProvider extends OpenAIProvider {
             icon: '🚀',
             apiKeyUrl: 'https://console.x.ai/api-keys',
             defaultBaseURL: 'https://api.x.ai/v1',
-            defaultModel: 'grok-beta',
+            defaultModel: 'grok-4-1-fast-reasoning',
             models: [
                 {
-                    id: 'grok-beta',
-                    displayName: 'Grok Beta (推荐)',
-                    contextWindow: 131072,
-                    description: 'Grok基础模型 (128K)',
+                    id: 'grok-4-1-fast-reasoning',
+                    displayName: 'Grok 4.1 Fast Reasoning (推荐，最新)',
+                    contextWindow: 262144,
+                    description: 'Grok 4.1推理模型，降低65%错误率 (256K)',
                     recommended: true,
                 },
                 {
+                    id: 'grok-4-1-fast-non-reasoning',
+                    displayName: 'Grok 4.1 Fast Non-Reasoning',
+                    contextWindow: 262144,
+                    description: 'Grok 4.1非推理模型，更快响应 (256K)',
+                },
+                {
+                    id: 'grok-4-0709',
+                    displayName: 'Grok 4 (256K)',
+                    contextWindow: 262144,
+                    description: 'Grok 4原始版本，多模态理解 (256K)',
+                },
+                {
+                    id: 'grok-beta',
+                    displayName: 'Grok Beta (传统)',
+                    contextWindow: 131072,
+                    description: 'Grok基础模型 (128K)',
+                    deprecated: true,
+                },
+                {
                     id: 'grok-vision-beta',
-                    displayName: 'Grok Vision Beta (视觉)',
+                    displayName: 'Grok Vision Beta (传统)',
                     contextWindow: 131072,
                     description: 'Grok视觉模型，支持图像理解',
+                    deprecated: true,
                 },
             ],
             features: {

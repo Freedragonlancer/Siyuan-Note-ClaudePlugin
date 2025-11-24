@@ -510,6 +510,49 @@ export class SettingsUIBuilder {
         const shortcuts = settings.keyboardShortcuts || {};
 
         return `
+                <style>
+                    /* 录制按钮脉动动画 */
+                    @keyframes recording-pulse {
+                        0%, 100% {
+                            background-color: #e8f4fd;
+                            border-color: #1890ff;
+                            transform: scale(1);
+                        }
+                        50% {
+                            background-color: #bae7ff;
+                            border-color: #40a9ff;
+                            transform: scale(1.02);
+                        }
+                    }
+
+                    .shortcut-record-btn.recording {
+                        animation: recording-pulse 1.5s ease-in-out infinite;
+                        color: #1890ff;
+                        font-weight: 500;
+                    }
+
+                    .shortcut-record-btn:hover:not(:disabled) {
+                        background-color: #f0f0f0;
+                        border-color: #d9d9d9;
+                    }
+
+                    .shortcut-record-btn:disabled {
+                        opacity: 1;
+                    }
+
+                    /* 输入框录制状态 */
+                    .b3-text-field[readonly] {
+                        background-color: #fafafa;
+                    }
+
+                    /* 验证提示样式 */
+                    .shortcut-validation-hint {
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                    }
+                </style>
+
                 <div class="section-header" style="margin-bottom: 16px;">
                     <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
                         ⌨️ 快捷键设置
@@ -524,15 +567,28 @@ export class SettingsUIBuilder {
                     <div class="setting-label" style="margin-bottom: 8px;">
                         <span style="font-weight: 500;">AI 快速编辑</span>
                     </div>
-                    <input
-                        class="b3-text-field"
-                        type="text"
-                        id="shortcut-quick-edit"
-                        placeholder="${KeyboardShortcutFormatter.format('⌃⇧Q')}"
-                        value="${KeyboardShortcutFormatter.format(shortcuts.quickEdit || '⌃⇧Q')}"
-                        style="width: 100%;"
-                    >
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input
+                            class="b3-text-field"
+                            type="text"
+                            id="shortcut-quick-edit"
+                            placeholder="${KeyboardShortcutFormatter.format('⌃⇧Q')}"
+                            value="${KeyboardShortcutFormatter.format(shortcuts.quickEdit || '⌃⇧Q')}"
+                            readonly
+                            style="flex: 1; cursor: default;"
+                        >
+                        <button
+                            class="b3-button b3-button--outline shortcut-record-btn"
+                            id="record-shortcut-quick-edit"
+                            data-shortcut-name="quickEdit"
+                            style="min-width: 90px;"
+                        >
+                            🎤 录制
+                        </button>
+                    </div>
+                    <div class="shortcut-validation-hint" id="validation-quick-edit" style="margin-top: 6px; font-size: 12px; min-height: 18px;">
+                    </div>
+                    <div class="ft__smaller" style="margin-top: 8px; color: var(--b3-theme-on-surface);">
                         选中文本后快速调用 AI 编辑功能（默认：${KeyboardShortcutFormatter.format('⌃⇧Q')}）
                     </div>
                 </div>
@@ -542,15 +598,28 @@ export class SettingsUIBuilder {
                     <div class="setting-label" style="margin-bottom: 8px;">
                         <span style="font-weight: 500;">撤销 AI 编辑</span>
                     </div>
-                    <input
-                        class="b3-text-field"
-                        type="text"
-                        id="shortcut-undo-ai-edit"
-                        placeholder="${KeyboardShortcutFormatter.format('⌃⇧Z')}"
-                        value="${KeyboardShortcutFormatter.format(shortcuts.undoAIEdit || '⌃⇧Z')}"
-                        style="width: 100%;"
-                    >
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input
+                            class="b3-text-field"
+                            type="text"
+                            id="shortcut-undo-ai-edit"
+                            placeholder="${KeyboardShortcutFormatter.format('⌃⇧Z')}"
+                            value="${KeyboardShortcutFormatter.format(shortcuts.undoAIEdit || '⌃⇧Z')}"
+                            readonly
+                            style="flex: 1; cursor: default;"
+                        >
+                        <button
+                            class="b3-button b3-button--outline shortcut-record-btn"
+                            id="record-shortcut-undo-ai-edit"
+                            data-shortcut-name="undoAIEdit"
+                            style="min-width: 90px;"
+                        >
+                            🎤 录制
+                        </button>
+                    </div>
+                    <div class="shortcut-validation-hint" id="validation-undo-ai-edit" style="margin-top: 6px; font-size: 12px; min-height: 18px;">
+                    </div>
+                    <div class="ft__smaller" style="margin-top: 8px; color: var(--b3-theme-on-surface);">
                         撤销上一次 AI 编辑操作（默认：${KeyboardShortcutFormatter.format('⌃⇧Z')}）
                     </div>
                 </div>
@@ -560,15 +629,28 @@ export class SettingsUIBuilder {
                     <div class="setting-label" style="margin-bottom: 8px;">
                         <span style="font-weight: 500;">打开 Claude AI 面板</span>
                     </div>
-                    <input
-                        class="b3-text-field"
-                        type="text"
-                        id="shortcut-open-claude"
-                        placeholder="${KeyboardShortcutFormatter.format('⌥⇧C')}"
-                        value="${KeyboardShortcutFormatter.format(shortcuts.openClaude || '⌥⇧C')}"
-                        style="width: 100%;"
-                    >
-                    <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input
+                            class="b3-text-field"
+                            type="text"
+                            id="shortcut-open-claude"
+                            placeholder="${KeyboardShortcutFormatter.format('⌥⇧C')}"
+                            value="${KeyboardShortcutFormatter.format(shortcuts.openClaude || '⌥⇧C')}"
+                            readonly
+                            style="flex: 1; cursor: default;"
+                        >
+                        <button
+                            class="b3-button b3-button--outline shortcut-record-btn"
+                            id="record-shortcut-open-claude"
+                            data-shortcut-name="openClaude"
+                            style="min-width: 90px;"
+                        >
+                            🎤 录制
+                        </button>
+                    </div>
+                    <div class="shortcut-validation-hint" id="validation-open-claude" style="margin-top: 6px; font-size: 12px; min-height: 18px;">
+                    </div>
+                    <div class="ft__smaller" style="margin-top: 8px; color: var(--b3-theme-on-surface);">
                         打开侧边栏 Claude AI 聊天面板（默认：${KeyboardShortcutFormatter.format('⌥⇧C')}）
                     </div>
                 </div>
@@ -581,16 +663,30 @@ export class SettingsUIBuilder {
                     </button>
                 </div>
 
+                <!-- Restart Warning -->
+                <div style="margin-top: 16px; padding: 16px; background: var(--b3-theme-warning-lightest); border-left: 4px solid var(--b3-theme-warning); border-radius: 6px;">
+                    <div style="display: flex; align-items: start; gap: 12px;">
+                        <svg style="width: 20px; height: 20px; flex-shrink: 0; color: var(--b3-theme-warning);"><use xlink:href="#iconInfo"></use></svg>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 14px; color: var(--b3-theme-on-surface); margin-bottom: 6px;">
+                                重要提示：快捷键修改后需要重启思源笔记
+                            </div>
+                            <div class="ft__smaller" style="color: var(--b3-theme-on-surface-light); line-height: 1.5;">
+                                这是 SiYuan 插件机制的限制，快捷键在插件加载时注册。<br>
+                                保存设置后，请关闭并重新启动思源笔记，新快捷键才会生效。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Format Guide -->
-                <div style="margin-top: 16px; padding: 12px; background: var(--b3-theme-surface); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
+                <div style="margin-top: 12px; padding: 12px; background: var(--b3-theme-surface); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
                     <div class="ft__smaller" style="line-height: 1.6;">
                         <strong>⌨️ 快捷键格式说明：</strong><br>
                         • ⌃ = Ctrl（Windows/Linux）或 ⌘ Command（macOS）<br>
                         • ⌥ = Alt（Windows/Linux）或 ⌥ Option（macOS）<br>
                         • ⇧ = Shift<br>
-                        • 示例：⌃⇧Q = ${KeyboardShortcutFormatter.format('⌃⇧Q')}，⌥⇧C = ${KeyboardShortcutFormatter.format('⌥⇧C')}<br>
-                        <br>
-                        <strong>💡 提示：</strong>修改后需要重启思源笔记才能生效
+                        • 示例：⌃⇧Q = ${KeyboardShortcutFormatter.format('⌃⇧Q')}，⌥⇧C = ${KeyboardShortcutFormatter.format('⌥⇧C')}
                     </div>
                 </div>
         `;

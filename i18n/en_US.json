@@ -38,5 +38,14 @@
   "quickEditInsertSuccess": "AI content inserted below (original kept)",
   "quickEditReplaceSuccess": "Changes applied (undo supported)",
   "local-plugintopunpin": "Unpin from Top Bar",
-  "local-plugintoppin": "Pin to Top Bar"
+  "local-plugintoppin": "Pin to Top Bar",
+  "shortcutRecordButton": "Record",
+  "shortcutRecording": "Press shortcut keys...",
+  "shortcutRecordingHint": "Recording...",
+  "shortcutRecordTimeout": "Recording timeout, please try again",
+  "shortcutValid": "Shortcut available",
+  "shortcutConflictSystem": "Conflicts with SiYuan system shortcut",
+  "shortcutConflictPlugin": "Conflicts with other plugin shortcut",
+  "shortcutFormatError": "Invalid shortcut format",
+  "shortcutSuggestions": "Suggestions"
 }

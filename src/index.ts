@@ -147,9 +147,13 @@ export default class ClaudeAssistantPlugin extends Plugin {
         let settings: ClaudeSettings;
 
         try {
-            // Get cached settings immediately (may be defaults if first load)
+            // 🔧 CRITICAL FIX: Wait for file loading to complete before registering commands
+            // This ensures we use the latest settings from file, not stale cache
+            await this.settingsManager.waitForLoad();
+
+            // Get settings after file load completes
             const cachedSettings = this.settingsManager.getSettings();
-            console.log("[Plugin] Using cached settings for initialization:", { hasApiKey: !!cachedSettings.apiKey });
+            console.log("[Plugin] Using loaded settings for initialization:", { hasApiKey: !!cachedSettings.apiKey });
 
             // Get active profile from ConfigManager
             const activeProfile = this.configManager.getActiveProfile();
@@ -192,6 +196,15 @@ export default class ClaudeAssistantPlugin extends Plugin {
         }
 
         // Add commands (non-UI initialization)
+        // Debug: Log registered keyboard shortcuts (using macOS symbols for SiYuan API)
+        console.log('[Plugin] Keyboard Shortcuts Registration:', {
+            quickEdit: settings.keyboardShortcuts?.quickEdit || "⌃⇧Q",
+            undoAIEdit: settings.keyboardShortcuts?.undoAIEdit || "⌃⇧Z",
+            openClaude: settings.keyboardShortcuts?.openClaude || "⌥⇧C",
+            platform: process.platform,
+            note: "SiYuan requires macOS symbol format on all platforms"
+        });
+
         this.addCommand({
             langKey: "openClaude",
             hotkey: settings.keyboardShortcuts?.openClaude || "⌥⇧C",

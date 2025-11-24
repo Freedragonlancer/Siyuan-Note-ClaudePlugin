@@ -19,6 +19,8 @@ import type { ConfigProfile } from "../config-types";
 import type { AIProviderType } from "../../ai/types";
 import { AIProviderFactory } from "../../ai/AIProviderFactory";
 import { KeyboardShortcutFormatter } from "../../utils/KeyboardShortcutFormatter";
+import { KeyboardRecorder } from "../../utils/KeyboardRecorder";
+import { ShortcutValidator } from "../../utils/ShortcutValidator";
 import { SettingsUIBuilder } from "./SettingsUIBuilder";
 import { ProfileManager } from "../managers/ProfileManager";
 import { SettingsPersistence } from "../managers/SettingsPersistence";
@@ -39,6 +41,8 @@ export class SettingsEventHandler {
     private profileManager: ProfileManager;
     private settingsPersistence: SettingsPersistence;
     private currentProfile: ConfigProfile;
+    private shortcutValidator: ShortcutValidator;
+    private currentRecorder: KeyboardRecorder | null = null;
 
     constructor(
         profileManager: ProfileManager,
@@ -48,6 +52,7 @@ export class SettingsEventHandler {
         this.profileManager = profileManager;
         this.settingsPersistence = settingsPersistence;
         this.currentProfile = currentProfile;
+        this.shortcutValidator = new ShortcutValidator();
     }
 
     /**
@@ -435,16 +440,221 @@ export class SettingsEventHandler {
      * Attach keyboard shortcut event listeners
      */
     private attachKeyboardShortcutListeners(container: HTMLElement): void {
-        const restoreDefaultShortcutsBtn = container.querySelector("#restore-default-shortcuts");
-        restoreDefaultShortcutsBtn?.addEventListener("click", () => {
-            const quickEditInput = container.querySelector("#shortcut-quick-edit") as HTMLInputElement;
-            const undoAIEditInput = container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement;
-            const openClaudeInput = container.querySelector("#shortcut-open-claude") as HTMLInputElement;
+        if (!container) {
+            console.error('[SettingsEventHandler] Container is null in attachKeyboardShortcutListeners');
+            return;
+        }
 
-            if (quickEditInput) quickEditInput.value = KeyboardShortcutFormatter.format("⌃⇧Q");
-            if (undoAIEditInput) undoAIEditInput.value = KeyboardShortcutFormatter.format("⌃⇧Z");
-            if (openClaudeInput) openClaudeInput.value = KeyboardShortcutFormatter.format("⌥⇧C");
-        });
+        try {
+            // 为所有录制按钮绑定事件
+            const recordButtons = container.querySelectorAll('.shortcut-record-btn');
+            recordButtons.forEach((btn) => {
+                const button = btn as HTMLButtonElement;
+                const shortcutName = button.dataset.shortcutName;
+                if (!shortcutName) return;
+
+                button.addEventListener('click', () => {
+                    this.startRecording(button, shortcutName, container);
+                });
+            });
+
+            // 恢复默认快捷键按钮
+            const restoreDefaultShortcutsBtn = container.querySelector("#restore-default-shortcuts");
+            restoreDefaultShortcutsBtn?.addEventListener("click", () => {
+                const shortcuts = [
+                    { name: 'quickEdit', default: '⌃⇧Q' },
+                    { name: 'undoAIEdit', default: '⌃⇧Z' },
+                    { name: 'openClaude', default: '⌥⇧C' }
+                ];
+
+                shortcuts.forEach(({ name, default: defaultShortcut }) => {
+                    const input = container.querySelector(`#shortcut-${this.toKebabCase(name)}`) as HTMLInputElement;
+                    if (input) {
+                        input.value = KeyboardShortcutFormatter.format(defaultShortcut);
+                        // 验证默认快捷键
+                        this.validateShortcut(name, defaultShortcut, container);
+                    }
+                });
+            });
+
+            // 初始验证所有快捷键（延迟执行）
+            this.validateAllShortcuts(container);
+        } catch (error) {
+            console.error('[SettingsEventHandler] Error attaching keyboard shortcut listeners:', error);
+        }
+    }
+
+    /**
+     * 开始录制快捷键
+     */
+    private startRecording(button: HTMLButtonElement, shortcutName: string, container: HTMLElement): void {
+        if (!button || !shortcutName || !container) {
+            console.error('[SettingsEventHandler] Invalid parameters for startRecording');
+            return;
+        }
+
+        try {
+            // 停止之前的录制（如果有）
+            if (this.currentRecorder) {
+                this.currentRecorder.stopRecording();
+            }
+
+            const inputId = `shortcut-${this.toKebabCase(shortcutName)}`;
+            const input = container.querySelector(`#${inputId}`) as HTMLInputElement;
+            const validationHint = container.querySelector(`#validation-${this.toKebabCase(shortcutName)}`) as HTMLElement;
+
+            if (!input || !validationHint) {
+                console.warn('[SettingsEventHandler] Cannot find input or validation hint element');
+                return;
+            }
+
+            // 更新按钮状态
+            button.textContent = '⏹ 按下快捷键...';
+            button.classList.add('recording');
+            button.disabled = true;
+
+            // 创建录制器
+            this.currentRecorder = new KeyboardRecorder({
+                onPreview: (preview) => {
+                    // 实时显示预览
+                    input.value = preview;
+                    validationHint.innerHTML = '<span style="color: #666;">⏺️ 录制中...</span>';
+                },
+                onRecorded: (shortcut) => {
+                    // 录制完成
+                    input.value = shortcut;
+
+                    // 验证快捷键
+                    this.validateShortcut(shortcutName, shortcut, container);
+
+                    // 重置按钮状态
+                    button.textContent = '🎤 录制';
+                    button.classList.remove('recording');
+                    button.disabled = false;
+                },
+                onStateChange: (state) => {
+                    if (state === 'idle') {
+                        button.textContent = '🎤 录制';
+                        button.classList.remove('recording');
+                        button.disabled = false;
+                    }
+                }
+            });
+
+            // 开始录制
+            this.currentRecorder.startRecording();
+
+            // 5秒后自动停止（防止用户忘记）
+            setTimeout(() => {
+                if (this.currentRecorder && this.currentRecorder.getState() === 'recording') {
+                    this.currentRecorder.stopRecording();
+                    validationHint.innerHTML = '<span style="color: #f5a623;">⚠️ 录制超时，请重新录制</span>';
+                }
+            }, 5000);
+        } catch (error) {
+            console.error('[SettingsEventHandler] Error starting recording:', error);
+            // 恢复按钮状态
+            button.textContent = '🎤 录制';
+            button.classList.remove('recording');
+            button.disabled = false;
+        }
+    }
+
+    /**
+     * 验证单个快捷键
+     */
+    private validateShortcut(shortcutName: string, shortcut: string, container: HTMLElement): void {
+        // 安全检查
+        if (!container || !shortcutName || !shortcut) {
+            return;
+        }
+
+        const validationHint = container.querySelector(`#validation-${this.toKebabCase(shortcutName)}`) as HTMLElement;
+        if (!validationHint) {
+            // 验证提示元素不存在，可能 DOM 还未渲染完成
+            return;
+        }
+
+        try {
+            // 转换为 Mac 格式（用于验证）
+            const macFormat = KeyboardShortcutFormatter.toMacFormat(shortcut);
+
+            // 更新验证器的快捷键列表（用于冲突检测）
+            const shortcuts = this.getCurrentShortcuts(container);
+            this.shortcutValidator.setPluginShortcuts(shortcuts);
+
+            // 执行验证
+            const result = this.shortcutValidator.validate(shortcut, shortcutName);
+
+            // 显示验证结果
+            if (result.valid) {
+                validationHint.innerHTML = '<span style="color: #52c41a;">✓ 快捷键可用</span>';
+            } else {
+                if (result.type === 'conflict') {
+                    const suggestions = result.suggestions?.length
+                        ? `<br><span style="font-size: 11px;">建议：${result.suggestions.slice(0, 2).join('、')}</span>`
+                        : '';
+                    validationHint.innerHTML = `<span style="color: #f5a623;">⚠️ ${result.message}${suggestions}</span>`;
+                } else {
+                    // 格式错误
+                    validationHint.innerHTML = `<span style="color: #ff4d4f;">✗ ${result.message}</span>`;
+                }
+            }
+        } catch (error) {
+            console.error('[SettingsEventHandler] Error validating shortcut:', error);
+            // 静默失败，不影响其他功能
+        }
+    }
+
+    /**
+     * 验证所有快捷键（初始化时调用）
+     */
+    private validateAllShortcuts(container: HTMLElement): void {
+        if (!container) {
+            return;
+        }
+
+        // 延迟执行，确保 DOM 完全渲染
+        setTimeout(() => {
+            try {
+                const shortcuts = [
+                    { name: 'quickEdit', inputId: 'shortcut-quick-edit' },
+                    { name: 'undoAIEdit', inputId: 'shortcut-undo-ai-edit' },
+                    { name: 'openClaude', inputId: 'shortcut-open-claude' }
+                ];
+
+                shortcuts.forEach(({ name, inputId }) => {
+                    const input = container.querySelector(`#${inputId}`) as HTMLInputElement;
+                    if (input && input.value && input.value.trim() !== '') {
+                        this.validateShortcut(name, input.value, container);
+                    }
+                });
+            } catch (error) {
+                console.error('[SettingsEventHandler] Error validating all shortcuts:', error);
+            }
+        }, 100); // 延迟 100ms 确保 DOM 渲染完成
+    }
+
+    /**
+     * 获取当前所有快捷键
+     */
+    private getCurrentShortcuts(container: HTMLElement): Record<string, string> {
+        const quickEditInput = container.querySelector("#shortcut-quick-edit") as HTMLInputElement;
+        const undoAIEditInput = container.querySelector("#shortcut-undo-ai-edit") as HTMLInputElement;
+        const openClaudeInput = container.querySelector("#shortcut-open-claude") as HTMLInputElement;
+
+        return {
+            quickEdit: quickEditInput?.value || '',
+            undoAIEdit: undoAIEditInput?.value || '',
+            openClaude: openClaudeInput?.value || ''
+        };
+    }
+
+    /**
+     * 转换驼峰命名为短横线命名
+     */
+    private toKebabCase(str: string): string {
+        return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
     }
 
     /**

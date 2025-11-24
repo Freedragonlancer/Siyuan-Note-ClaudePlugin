@@ -45,7 +45,8 @@
       "Bash(npm run release:*)",
       "Bash(timeout 3 gh run:*)",
       "Bash(npm run bump-version:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:docs.x.ai)"
     ],
     "deny": [],
     "ask": []

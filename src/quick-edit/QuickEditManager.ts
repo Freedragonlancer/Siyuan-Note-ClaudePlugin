@@ -604,12 +604,14 @@ export class QuickEditManager {
         // This ensures the preview appears at the end of the selection, not at the beginning
         const lastBlockId = selection.selectedBlockIds?.[selection.selectedBlockIds.length - 1] || selection.blockId;
 
-        // FIX: 添加滚动定位和重试机制，确保块可见
+        // FIX v5: 在正确的容器中查找块元素
+        // 思源在多个位置存储 data-node-id（面包屑、正文等），必须在 .protyle-wysiwyg 中查找
         let lastBlockElement: HTMLElement | null = null;
 
         // 尝试查找目标块（最多重试3次）
         for (let attempt = 1; attempt <= 3; attempt++) {
-            lastBlockElement = document.querySelector(`[data-node-id="${lastBlockId}"]`) as HTMLElement;
+            // FIX: 必须在 .protyle-wysiwyg 容器内查找，避免找到面包屑等其他元素
+            lastBlockElement = document.querySelector(`.protyle-wysiwyg [data-node-id="${lastBlockId}"]`) as HTMLElement;
 
             if (lastBlockElement) {
                 break;
@@ -685,6 +687,11 @@ export class QuickEditManager {
 
         // Bind action buttons
         this.bindActionButtons(blockElement, blockId);
+
+        // 确保预览区块在可见区域
+        requestAnimationFrame(() => {
+            blockElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
 
         // Start AI processing
         await this.processInlineEdit(inlineBlock);

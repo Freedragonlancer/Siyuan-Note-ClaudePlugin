@@ -59,15 +59,44 @@ export class InlineEditRenderer {
             suggestionBlock.style.backgroundColor = options.colors.suggestion;
         }
 
-        // FIX: Insert comparison block after the block's content
-        // Find the last content element in the block (usually the paragraph text)
-        const contentElement = containerElement.querySelector('[contenteditable="true"]') || containerElement;
+        // FIX v5: 强制在 .protyle-wysiwyg 容器中插入预览区块
+        // 策略：始终从 containerElement 向上查找 .protyle-wysiwyg
+        const wysiwygContainer = containerElement.closest('.protyle-wysiwyg') as HTMLElement;
 
-        // Insert after the content element, before any IAL or other metadata
-        if (contentElement.nextElementSibling) {
-            containerElement.insertBefore(compareBlock, contentElement.nextElementSibling);
+        // 确保我们插入的是正确的 block 元素（必须直接是 wysiwyg 的子元素）
+        let targetBlock: HTMLElement = containerElement;
+
+        // 如果 containerElement 不是 wysiwyg 的直接子元素，向上查找
+        if (wysiwygContainer && containerElement.parentElement !== wysiwygContainer) {
+            let current: HTMLElement | null = containerElement;
+            while (current && current.parentElement !== wysiwygContainer) {
+                current = current.parentElement;
+            }
+            if (current) {
+                targetBlock = current;
+            }
+        }
+
+        if (wysiwygContainer) {
+            // 在 wysiwyg 容器内，将预览块插入到目标块之后
+            if (targetBlock.nextElementSibling) {
+                wysiwygContainer.insertBefore(compareBlock, targetBlock.nextElementSibling);
+            } else {
+                wysiwygContainer.appendChild(compareBlock);
+            }
         } else {
-            containerElement.appendChild(compareBlock);
+            // 备选方案：没有找到 wysiwyg 容器，使用父元素
+            console.warn('[InlineEditRenderer] No wysiwygContainer found for block, using parentElement fallback');
+            const parentContainer = containerElement.parentElement;
+            if (parentContainer) {
+                if (containerElement.nextElementSibling) {
+                    parentContainer.insertBefore(compareBlock, containerElement.nextElementSibling);
+                } else {
+                    parentContainer.appendChild(compareBlock);
+                }
+            } else {
+                containerElement.appendChild(compareBlock);
+            }
         }
 
         // Prevent text selection on the comparison block

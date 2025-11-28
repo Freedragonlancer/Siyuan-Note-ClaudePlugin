@@ -47,12 +47,20 @@ function warning(message) {
 }
 
 /**
- * Get the latest git tag
+ * Get the latest git tag (cross-platform compatible)
  */
 function getLatestTag() {
   try {
-    const tag = execSync('git tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$" | head -n 1', { encoding: 'utf-8' }).trim();
-    return tag || null;
+    // Get all tags sorted by version (descending)
+    const tagsOutput = execSync('git tag --sort=-v:refname', { encoding: 'utf-8' }).trim();
+    if (!tagsOutput) return null;
+
+    // Filter for semantic version tags (v0.0.0 format)
+    const tags = tagsOutput.split('\n');
+    const semverRegex = /^v\d+\.\d+\.\d+$/;
+    const latestTag = tags.find(tag => semverRegex.test(tag.trim()));
+
+    return latestTag ? latestTag.trim() : null;
   } catch (err) {
     return null;
   }

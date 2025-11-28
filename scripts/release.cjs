@@ -63,11 +63,13 @@ function step(message) {
  */
 function exec(command, options = {}) {
   try {
-    return execSync(command, {
+    const result = execSync(command, {
       encoding: 'utf-8',
       stdio: options.silent ? 'pipe' : 'inherit',
       ...options
-    }).trim();
+    });
+    // When stdio is 'inherit', execSync returns null
+    return result ? result.trim() : '';
   } catch (err) {
     if (!options.ignoreError) {
       error(`Command failed: ${command}\n${err.message}`);

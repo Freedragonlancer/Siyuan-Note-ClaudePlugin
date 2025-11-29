@@ -144,6 +144,7 @@ export class AnthropicProvider extends BaseAIProvider {
 
     getAvailableModels(): string[] {
         return [
+            'claude-opus-4-5-20251101',
             'claude-sonnet-4-5-20250929',
             'claude-sonnet-4-20250514',
             'claude-opus-4-20250514',
@@ -184,10 +185,16 @@ export class AnthropicProvider extends BaseAIProvider {
             defaultModel: 'claude-sonnet-4-5-20250929',
             models: [
                 {
-                    id: 'claude-sonnet-4-5-20250929',
-                    displayName: 'Claude Sonnet 4.5 (Latest, Recommended)',
+                    id: 'claude-opus-4-5-20251101',
+                    displayName: 'Claude Opus 4.5 (Most Capable)',
                     contextWindow: 200000,
-                    description: '最新Sonnet 4.5，平衡性能和成本',
+                    description: '最强旗舰模型，卓越的推理和创造力',
+                },
+                {
+                    id: 'claude-sonnet-4-5-20250929',
+                    displayName: 'Claude Sonnet 4.5 (Recommended)',
+                    contextWindow: 200000,
+                    description: '平衡性能和成本',
                     recommended: true,
                 },
                 {
@@ -197,9 +204,8 @@ export class AnthropicProvider extends BaseAIProvider {
                 },
                 {
                     id: 'claude-opus-4-20250514',
-                    displayName: 'Claude Opus 4 (Most Capable)',
+                    displayName: 'Claude Opus 4',
                     contextWindow: 200000,
-                    description: '最强能力模型',
                 },
                 {
                     id: 'claude-3-7-sonnet-20250219',

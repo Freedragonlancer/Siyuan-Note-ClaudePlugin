@@ -161,6 +161,9 @@ export interface EditSettings {
 
     /** Show keyboard shortcuts hint in dialog (default: true) */
     quickEditShowKeyboardHints: boolean;
+
+    /** Quick edit auto action after completion (default: 'preview') */
+    quickEditAutoAction?: 'preview' | 'replace' | 'insert';
 }
 
 /**
@@ -200,7 +203,10 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
     quickEditShowProgressIndicator: true,
     quickEditEnableTypingAnimation: true,
     quickEditOriginalTextColor: 'rgba(239, 68, 68, 0.1)',
-    quickEditSuggestionTextColor: 'rgba(34, 197, 94, 0.1)'
+    quickEditSuggestionTextColor: 'rgba(34, 197, 94, 0.1)',
+
+    // Auto action after completion
+    quickEditAutoAction: 'preview'  // 'preview' | 'replace' | 'insert'
 };
 
 /**

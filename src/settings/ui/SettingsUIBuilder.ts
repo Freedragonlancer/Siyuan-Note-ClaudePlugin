@@ -553,6 +553,36 @@ export class SettingsUIBuilder {
                     }
                 </style>
 
+                <!-- Quick Edit Auto Action Setting -->
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
+                        ⚡ 快速编辑行为
+                    </h3>
+                    <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
+                        设置 AI 编辑完成后的默认行为
+                    </div>
+                </div>
+
+                <div class="setting-item" style="margin-bottom: 24px;">
+                    <div class="setting-label" style="margin-bottom: 8px;">
+                        <span style="font-weight: 500;">完成后动作</span>
+                    </div>
+                    <select
+                        class="b3-select"
+                        id="quick-edit-auto-action"
+                        style="width: 100%;"
+                    >
+                        <option value="preview" ${(settings.editSettings?.quickEditAutoAction || 'preview') === 'preview' ? 'selected' : ''}>预览确认（默认）</option>
+                        <option value="replace" ${settings.editSettings?.quickEditAutoAction === 'replace' ? 'selected' : ''}>自动替换原文</option>
+                        <option value="insert" ${settings.editSettings?.quickEditAutoAction === 'insert' ? 'selected' : ''}>自动插入到下方</option>
+                    </select>
+                    <div class="ft__smaller" style="margin-top: 8px; color: var(--b3-theme-on-surface);">
+                        • <b>预览确认</b>：显示 AI 结果，需手动选择接受/拒绝<br>
+                        • <b>自动替换</b>：AI 完成后直接替换原文<br>
+                        • <b>自动插入</b>：AI 完成后直接插入到原文下方
+                    </div>
+                </div>
+
                 <div class="section-header" style="margin-bottom: 16px;">
                     <h3 style="margin: 0; font-size: 15px; font-weight: 500;">
                         ⌨️ 快捷键设置

@@ -924,7 +924,26 @@ export class QuickEditManager {
                             }
                         }
 
-                        this.renderer.completeStreaming(block.element);
+                        // Check auto action setting - read from ConfigManager for live updates
+                        const currentProfile = this.configManager.getActiveProfile();
+                        const autoAction = currentProfile?.settings?.editSettings?.quickEditAutoAction || 'preview';
+
+                        if (autoAction === 'preview') {
+                            // Default: show review buttons
+                            this.renderer.completeStreaming(block.element);
+                        } else {
+                            // Auto mode: show hint, then auto-apply
+                            this.renderer.completeStreamingAutoMode(block.element, autoAction);
+
+                            // Delay to let user see the result, then auto-apply
+                            setTimeout(() => {
+                                if (autoAction === 'replace') {
+                                    this.handleAccept(block.id);
+                                } else if (autoAction === 'insert') {
+                                    this.handleInsert(block.id);
+                                }
+                            }, 500);
+                        }
                     }
 
                     // Save final joined responses

@@ -277,6 +277,25 @@ export class InlineEditRenderer {
     }
 
     /**
+     * Complete streaming in auto mode (no buttons, show auto-apply hint)
+     * Used when quickEditAutoAction is 'replace' or 'insert'
+     */
+    public completeStreamingAutoMode(blockElement: HTMLElement, action: 'replace' | 'insert'): void {
+        const loading = blockElement.querySelector('.inline-edit-block__loading') as HTMLElement;
+        const progress = blockElement.querySelector('.inline-edit-block__progress') as HTMLElement;
+        const toolbar = blockElement.querySelector('.inline-edit-block__toolbar') as HTMLElement;
+
+        if (loading) loading.style.display = 'none';
+        if (progress) {
+            const actionText = action === 'replace' ? '替换' : '插入';
+            progress.innerHTML = `<span style="color: var(--b3-theme-primary);">✓ 即将自动${actionText}...</span>`;
+            progress.style.display = 'block';
+        }
+        // Hide toolbar (no buttons in auto mode)
+        if (toolbar) toolbar.style.display = 'none';
+    }
+
+    /**
      * Show action toolbar
      */
     public showToolbar(blockElement: HTMLElement): void {

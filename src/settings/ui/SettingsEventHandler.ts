@@ -87,6 +87,9 @@ export class SettingsEventHandler {
         // Logging configuration
         this.attachLoggingListeners(container);
 
+        // Quick Edit auto action
+        this.attachQuickEditAutoActionListener(container);
+
         // Keyboard shortcuts
         this.attachKeyboardShortcutListeners(container);
 
@@ -433,6 +436,35 @@ export class SettingsEventHandler {
             if (logResponseCheckbox) {
                 logResponseCheckbox.disabled = !enabled;
             }
+        });
+    }
+
+    /**
+     * Attach quick edit auto action listener
+     */
+    private attachQuickEditAutoActionListener(container: HTMLElement): void {
+        const autoActionSelect = container.querySelector('#quick-edit-auto-action') as HTMLSelectElement;
+        if (!autoActionSelect) return;
+
+        autoActionSelect.addEventListener('change', () => {
+            const newValue = autoActionSelect.value as 'preview' | 'replace' | 'insert';
+
+            // Update settings
+            const currentSettings = this.currentProfile.settings;
+            const updatedSettings = {
+                ...currentSettings,
+                editSettings: {
+                    ...currentSettings.editSettings,
+                    quickEditAutoAction: newValue
+                }
+            };
+
+            // Save to profile
+            this.currentProfile.settings = updatedSettings;
+            this.profileManager.updateProfile(this.currentProfile);
+            this.settingsPersistence.saveAllSettings(this.profileManager.getAllProfiles());
+
+            console.log('[SettingsEventHandler] Quick Edit auto action updated to:', newValue);
         });
     }
 

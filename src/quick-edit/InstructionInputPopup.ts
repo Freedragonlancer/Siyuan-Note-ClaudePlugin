@@ -293,54 +293,27 @@ export class InstructionInputPopup {
         // Generate dropdown options - simplified to show preset names only
         const presetsWithEditInstruction = this.presets.filter(p => p.editInstruction && p.editInstruction.trim());
         const options = presetsWithEditInstruction
-            .map((preset, idx) => {
-                const shortcut = idx < 9 ? ` [${idx + 1}]` : '';
+            .map((preset) => {
                 const selected = preset.id === presetId ? ' selected' : '';
-                return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}${shortcut}</option>`;
+                return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}</option>`;
             })
             .join('');
 
-        // Generate quick access buttons for first 5 presets (第二个功能 - 全局切换)
-        let presetsContent = '';
-        if (this.presets.length > 0) {
-            const quickAccessButtons = this.presets
-                .slice(0, 5)
-                .map((preset, idx) => {
-                    // Check if this preset is the one currently selected in the popup
-                    const isSelected = preset.id === presetId;
-                    // Check if this preset is globally active (optional indicator)
-                    const isGloballyActive = this.isActivePreset(preset);
+        // Get current auto action setting
+        const currentSettings = this.configManager.getActiveProfile().settings;
+        const currentAutoAction = currentSettings.editSettings?.quickEditAutoAction || 'preview';
 
-                    const shortText = preset.name.length > 12
-                        ? preset.name.substring(0, 12) + '...'
-                        : preset.name;
-
-                    // Use selected state for highlighting, not globally active
-                    const activeClass = isSelected ? ' preset-btn--active' : '';
-                    const activeBadge = isSelected ? '<span class="preset-btn__badge">✓</span>' : '';
-                    const globalActiveHint = isGloballyActive && !isSelected ? ' 🌍' : '';
-                    const tooltip = `${this.escapeHtml(preset.name)}${globalActiveHint}\n${preset.description || ''}\n\n点击切换到此配置`;
-
-                    return `
-                        <button class="preset-btn${activeClass}" data-preset-id="${preset.id}" title="${tooltip}" type="button">
-                            <span class="preset-btn__icon">${preset.icon || '📝'}</span>
-                            <span class="preset-btn__text">${this.escapeHtml(shortText)}</span>
-                            ${activeBadge}
-                        </button>
-                    `;
-                })
-                .join('');
-            presetsContent = quickAccessButtons;
-        } else {
-            presetsContent = '<div class="preset-empty-hint">暂无预设，可在设置中添加</div>';
-        }
-
-        // Always show presets section with clearer label
-        const shortcutsSection = `
-            <div class="preset-shortcuts">
-                <div class="preset-shortcuts__label">📌 预设快速选择:</div>
-                <div class="preset-shortcuts__buttons">
-                    ${presetsContent}
+        // Generate auto action selector (compact, single row)
+        const autoActionSection = `
+            <div class="auto-action-selector">
+                <span class="auto-action-selector__label">完成后:</span>
+                <div class="auto-action-selector__buttons">
+                    <button class="auto-action-btn${currentAutoAction === 'preview' ? ' auto-action-btn--active' : ''}"
+                            data-action="preview" title="显示预览，手动确认" type="button">预览</button>
+                    <button class="auto-action-btn${currentAutoAction === 'replace' ? ' auto-action-btn--active' : ''}"
+                            data-action="replace" title="完成后直接替换原文" type="button">替换</button>
+                    <button class="auto-action-btn${currentAutoAction === 'insert' ? ' auto-action-btn--active' : ''}"
+                            data-action="insert" title="完成后插入到原文下方" type="button">插入</button>
                 </div>
             </div>
         `;
@@ -353,15 +326,15 @@ export class InstructionInputPopup {
                 </button>
             </div>
             <div class="popup-body">
-                ${presetsWithEditInstruction.length > 5 ? `
+                ${presetsWithEditInstruction.length > 1 ? `
                 <div style="margin-bottom: 8px;">
-                    <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--b3-theme-on-surface-light);">更多预设</label>
+                    <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--b3-theme-on-surface-light);">预设模板</label>
                     <select class="b3-select" id="instruction-preset">
                         ${options}
                     </select>
                 </div>
                 ` : ''}
-                ${shortcutsSection}
+                ${autoActionSection}
                 <input
                     type="text"
                     class="b3-text-field"
@@ -379,7 +352,7 @@ export class InstructionInputPopup {
                         <span>确认</span>
                     </button>
                 </div>
-                <div class="popup-hint">快捷键: 1-9 选择预设 | Enter 确认 | Esc 取消</div>
+                <div class="popup-hint">Enter 确认 | Esc 取消</div>
             </div>
         `;
 
@@ -395,29 +368,19 @@ export class InstructionInputPopup {
             presetSelect.value = presetId;
         }
 
-        // Bind quick access preset buttons (global switch + fill instruction)
-        const presetBtns = popup.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
-        presetBtns.forEach(btn => {
+        // Bind auto action buttons
+        const autoActionBtns = popup.querySelectorAll('.auto-action-btn') as NodeListOf<HTMLButtonElement>;
+        autoActionBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                const presetId = btn.getAttribute('data-preset-id');
-                if (presetId) {
-                    // Save selected preset
-                    this.savePresetIndex(presetId);
-                    // Update current selected preset ID for button highlighting
-                    this.currentSelectedPresetId = presetId;
+                const action = btn.getAttribute('data-action') as 'preview' | 'replace' | 'insert';
+                if (action) {
+                    // Update UI: highlight selected button
+                    autoActionBtns.forEach(b => b.classList.remove('auto-action-btn--active'));
+                    btn.classList.add('auto-action-btn--active');
 
-                    // Trigger global preset switch
-                    if (this.onPresetSwitchCallback) {
-                        this.onPresetSwitchCallback(presetId);
-                    }
-
-                    // Update UI immediately: fill instruction, update placeholder, refresh indicators
-                    this.applyPresetToInput(presetId, input);
-                    this.syncDropdownSelection(presetId);
-                    this.refreshActiveIndicators();
-
-                    // Don't close popup, user may still want to edit instruction
+                    // Save to settings
+                    this.saveAutoAction(action);
                 }
             });
         });
@@ -491,26 +454,6 @@ export class InstructionInputPopup {
                 e.preventDefault();
                 e.stopPropagation();
                 this.handleSubmit(input.value);
-            }
-            // Number keys 1-9 - select preset from dropdown
-            else if (/^[1-9]$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                const idx = parseInt(e.key) - 1;
-                const presetsWithEditInstruction = this.presets.filter(p => p.editInstruction && p.editInstruction.trim());
-                if (idx < presetsWithEditInstruction.length) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const preset = presetsWithEditInstruction[idx];
-                    presetSelect.value = preset.id;
-                    // Save the selected preset
-                    this.savePresetIndex(preset.id);
-                    // Update current selected preset ID for button highlighting
-                    this.currentSelectedPresetId = preset.id;
-                    // Refresh button indicators
-                    this.refreshActiveIndicators();
-                    input.value = preset.editInstruction!;
-                    input.focus();
-                    input.select();
-                }
             }
         };
 
@@ -708,6 +651,31 @@ export class InstructionInputPopup {
     }
 
     /**
+     * Save auto action setting
+     * Updates the editSettings.quickEditAutoAction in the active profile
+     */
+    private saveAutoAction(action: 'preview' | 'replace' | 'insert'): void {
+        try {
+            const profile = this.configManager.getActiveProfile();
+            const currentSettings = profile.settings;
+
+            // Update settings
+            const updatedSettings = {
+                editSettings: {
+                    ...currentSettings.editSettings,
+                    quickEditAutoAction: action
+                }
+            };
+
+            // Save via ConfigManager (id, updates)
+            this.configManager.updateProfile(profile.id, { settings: { ...currentSettings, ...updatedSettings } });
+            this.configManager.saveProfiles();
+        } catch (error) {
+            console.warn('[InstructionInputPopup] Failed to save auto action:', error);
+        }
+    }
+
+    /**
      * Apply preset to input field (clear value and update placeholder)
      * Note: editInstruction stores the full template, not a short instruction,
      * so we don't fill it into the input field. User inputs their own instruction.
@@ -801,10 +769,9 @@ export class InstructionInputPopup {
                 // Rebuild options (simplified - no "custom" option)
                 const presetsWithEditInstruction = this.presets.filter(p => p.editInstruction && p.editInstruction.trim());
                 selector.innerHTML = presetsWithEditInstruction
-                    .map((preset, idx) => {
-                        const shortcut = idx < 9 ? ` [${idx + 1}]` : '';
+                    .map((preset) => {
                         const selected = preset.id === currentValue ? ' selected' : '';
-                        return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}${shortcut}</option>`;
+                        return `<option value="${preset.id}"${selected}>${this.escapeHtml(preset.name)}</option>`;
                     })
                     .join('');
 

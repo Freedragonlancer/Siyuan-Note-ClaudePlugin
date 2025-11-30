@@ -728,11 +728,13 @@ export class SettingsUIBuilder {
     static getModelOptionsForProvider(provider: AIProviderType, selectedModel: string): string {
         const modelsByProvider: Record<AIProviderType, Array<{ value: string; label: string }>> = {
             anthropic: [
-                { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5 (推荐)' },
+                { value: 'claude-opus-4-5-20251101', label: '🌟 Claude Opus 4.5 (最强旗舰)' },
+                { value: 'claude-sonnet-4-5-20250929', label: '⚡ Claude Sonnet 4.5 (推荐)' },
                 { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-                { value: 'claude-opus-4-20250514', label: 'Claude Opus 4 (最强)' },
+                { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+                { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
                 { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-                { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku (快速)' },
+                { value: 'claude-3-5-haiku-20241022', label: '🚀 Claude 3.5 Haiku (快速)' },
             ],
             openai: [
                 // GPT-4o Series (Recommended - 2024-2025)

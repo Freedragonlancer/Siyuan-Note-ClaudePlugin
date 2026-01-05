@@ -62,29 +62,8 @@ export const SECURITY_CONFIG = {
     ENABLE_XSS_PROTECTION: true,
 } as const;
 
-/**
- * Provider Display Names
- */
-export const PROVIDER_NAMES = {
-    anthropic: 'Claude',
-    openai: 'GPT',
-    gemini: 'Gemini',
-    xai: 'Grok',
-    deepseek: 'DeepSeek',
-    moonshot: 'Kimi',
-} as const;
-
-/**
- * Default Model Recommendations
- */
-export const RECOMMENDED_MODELS = {
-    anthropic: 'claude-sonnet-4-5-20250514',
-    openai: 'gpt-5.1-chat-latest',  // Updated to GPT-5.1 (November 2025)
-    gemini: 'gemini-2.0-flash-exp',
-    xai: 'grok-beta',
-    deepseek: 'deepseek-chat',
-    moonshot: 'moonshot-v1-8k',
-} as const;
+// PROVIDER_NAMES - REMOVED: Use AIProviderFactory.getMetadata(provider).displayName
+// RECOMMENDED_MODELS - REMOVED: Use AIProviderFactory.getMetadata(provider).defaultModel
 
 /**
  * Log Configuration

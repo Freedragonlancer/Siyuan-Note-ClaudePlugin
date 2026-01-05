@@ -18,7 +18,7 @@ import {
     EditHistory
 } from "./editor";
 import type { TextSelection } from "./editor/types";
-import { QuickEditManager } from "./quick-edit";
+import { QuickEditCoordinator } from "./quick-edit";
 import type { DockModel, BlockIconEvent, ContentMenuEvent } from "@/types/siyuan";
 import { KeyboardShortcutFormatter } from "./utils/KeyboardShortcutFormatter";
 import { Logger, LogLevel } from "./utils/Logger";
@@ -43,7 +43,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     private editHistory: EditHistory | null = null;
 
     // Quick Edit Mode
-    private quickEditManager: QuickEditManager | null = null;
+    private quickEditManager: QuickEditCoordinator | null = null;
 
     // Event handlers for cleanup
     private blockIconHandler: ((event: CustomEvent<BlockIconEvent>) => void) | null = null;
@@ -632,20 +632,20 @@ export default class ClaudeAssistantPlugin extends Plugin {
                     // Sync to SettingsManager for backward compatibility
                     await this.settingsManager.saveSettings({ ...activeProfile.settings, ...newSettings });
 
-                    // Update Claude client (QuickEditManager will automatically get new settings from ClaudeClient)
+                    // Update Claude client (QuickEditCoordinator will automatically get new settings from ClaudeClient)
                     this.claudeClient.updateSettings(this.configManager.getActiveProfile().settings);
 
-                    // Refresh presets in QuickEditManager and UnifiedAIPanel
+                    // Refresh presets in QuickEditCoordinator and UnifiedAIPanel
                     if (this.quickEditManager) {
                         this.quickEditManager.refreshPresets();
-                        console.log("[ClaudePlugin] QuickEditManager presets refreshed");
+                        console.log("[ClaudePlugin] QuickEditCoordinator presets refreshed");
                     }
                     if (this.unifiedPanel) {
                         this.unifiedPanel.refreshPresetSelector();
                         console.log("[ClaudePlugin] UnifiedAIPanel presets refreshed");
                     }
 
-                    console.log("[ClaudePlugin] ✅ Prompt settings updated successfully (QuickEditManager will use ClaudeClient settings)");
+                    console.log("[ClaudePlugin] ✅ Prompt settings updated successfully (QuickEditCoordinator will use ClaudeClient settings)");
                 } catch (error) {
                     console.error("[ClaudePlugin] Failed to save prompt settings:", error);
                     showMessage("❌ 保存提示词失败", 3000, "error");
@@ -656,7 +656,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
                 console.log("[ClaudePlugin] Presets changed, refreshing UI...");
                 if (this.quickEditManager) {
                     this.quickEditManager.refreshPresets();
-                    console.log("[ClaudePlugin] QuickEditManager presets refreshed");
+                    console.log("[ClaudePlugin] QuickEditCoordinator presets refreshed");
                 }
                 if (this.unifiedPanel) {
                     this.unifiedPanel.refreshPresetSelector();
@@ -699,9 +699,9 @@ export default class ClaudeAssistantPlugin extends Plugin {
             editSettings
         );
 
-        // Initialize Quick Edit Manager
-        console.log("[AIEdit] Creating QuickEditManager...");
-        this.quickEditManager = new QuickEditManager(
+        // Initialize Quick Edit Coordinator
+        console.log("[AIEdit] Creating QuickEditCoordinator...");
+        this.quickEditManager = new QuickEditCoordinator(
             this,
             this.claudeClient,
             this.editHistory,
@@ -710,7 +710,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         );
 
         console.log("[AIEdit] ✅ AI text editing feature initialized");
-        console.log("[QuickEdit] ✅ Quick Edit Manager initialized");
+        console.log("[QuickEdit] ✅ Quick Edit Coordinator initialized");
     }
 
     // [REMOVED] sendToAIEdit() - 功能已统一到 QuickEdit

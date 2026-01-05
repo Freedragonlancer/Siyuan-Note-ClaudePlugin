@@ -1,10 +1,14 @@
 /**
  * Prompt Builder
  * Constructs AI prompts from templates and context
+ *
+ * Refactored v0.18.0: Added buildQuickEditPrompt for unified Quick Edit workflow
  */
 
-import type { PromptTemplate } from '@/settings/config-types';
+import type { PromptTemplate, FilterRule } from '@/settings/config-types';
 import type { Message } from '@/claude/types';
+import type { ConfigManager } from '@/settings/ConfigManager';
+import type { ClaudeClient } from '@/claude';
 import { ContextExtractor } from './ContextExtractor';
 
 export interface PromptBuildOptions {
@@ -31,11 +35,125 @@ export interface BuiltPrompt {
     instruction: string;
 }
 
+/**
+ * Options for building Quick Edit prompts
+ */
+export interface QuickEditPromptOptions {
+    /** User's editing instruction */
+    instruction: string;
+    /** Original text to edit */
+    originalText: string;
+    /** Block IDs for context extraction (multi-block support) */
+    blockIds: string[];
+    /** Preset ID to use (optional - uses global template if not provided) */
+    presetId?: string;
+}
+
+/**
+ * Result of building a Quick Edit prompt
+ */
+export interface QuickEditPromptResult {
+    /** User message content (with placeholders replaced) */
+    userPrompt: string;
+    /** System prompt from preset or global */
+    systemPrompt: string | undefined;
+    /** Filter rules to apply (global + preset) */
+    filterRules: FilterRule[];
+    /** The preset used (if any) */
+    presetName?: string;
+}
+
 export class PromptBuilder {
     private contextExtractor: ContextExtractor;
+    private configManager?: ConfigManager;
+    private claudeClient?: ClaudeClient;
 
     constructor(contextExtractor: ContextExtractor) {
         this.contextExtractor = contextExtractor;
+    }
+
+    /**
+     * Set optional dependencies for Quick Edit workflow
+     * These are optional to maintain backward compatibility
+     */
+    setDependencies(configManager: ConfigManager, claudeClient: ClaudeClient): void {
+        this.configManager = configManager;
+        this.claudeClient = claudeClient;
+    }
+
+    /**
+     * Build prompt for Quick Edit workflow
+     * Unified method that handles preset loading, template processing, and filter rules
+     *
+     * @param options Quick Edit options
+     * @returns Complete prompt ready for AI request
+     */
+    async buildQuickEditPrompt(options: QuickEditPromptOptions): Promise<QuickEditPromptResult> {
+        const { instruction, originalText, blockIds, presetId } = options;
+
+        // Default template (fallback)
+        const defaultTemplate = `{instruction}
+
+原文：
+{original}
+
+重要：只返回修改后的完整文本，不要添加任何前言、说明、解释或格式标记（如"以下是..."、"主要改进："等）。直接输出修改后的文本内容即可。`;
+
+        let template: string = defaultTemplate;
+        let systemPrompt: string | undefined = undefined;
+        let appendedPrompt: string | undefined = undefined;
+        let presetName: string | undefined = undefined;
+
+        // Try to get preset configuration
+        if (presetId && this.configManager) {
+            const preset = this.configManager.getTemplateById(presetId);
+            if (preset?.editInstruction) {
+                template = preset.editInstruction;
+                systemPrompt = preset.systemPrompt;
+                appendedPrompt = preset.appendedPrompt;
+                presetName = preset.name;
+            }
+        }
+
+        // Fallback to global template if no preset
+        if (!presetId && this.claudeClient) {
+            const settings = this.claudeClient.getSettings();
+            if (settings.quickEditPromptTemplate) {
+                template = settings.quickEditPromptTemplate;
+            }
+        }
+
+        // Process context placeholders {above=x}, {below=x}, {above_blocks=x}, {below_blocks=x}
+        let processedTemplate = template;
+        try {
+            if (this.contextExtractor.hasPlaceholders(template)) {
+                processedTemplate = await this.contextExtractor.processTemplate(template, blockIds);
+            }
+        } catch (error) {
+            console.error('[PromptBuilder] Error processing context placeholders:', error);
+            processedTemplate = template;
+        }
+
+        // Replace {instruction} and {original} placeholders
+        let userPrompt = processedTemplate
+            .replace('{instruction}', instruction)
+            .replace('{original}', originalText);
+
+        // Append appendedPrompt (preset's or global)
+        const finalAppendedPrompt = appendedPrompt || this.claudeClient?.getAppendedPrompt();
+        if (finalAppendedPrompt?.trim()) {
+            userPrompt += '\n\n' + finalAppendedPrompt;
+        }
+
+        // Get filter rules (global + preset)
+        const filterRules: FilterRule[] = this.claudeClient?.getFilterRules(presetId) || [];
+
+        return {
+            userPrompt,
+            systemPrompt,
+            filterRules,
+            presetName
+        };
     }
 
     /**

@@ -57,21 +57,7 @@ export class XAIProvider extends OpenAIProvider {
         return true;
     }
 
-    getAvailableModels(): string[] {
-        return [
-            // Grok 4.1 Series (Latest - November 2025)
-            'grok-4-1-fast-reasoning',           // Latest Grok 4.1 with reasoning (STABLE)
-            'grok-4-1-fast-non-reasoning',       // Latest Grok 4.1 non-reasoning (STABLE)
-
-            // Grok 4 Series (July 2025)
-            'grok-4-0709',                       // Grok 4 original release (STABLE)
-            'grok-4',                            // Grok 4 alias
-
-            // Legacy models
-            'grok-beta',                         // Legacy Grok Beta
-            'grok-vision-beta',                  // Legacy Grok Vision Beta
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
@@ -164,6 +150,13 @@ export class XAIProvider extends OpenAIProvider {
                 supportsVision: true,
                 supportsFunctionCalling: false,
             },
+            defaults: {
+                maxTokens: 16384,
+                temperature: 1,
+                thinkingMode: false,
+                reasoningEffort: 'low',
+            },
+            badgeColors: { bg: '#FCE4EC', border: '#F48FB1' },
         };
     }
 }

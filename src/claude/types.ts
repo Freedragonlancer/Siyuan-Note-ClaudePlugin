@@ -4,7 +4,7 @@
 
 import type { EditSettings } from "../editor/types";
 import type { FilterRule } from "../filter";
-import type { AIProviderType } from "../ai/types";
+import type { AIProviderType, StreamCallback } from "../ai/types";
 import { AIProviderFactory } from "../ai/AIProviderFactory";
 import type { PromptTemplate } from "../settings/config-types";
 
@@ -78,7 +78,10 @@ export interface StreamChunk {
     };
 }
 
-export type MessageCallback = (chunk: string) => void;
+// Re-export StreamCallback from ai/types as the canonical callback type
+export type { StreamCallback };
+// MessageCallback is an alias for backward compatibility
+export type MessageCallback = StreamCallback;
 export type ErrorCallback = (error: Error) => void;
 export type CompleteCallback = () => void;
 

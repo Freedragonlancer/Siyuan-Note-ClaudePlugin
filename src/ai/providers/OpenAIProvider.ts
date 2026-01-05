@@ -36,18 +36,23 @@ export class OpenAIProvider extends BaseAIProvider {
     }
 
     /**
-     * Check if model is GPT-5.1 series (uses max_completion_tokens instead of max_tokens)
+     * Check if model is GPT-5.x or o-series (uses max_completion_tokens instead of max_tokens)
+     * These models also have different temperature handling
      */
-    private isGPT51Model(): boolean {
+    private isModernReasoningModel(): boolean {
         const modelId = this.config.modelId.toLowerCase();
-        return modelId.startsWith('gpt-5.1') || modelId.startsWith('gpt-5-1');
+        // GPT-5.x series
+        if (modelId.startsWith('gpt-5')) return true;
+        // o-series reasoning models (o1, o3, o4)
+        if (modelId.startsWith('o1') || modelId.startsWith('o3') || modelId.startsWith('o4')) return true;
+        return false;
     }
 
     /**
      * Build completion parameters based on model type
      */
     private buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
-        const isGPT51 = this.isGPT51Model();
+        const isModernModel = this.isModernReasoningModel();
 
         const baseParams: any = {
             model: this.config.modelId,
@@ -55,21 +60,21 @@ export class OpenAIProvider extends BaseAIProvider {
             stop: options?.stopSequences,
         };
 
-        // GPT-5.1 models only support temperature = 1 (default)
+        // GPT-5.x and o-series models only support temperature = 1 (default)
         // For other models, send temperature parameter
-        if (!isGPT51) {
+        if (!isModernModel) {
             baseParams.temperature = this.getEffectiveTemperature(options);
         }
-        // For GPT-5.1: omit temperature parameter to use default (1)
+        // For modern reasoning models: omit temperature parameter to use default (1)
 
         // Add streaming flag if needed
         if (streaming) {
             baseParams.stream = true;
         }
 
-        // GPT-5.1 models use max_completion_tokens instead of max_tokens
+        // GPT-5.x and o-series models use max_completion_tokens instead of max_tokens
         const maxTokens = this.getEffectiveMaxTokens(options);
-        if (isGPT51) {
+        if (isModernModel) {
             baseParams.max_completion_tokens = maxTokens;
         } else {
             baseParams.max_tokens = maxTokens;
@@ -154,73 +159,54 @@ export class OpenAIProvider extends BaseAIProvider {
         return true;
     }
 
-    getAvailableModels(): string[] {
-        return [
-            // GPT-4o Series (Latest - 2024-2025)
-            'chatgpt-4o-latest',              // Latest ChatGPT-4o
-            'gpt-4o',                         // GPT-4o (recommended)
-            'gpt-4o-2024-11-20',              // Latest snapshot
-            'gpt-4o-2024-08-06',              // August 2024 snapshot
-            'gpt-4o-2024-05-13',              // May 2024 snapshot
-            'gpt-4o-mini',                    // Mini version (fast & cheap)
-            'gpt-4o-mini-2024-07-18',         // July 2024 mini snapshot
-            
-            // o-Series Reasoning Models (2025)
-            'o1',                             // Latest o1
-            'o1-2024-12-17',                  // December 2024 snapshot
-            'o1-preview',                     // o1 Preview
-            'o1-mini',                        // o1 Mini (cost-efficient)
-            'o1-mini-2024-09-12',             // September 2024 mini snapshot
-            'o3-mini',                        // o3-mini (Jan 2025)
-            
-            // GPT-4 Turbo Series (Legacy but still supported)
-            'gpt-4-turbo',                    // Latest GPT-4 Turbo
-            'gpt-4-turbo-2024-04-09',         // April 2024 snapshot
-            'gpt-4-turbo-preview',            // Turbo Preview
-            'gpt-4-0125-preview',             // January 2025 preview
-            
-            // GPT-4 Classic Series
-            'gpt-4',                          // GPT-4
-            'gpt-4-32k',                      // GPT-4 32k context
-            
-            // GPT-3.5 Series (Budget option)
-            'gpt-3.5-turbo',                  // Latest 3.5 Turbo
-            'gpt-3.5-turbo-16k',              // 3.5 Turbo 16k context
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            // GPT-4o Series (16k output tokens, 128k context)
-            'chatgpt-4o-latest': 16384,
-            'gpt-4o': 16384,
-            'gpt-4o-2024-11-20': 16384,
-            'gpt-4o-2024-08-06': 16384,
-            'gpt-4o-2024-05-13': 16384,
-            'gpt-4o-mini': 16384,
-            'gpt-4o-mini-2024-07-18': 16384,
-            
-            // o-Series Reasoning Models (varies by model)
+            // GPT-5 Series (2025-2026)
+            'gpt-5.2': 65536,                 // 64k output, 256k context
+            'gpt-5.1': 65536,                 // 64k output, 256k context
+            'gpt-5': 65536,                   // 64k output, 256k context
+            'gpt-5-mini': 32768,              // 32k output, 128k context
+
+            // GPT-4.1 Series (1M context window)
+            'gpt-4.1': 32768,                 // 32k output, 1M context
+            'gpt-4.1-mini': 16384,            // 16k output, 1M context
+            'gpt-4.1-nano': 8192,             // 8k output, 1M context
+
+            // o-Series Reasoning Models (2025)
+            'o3': 100000,                     // 100k output, 200k context
+            'o3-pro': 100000,                 // 100k output, 200k context
+            'o4-mini': 65536,                 // 65k output, 128k context
+            'o3-deep-research': 100000,       // Deep research variant
+            'o4-mini-deep-research': 65536,   // Deep research variant
             'o1': 100000,                     // 100k output tokens, 200k context
             'o1-2024-12-17': 100000,
             'o1-preview': 32768,              // 32k output tokens, 128k context
             'o1-mini': 65536,                 // 65k output tokens, 128k context
-            'o1-mini-2024-09-12': 65536,
             'o3-mini': 65536,                 // Similar to o1-mini
-            
+
+            // GPT-4o Series (16k output tokens, 128k context)
+            'gpt-4o': 16384,
+            'gpt-4o-2024-11-20': 16384,
+            'gpt-4o-2024-08-06': 16384,
+            'gpt-4o-mini': 16384,
+            'gpt-4o-mini-2024-07-18': 16384,
+
             // GPT-4 Turbo Series (4k-8k output, 128k context)
             'gpt-4-turbo': 4096,
             'gpt-4-turbo-2024-04-09': 4096,
-            'gpt-4-turbo-preview': 4096,
-            'gpt-4-0125-preview': 4096,
-            
+
             // GPT-4 Classic Series
             'gpt-4': 8192,                    // 8k output, 8k context
             'gpt-4-32k': 32768,               // 32k output, 32k context
-            
+
+            // Open-Weight Models
+            'gpt-oss-120b': 32768,            // 32k output
+            'gpt-oss-20b': 16384,             // 16k output
+
             // GPT-3.5 Series
             'gpt-3.5-turbo': 4096,           // 4k output, 16k context
-            'gpt-3.5-turbo-16k': 16384,      // 16k output, 16k context
         };
 
         // Try exact match first
@@ -228,14 +214,14 @@ export class OpenAIProvider extends BaseAIProvider {
             return limits[model];
         }
 
-        // Try prefix match (e.g., "gpt-4o-2025-01-15" matches "gpt-4o")
+        // Try prefix match (e.g., "gpt-5.2-2025-01-15" matches "gpt-5.2")
         for (const [key, value] of Object.entries(limits)) {
             if (model.startsWith(key)) {
                 return value;
             }
         }
 
-        return 4096; // Safe default
+        return 8192; // Safe default (increased for modern models)
     }
 
     getParameterLimits(): ParameterLimits {
@@ -253,19 +239,90 @@ export class OpenAIProvider extends BaseAIProvider {
         return {
             type: 'openai',
             displayName: 'OpenAI',
-            description: 'GPT-4, GPT-3.5 等 OpenAI 模型',
+            description: 'GPT-5, GPT-4.1, o-series 等 OpenAI 模型',
             icon: '⚡',
             apiKeyUrl: 'https://platform.openai.com/api-keys',
             defaultBaseURL: 'https://api.openai.com/v1',
-            defaultModel: 'gpt-4o',
+            defaultModel: 'gpt-5-mini',
             models: [
+                // GPT-5 Series (Latest)
                 {
-                    id: 'chatgpt-4o-latest',
-                    displayName: 'ChatGPT-4o Latest (推荐)',
-                    contextWindow: 128000,
-                    description: '最新ChatGPT-4o，自动更新',
+                    id: 'gpt-5.2',
+                    displayName: 'GPT-5.2 (最新旗舰)',
+                    contextWindow: 256000,
+                    description: '最新GPT-5.2，最强性能 (2025-12)',
                     recommended: true,
                 },
+                {
+                    id: 'gpt-5-mini',
+                    displayName: 'GPT-5 Mini (推荐)',
+                    contextWindow: 128000,
+                    description: '快速且经济的GPT-5版本',
+                    recommended: true,
+                },
+                {
+                    id: 'gpt-5.1',
+                    displayName: 'GPT-5.1 (256K上下文)',
+                    contextWindow: 256000,
+                    description: 'GPT-5.1 旗舰模型',
+                },
+                {
+                    id: 'gpt-5',
+                    displayName: 'GPT-5 (256K上下文)',
+                    contextWindow: 256000,
+                    description: 'GPT-5 基础旗舰',
+                },
+                // GPT-4.1 Series (1M context)
+                {
+                    id: 'gpt-4.1',
+                    displayName: 'GPT-4.1 (1M上下文，代码优化)',
+                    contextWindow: 1000000,
+                    description: '代码优化，超长上下文',
+                },
+                {
+                    id: 'gpt-4.1-mini',
+                    displayName: 'GPT-4.1 Mini (1M上下文)',
+                    contextWindow: 1000000,
+                    description: 'Mini版本，1M上下文',
+                },
+                {
+                    id: 'gpt-4.1-nano',
+                    displayName: 'GPT-4.1 Nano (最快)',
+                    contextWindow: 1000000,
+                    description: '最快速度，1M上下文',
+                },
+                // o-Series Reasoning
+                {
+                    id: 'o3',
+                    displayName: 'o3 (推理模型，200K)',
+                    contextWindow: 200000,
+                    description: '最新推理模型，数学/科学/代码',
+                },
+                {
+                    id: 'o3-pro',
+                    displayName: 'o3-pro (最强推理)',
+                    contextWindow: 200000,
+                    description: '最强推理，更多计算资源',
+                },
+                {
+                    id: 'o4-mini',
+                    displayName: 'o4-mini (高效推理)',
+                    contextWindow: 128000,
+                    description: '高效推理模型',
+                },
+                {
+                    id: 'o3-mini',
+                    displayName: 'o3-mini (经济推理)',
+                    contextWindow: 128000,
+                    description: 'o3系列mini模型',
+                },
+                {
+                    id: 'o1',
+                    displayName: 'o1 (推理模型，200K)',
+                    contextWindow: 200000,
+                    description: '推理模型，适合复杂问题',
+                },
+                // GPT-4o Series
                 {
                     id: 'gpt-4o',
                     displayName: 'GPT-4o (128K上下文)',
@@ -278,29 +335,13 @@ export class OpenAIProvider extends BaseAIProvider {
                     contextWindow: 128000,
                     description: 'Mini版本，快速且经济',
                 },
-                {
-                    id: 'o1',
-                    displayName: 'o1 (推理模型，200K)',
-                    contextWindow: 200000,
-                    description: '推理模型，适合复杂问题',
-                },
-                {
-                    id: 'o1-mini',
-                    displayName: 'o1 Mini (128K，经济推理)',
-                    contextWindow: 128000,
-                    description: '经济型推理模型',
-                },
-                {
-                    id: 'o3-mini',
-                    displayName: 'o3-mini (最新推理模型)',
-                    contextWindow: 128000,
-                    description: 'o3系列mini模型 (2025-01)',
-                },
+                // Legacy
                 {
                     id: 'gpt-4-turbo',
                     displayName: 'GPT-4 Turbo (128K)',
                     contextWindow: 128000,
                     description: 'GPT-4 Turbo，高性能',
+                    deprecated: true,
                 },
                 {
                     id: 'gpt-4',
@@ -323,6 +364,11 @@ export class OpenAIProvider extends BaseAIProvider {
                 supportsVision: true,
                 supportsFunctionCalling: true,
             },
+            defaults: {
+                maxTokens: 4096,
+                temperature: 1,
+            },
+            badgeColors: { bg: '#E8F5E9', border: '#81C784' },
         };
     }
 

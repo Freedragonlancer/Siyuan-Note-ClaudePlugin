@@ -153,12 +153,12 @@ export interface AIProvider {
 
 /**
  * Provider factory registration entry
+ * Simplified: displayName/description are now retrieved from getMetadata()
  */
 export interface ProviderRegistration {
     type: AIProviderType;
     factory: (config: AIModelConfig) => AIProvider;
-    displayName: string;
-    description: string;
+    // displayName and description removed - use getMetadata() instead
 }
 
 // ==================== Provider Metadata ====================
@@ -196,6 +196,32 @@ export interface ProviderFeatures {
 }
 
 /**
+ * Default parameter values for a provider
+ */
+export interface ProviderDefaults {
+    /** Default max tokens for output */
+    maxTokens: number;
+    /** Default temperature */
+    temperature: number;
+    /** Default thinking/reasoning mode state */
+    thinkingMode?: boolean;
+    /** Default thinking budget (tokens) */
+    thinkingBudget?: number;
+    /** Default reasoning effort (xAI) */
+    reasoningEffort?: 'low' | 'high';
+}
+
+/**
+ * Badge colors for UI display
+ */
+export interface BadgeColors {
+    /** Background color */
+    bg: string;
+    /** Border color */
+    border: string;
+}
+
+/**
  * Complete provider metadata (single source of truth)
  */
 export interface ProviderMetadata {
@@ -217,6 +243,10 @@ export interface ProviderMetadata {
     models: ModelMetadata[];
     /** Feature flags */
     features: ProviderFeatures;
+    /** Default parameter values (optional for backward compatibility) */
+    defaults?: ProviderDefaults;
+    /** Badge colors for UI (optional for backward compatibility) */
+    badgeColors?: BadgeColors;
 }
 
 // ==================== Runtime Type Validation ====================

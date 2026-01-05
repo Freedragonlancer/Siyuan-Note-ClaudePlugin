@@ -43,10 +43,18 @@ export abstract class BaseAIProvider implements AIProvider {
     // Abstract methods that must be implemented by subclasses
     abstract sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string>;
     abstract streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void>;
-    abstract getAvailableModels(): string[];
     abstract getMaxTokenLimit(model: string): number;
     abstract getParameterLimits(): ParameterLimits;
     abstract getMetadata(): ProviderMetadata;
+
+    /**
+     * Get available models for this provider
+     * Default implementation derives from getMetadata().models
+     * Subclasses can override if they need custom logic
+     */
+    getAvailableModels(): string[] {
+        return this.getMetadata().models.map(m => m.id);
+    }
 
     /**
      * Base configuration validation

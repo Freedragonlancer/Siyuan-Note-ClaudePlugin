@@ -34,9 +34,6 @@ export class UnifiedPanelUIBuilder {
                         <span id="claude-mode-badge" class="claude-mode-badge" style="display: none; font-size: 11px; padding: 2px 8px; background: var(--b3-theme-primary-lighter); color: var(--b3-theme-primary); border-radius: 10px; white-space: nowrap;">📝 已选中 0 个块</span>
                     </div>
                     <div class="fn__flex" style="align-items: center; gap: 3px;">
-                        <div class="provider-info-badge" data-provider-badge style="display: inline-flex; align-items: center; padding: 4px 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; font-size: 11px; font-weight: 500; color: var(--b3-theme-on-surface); white-space: nowrap;">
-                            <span class="provider-text">Loading...</span>
-                        </div>
                         <button class="b3-button b3-button--text" id="claude-settings-btn" title="设置" style="padding: 2px 4px;">
                             <svg class="fn__size200"><use xlink:href="#iconSettings"></use></svg>
                         </button>
@@ -89,9 +86,14 @@ export class UnifiedPanelUIBuilder {
                               placeholder="Ask Claude anything..."
                               rows="3"
                               style="resize: vertical; min-height: 54px; font-size: 13px;"></textarea>
-                    <div class="fn__flex" style="justify-content: space-between; align-items: center;">
-                        <div class="ft__smaller ft__secondary" id="claude-context-info" style="font-size: 11px;"></div>
-                        <div class="fn__flex" style="gap: 6px;">
+                    <div class="fn__flex" style="justify-content: space-between; align-items: center; gap: 8px;">
+                        <div class="fn__flex" style="align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden;">
+                            <div class="provider-info-badge" data-provider-badge style="display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; font-size: 10px; font-weight: 500; color: var(--b3-theme-on-surface); white-space: nowrap; overflow: hidden; flex-shrink: 1; min-width: 60px;">
+                                <span class="provider-text" style="overflow: hidden; text-overflow: ellipsis;">Loading...</span>
+                            </div>
+                            <div class="ft__smaller ft__secondary" id="claude-context-info" style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+                        </div>
+                        <div class="fn__flex" style="gap: 6px; flex-shrink: 0;">
                             <button class="b3-button b3-button--outline b3-button--small" id="claude-insert-btn" title="Insert response at cursor" style="display: none; padding: 2px 8px;">
                                 Insert
                             </button>

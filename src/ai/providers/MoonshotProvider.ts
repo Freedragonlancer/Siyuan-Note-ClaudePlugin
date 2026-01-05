@@ -233,23 +233,7 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
         return true;
     }
 
-    /**
-     * Get list of available models
-     */
-    getAvailableModels(): string[] {
-        return [
-            // Kimi K2 Series (2025 Latest)
-            'kimi-k2-0905-preview',      // Latest, 256K context
-            'kimi-k2-0711-preview',      // Earlier version, 128K context
-            'kimi-k2-thinking',          // Reasoning model with exposed thinking
-            'kimi-k2-thinking-turbo',    // Faster reasoning variant
-
-            // Legacy (may still be supported)
-            'moonshot-v1-128k',          // 128K context
-            'moonshot-v1-32k',           // 32K context
-            'moonshot-v1-8k',            // 8K context
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     /**
      * Get model context window limits
@@ -398,6 +382,12 @@ export class MoonshotProvider extends BaseAIProvider implements AIProvider {
                 supportsVision: false,
                 supportsFunctionCalling: false,
             },
+            defaults: {
+                maxTokens: 4096,
+                temperature: 1,
+                thinkingMode: false,
+            },
+            badgeColors: { bg: '#FFF3E0', border: '#FFB74D' },
         };
     }
 }

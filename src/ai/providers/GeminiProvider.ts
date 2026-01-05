@@ -162,37 +162,7 @@ export class GeminiProvider extends BaseAIProvider {
         return true;
     }
 
-    getAvailableModels(): string[] {
-        return [
-            // Gemini 3.0 Series (Latest - November 2025)
-            'gemini-3-pro-preview-11-2025',      // Latest Gemini 3 Pro preview (PREVIEW)
-            'gemini-3-pro',                      // Gemini 3 Pro (if stable release is available)
-
-            // Gemini 2.5 Series (2025)
-            'gemini-2.5-pro',                    // State-of-the-art thinking model (STABLE)
-            'gemini-2.5-flash',                  // Best price-performance (STABLE)
-            'gemini-2.5-flash-lite',             // Fastest, cost-efficient (STABLE)
-            'gemini-2.5-flash-image',            // Image generation & understanding (STABLE)
-            'gemini-2.5-flash-preview-09-2025', // Preview version (PREVIEW)
-
-            // Gemini 2.0 Series
-            'gemini-2.0-flash',                  // Next-gen features (STABLE)
-            'gemini-2.0-flash-001',              // Latest 2.0 Flash version
-            'gemini-2.0-flash-exp',              // Experimental 2.0 Flash
-            'gemini-2.0-flash-lite',             // 2.0 Lite version (STABLE)
-
-            // Gemini 1.5 Series (Previous generation)
-            'gemini-1.5-pro-latest',             // Latest 1.5 Pro
-            'gemini-1.5-pro',                    // 1.5 Pro
-            'gemini-1.5-flash-latest',           // Latest 1.5 Flash
-            'gemini-1.5-flash',                  // 1.5 Flash
-            'gemini-1.5-flash-8b',               // 1.5 Flash 8B
-
-            // Legacy models (may be deprecated soon)
-            'gemini-pro',                        // Legacy Pro
-            'gemini-pro-vision',                 // Legacy Pro Vision
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
@@ -339,6 +309,13 @@ export class GeminiProvider extends BaseAIProvider {
                 supportsVision: true,
                 supportsFunctionCalling: false,
             },
+            defaults: {
+                maxTokens: 8192,
+                temperature: 0.9,
+                thinkingMode: false,
+                thinkingBudget: 8192,
+            },
+            badgeColors: { bg: '#E3F2FD', border: '#64B5F6' },
         };
     }
 

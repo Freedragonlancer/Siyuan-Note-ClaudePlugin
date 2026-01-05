@@ -4,7 +4,11 @@
 
 import type { TextSelection, EditResult } from './types';
 
-export interface HistoryEntry {
+/**
+ * Entry in the edit history stack for undo functionality
+ * Renamed from HistoryEntry to avoid naming conflict with InstructionHistoryEntry
+ */
+export interface EditHistoryEntry {
     id: string;
     selection: TextSelection;
     originalContent: string;
@@ -13,6 +17,9 @@ export interface HistoryEntry {
     timestamp: number;
     applied: boolean;
 }
+
+/** @deprecated Use EditHistoryEntry instead */
+export type HistoryEntry = EditHistoryEntry;
 
 export class EditHistory {
     private history: HistoryEntry[] = [];

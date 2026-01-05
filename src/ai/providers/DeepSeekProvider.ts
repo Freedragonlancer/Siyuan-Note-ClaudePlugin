@@ -54,13 +54,7 @@ export class DeepSeekProvider extends OpenAIProvider {
         return true;
     }
 
-    getAvailableModels(): string[] {
-        return [
-            'deepseek-chat',
-            'deepseek-coder',
-            'deepseek-reasoner',  // Reasoning model
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
@@ -142,6 +136,11 @@ export class DeepSeekProvider extends OpenAIProvider {
                 supportsVision: false,
                 supportsFunctionCalling: false,
             },
+            defaults: {
+                maxTokens: 4096,
+                temperature: 1,
+            },
+            badgeColors: { bg: '#E8EAF6', border: '#9FA8DA' },
         };
     }
 

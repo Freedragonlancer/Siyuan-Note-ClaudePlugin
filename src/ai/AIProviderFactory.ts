@@ -12,55 +12,16 @@ export class AIProviderFactory {
 
     /**
      * Initialize factory with default providers
+     * Simplified: displayName/description are retrieved from provider's getMetadata()
      */
     static initialize(): void {
-        // Register Anthropic provider
-        this.register({
-            type: 'anthropic',
-            factory: (config) => new AnthropicProvider(config),
-            displayName: 'Anthropic Claude',
-            description: 'Claude AI models (Opus, Sonnet, Haiku)',
-        });
-
-        // Register OpenAI provider
-        this.register({
-            type: 'openai',
-            factory: (config) => new OpenAIProvider(config),
-            displayName: 'OpenAI',
-            description: 'GPT-4, GPT-3.5 and other OpenAI models',
-        });
-
-        // Register Google Gemini provider
-        this.register({
-            type: 'gemini',
-            factory: (config) => new GeminiProvider(config),
-            displayName: 'Google Gemini',
-            description: 'Gemini Pro and other Google AI models',
-        });
-
-        // Register xAI Grok provider
-        this.register({
-            type: 'xai',
-            factory: (config) => new XAIProvider(config),
-            displayName: 'xAI Grok',
-            description: 'Grok and other xAI models',
-        });
-
-        // Register DeepSeek provider
-        this.register({
-            type: 'deepseek',
-            factory: (config) => new DeepSeekProvider(config),
-            displayName: 'DeepSeek',
-            description: 'DeepSeek Chat, Coder, and Reasoner models',
-        });
-
-        // Register Moonshot AI (Kimi) provider
-        this.register({
-            type: 'moonshot',
-            factory: (config) => new MoonshotProvider(config),
-            displayName: 'Moonshot AI (Kimi)',
-            description: 'Kimi K2 series with 256K context and reasoning models',
-        });
+        // Register all providers - metadata is obtained from getMetadata()
+        this.register({ type: 'anthropic', factory: (config) => new AnthropicProvider(config) });
+        this.register({ type: 'openai', factory: (config) => new OpenAIProvider(config) });
+        this.register({ type: 'gemini', factory: (config) => new GeminiProvider(config) });
+        this.register({ type: 'xai', factory: (config) => new XAIProvider(config) });
+        this.register({ type: 'deepseek', factory: (config) => new DeepSeekProvider(config) });
+        this.register({ type: 'moonshot', factory: (config) => new MoonshotProvider(config) });
     }
 
     /**
@@ -68,7 +29,7 @@ export class AIProviderFactory {
      */
     static register(registration: ProviderRegistration): void {
         this.registrations.set(registration.type, registration);
-        console.log(`[AIProviderFactory] Registered provider: ${registration.displayName}`);
+        console.log(`[AIProviderFactory] Registered provider: ${registration.type}`);
     }
 
     /**

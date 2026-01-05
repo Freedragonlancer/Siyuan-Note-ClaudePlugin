@@ -142,21 +142,7 @@ export class AnthropicProvider extends BaseAIProvider {
         return true;
     }
 
-    getAvailableModels(): string[] {
-        return [
-            'claude-opus-4-5-20251101',
-            'claude-sonnet-4-5-20250929',
-            'claude-sonnet-4-20250514',
-            'claude-opus-4-20250514',
-            'claude-3-7-sonnet-20250219',
-            'claude-3-5-sonnet-20241022',
-            'claude-3-5-haiku-20241022',
-            'claude-3-5-sonnet-20240620',
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307',
-        ];
-    }
+    // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
         // Claude models have 200K context window but output is limited
@@ -242,6 +228,13 @@ export class AnthropicProvider extends BaseAIProvider {
                 supportsVision: true,
                 supportsFunctionCalling: true,
             },
+            defaults: {
+                maxTokens: 4096,
+                temperature: 0.7,
+                thinkingMode: false,
+                thinkingBudget: 10000,
+            },
+            badgeColors: { bg: '#F5E6D3', border: '#D4A574' },
         };
     }
 }

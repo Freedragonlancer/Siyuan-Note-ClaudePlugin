@@ -14,6 +14,7 @@ import type { AIProviderType } from "../../ai/types";
 import { AIProviderFactory } from "../../ai/AIProviderFactory";
 import { KeyboardShortcutFormatter } from "../../utils/KeyboardShortcutFormatter";
 import { SecurityUtils } from "../../utils/Security";
+import { QUICK_EDIT_AUTO_ACTIONS, REASONING_EFFORT_OPTIONS } from "../../config/ui-constants";
 
 /**
  * Utility class for building settings UI HTML
@@ -340,12 +341,13 @@ export class SettingsUIBuilder {
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span class="ft__smaller" style="font-weight: 500;">推理强度</span>
                         <select id="reasoning-effort" class="b3-select">
-                            <option value="low" ${reasoningEffort === 'low' ? 'selected' : ''}>Low (快速)</option>
-                            <option value="high" ${reasoningEffort === 'high' ? 'selected' : ''}>High (深度)</option>
+                            ${REASONING_EFFORT_OPTIONS.map(opt =>
+                                `<option value="${opt.value}" ${reasoningEffort === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                            ).join('')}
                         </select>
                     </div>
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        💡 'low' 快速响应，'high' 深度推理（xAI Grok）
+                        💡 ${REASONING_EFFORT_OPTIONS.map(opt => `'${opt.value}' ${opt.description}`).join('，')}（xAI Grok）
                     </div>
                 </div>
 
@@ -572,9 +574,9 @@ export class SettingsUIBuilder {
                         id="quick-edit-auto-action"
                         style="width: 100%;"
                     >
-                        <option value="preview" ${(settings.editSettings?.quickEditAutoAction || 'preview') === 'preview' ? 'selected' : ''}>预览确认（默认）</option>
-                        <option value="replace" ${settings.editSettings?.quickEditAutoAction === 'replace' ? 'selected' : ''}>自动替换原文</option>
-                        <option value="insert" ${settings.editSettings?.quickEditAutoAction === 'insert' ? 'selected' : ''}>自动插入到下方</option>
+                        ${QUICK_EDIT_AUTO_ACTIONS.map(opt =>
+                            `<option value="${opt.value}" ${(settings.editSettings?.quickEditAutoAction || 'preview') === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                        ).join('')}
                     </select>
                     <div class="ft__smaller" style="margin-top: 8px; color: var(--b3-theme-on-surface);">
                         • <b>预览确认</b>：显示 AI 结果，需手动选择接受/拒绝<br>
@@ -724,83 +726,43 @@ export class SettingsUIBuilder {
 
     /**
      * Get model options HTML for a specific provider
+     * Dynamically fetches models from AIProviderFactory.getMetadata()
      */
     static getModelOptionsForProvider(provider: AIProviderType, selectedModel: string): string {
-        const modelsByProvider: Record<AIProviderType, Array<{ value: string; label: string }>> = {
-            anthropic: [
-                { value: 'claude-opus-4-5-20251101', label: '🌟 Claude Opus 4.5 (最强旗舰)' },
-                { value: 'claude-sonnet-4-5-20250929', label: '⚡ Claude Sonnet 4.5 (推荐)' },
-                { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-                { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
-                { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
-                { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-                { value: 'claude-3-5-haiku-20241022', label: '🚀 Claude 3.5 Haiku (快速)' },
-            ],
-            openai: [
-                // GPT-4o Series (Recommended - 2024-2025)
-                { value: 'chatgpt-4o-latest', label: '🌟 ChatGPT-4o Latest (最新推荐)' },
-                { value: 'gpt-4o', label: '⚡ GPT-4o (多模态旗舰)' },
-                { value: 'gpt-4o-2024-11-20', label: 'GPT-4o (2024-11-20)' },
-                { value: 'gpt-4o-mini', label: '🚀 GPT-4o Mini (快速省钱)' },
+        // Handle custom provider separately (no metadata available)
+        if (provider === 'custom') {
+            return `<option value="custom-model" ${selectedModel === 'custom-model' ? 'selected' : ''}>Custom Model</option>`;
+        }
 
-                // o-Series Reasoning Models (2025)
-                { value: 'o1', label: '🧠 o1 (深度推理)' },
-                { value: 'o1-preview', label: 'o1 Preview' },
-                { value: 'o1-mini', label: 'o1 Mini (推理精简版)' },
-                { value: 'o3-mini', label: 'o3-mini (最新推理模型)' },
+        try {
+            // Get models from provider metadata (single source of truth)
+            const metadata = AIProviderFactory.getMetadata(provider);
+            const models = metadata.models || [];
 
-                // GPT-4 Turbo (Legacy but supported)
-                { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-                { value: 'gpt-4', label: 'GPT-4 Classic' },
+            return models
+                .map(m => {
+                    // Build display label with icons
+                    let label = m.displayName;
 
-                // GPT-3.5 (Budget option)
-                { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (经济型)' },
-            ],
-            gemini: [
-                // Gemini 2.5 Series (Latest - 2025)
-                { value: 'gemini-2.5-pro', label: '🌟 Gemini 2.5 Pro (最强推理能力)' },
-                { value: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (推荐，性价比最高)' },
-                { value: 'gemini-2.5-flash-lite', label: '🚀 Gemini 2.5 Flash Lite (最快最省)' },
-                { value: 'gemini-2.5-flash-image', label: '🖼️ Gemini 2.5 Flash Image (图像生成)' },
+                    // Add icon prefix based on flags (avoid duplicating if already in displayName)
+                    if (!label.startsWith('🌟') && !label.startsWith('⚡') && !label.startsWith('🚀')) {
+                        if (m.recommended) {
+                            // First recommended gets star, second gets lightning
+                            const recommendedCount = models.filter(x => x.recommended).indexOf(m);
+                            label = (recommendedCount === 0 ? '🌟 ' : '⚡ ') + label;
+                        } else if (m.deprecated) {
+                            label = label + ' (旧版)';
+                        }
+                    }
 
-                // Gemini 2.0 Series
-                { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (稳定版)' },
-                { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp (实验版)' },
-
-                // Gemini 1.5 Series (Previous generation)
-                { value: 'gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro Latest' },
-                { value: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash Latest' },
-            ],
-            xai: [
-                { value: 'grok-beta', label: 'Grok Beta' },
-                { value: 'grok-vision-beta', label: 'Grok Vision Beta' },
-            ],
-            deepseek: [
-                { value: 'deepseek-chat', label: 'DeepSeek Chat' },
-                { value: 'deepseek-coder', label: 'DeepSeek Coder' },
-                { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (推理模型)' },
-            ],
-            moonshot: [
-                // Kimi K2 Series (Latest - 2025)
-                { value: 'kimi-k2-0905-preview', label: '🌟 Kimi K2 0905 (256K上下文，最新推荐)' },
-                { value: 'kimi-k2-thinking', label: '🧠 Kimi K2 Thinking (256K，推理模型)' },
-                { value: 'kimi-k2-thinking-turbo', label: '⚡ Kimi K2 Thinking Turbo (256K，快速推理)' },
-                { value: 'kimi-k2-0711-preview', label: 'Kimi K2 0711 (128K)' },
-
-                // Legacy models
-                { value: 'moonshot-v1-128k', label: 'Moonshot V1 128K (旧版)' },
-                { value: 'moonshot-v1-32k', label: 'Moonshot V1 32K (旧版)' },
-                { value: 'moonshot-v1-8k', label: 'Moonshot V1 8K (旧版)' },
-            ],
-            custom: [
-                { value: 'custom-model', label: 'Custom Model' },
-            ],
-        };
-
-        const models = modelsByProvider[provider] || [];
-        return models
-            .map(m => `<option value="${this.escapeHtml(m.value)}" ${m.value === selectedModel ? 'selected' : ''}>${this.escapeHtml(m.label)}</option>`)
-            .join('');
+                    return `<option value="${this.escapeHtml(m.id)}" ${m.id === selectedModel ? 'selected' : ''}>${this.escapeHtml(label)}</option>`;
+                })
+                .join('');
+        } catch (error) {
+            console.error(`[SettingsUIBuilder] Failed to get models for ${provider}:`, error);
+            // Fallback: return empty or a placeholder
+            return `<option value="">加载模型失败</option>`;
+        }
     }
 
     /**

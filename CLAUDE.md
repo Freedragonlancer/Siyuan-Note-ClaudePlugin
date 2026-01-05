@@ -15,6 +15,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run deploy        # One-command: build + copy to SiYuan plugins folder
 npm run dev           # Watch mode for development
 npm run build         # Build only
+npm run clean-deploy  # Remove duplicates + fresh deploy (fixes topbar icon issues)
+npm run clean-cache   # Clear SiYuan's cached HTML/CSS
+```
+
+### Testing
+```bash
+npm run test          # Run all tests with Vitest
+npm run test:ui       # Run tests with browser UI
+npm run test:unit     # Unit tests only
+npm run test:integration  # Integration tests only
+npm run test:coverage # Generate coverage report
 ```
 
 **Note**: Hot reload NOT supported - must restart SiYuan (F5) after each change.
@@ -26,12 +37,12 @@ npm run build         # Build only
 4. Test in plugin dock panel
 5. Check console (F12) for errors
 
-### Testing Checklist
-- [ ] Build succeeds without errors
-- [ ] Plugin loads without console errors
-- [ ] Quick Edit works with all presets
-- [ ] Settings persist after restart
-- [ ] Batch operations perform well (200+ blocks)
+### Path Aliases
+Use `@/` for imports from `src/`:
+```typescript
+import { SecurityUtils } from '@/utils/Security';
+import { AIProvider } from '@/ai/types';
+```
 
 ---
 
@@ -104,20 +115,11 @@ FilterPipeline
   └── CustomFunctionMiddleware (user-defined)
 ```
 
-**5. UI Panels (Modular Architecture v0.14.0)**
+**5. UI Panels (Modular Architecture)**
 
 `UnifiedAIPanel` - Main chat interface (sidebar dock)
-- **Architecture**: Coordinator pattern with 6 specialized utility modules
-- **Current size**: 1,718 lines (reduced from 2,038 lines, 15.7% reduction)
-- **Target achieved**: <1,800 lines ✅
-
-**Extracted Modules** (`src/sidebar/unified/`):
-- `UnifiedPanelUIBuilder` (280 lines) - HTML generation for panel UI
-- `PresetManager` (258 lines) - Preset selection & synchronization
-- `QueueRenderer` (218 lines) - Edit queue UI management
-- `MessageRenderer` (172 lines) - Markdown rendering & streaming
-- `UnifiedPanelHelpers` (145 lines) - Utility functions
-- `SelectionManager` (123 lines) - Block selection utilities
+- **Architecture**: Coordinator pattern with specialized utility modules
+- **Modules** (`src/sidebar/unified/`): UIBuilder, PresetManager, QueueRenderer, MessageRenderer, Helpers, SelectionManager
 
 ---
 
@@ -231,14 +233,6 @@ Adding a provider requires implementing the `AIProvider` interface and updating 
 7. Add UI components in `src/settings/SettingsPanelV3.ts`
 8. Add display name mapping in `src/claude/UniversalAIClient.ts`
 9. Add badge display in `src/sidebar/UnifiedAIPanel.ts`
-
-**Current Providers**:
-- `anthropic` - Claude (Sonnet 4.5, Opus 4, Sonnet 3.7, Haiku 3.5)
-- `openai` - GPT (GPT-4o, GPT-4 Turbo, O-series reasoning models)
-- `gemini` - Google Gemini (2.5 Pro, 2.0 Flash, 1.5 Pro/Flash)
-- `xai` - xAI Grok (grok-beta, grok-vision-beta)
-- `deepseek` - DeepSeek (V3, V2.5, Reasoner, Coder)
-- `moonshot` - Moonshot AI Kimi (K2 Thinking, K1-128K/32K)
 
 **Provider-Specific Notes**:
 - **Anthropic**: BaseURL automatically strips trailing `/v1` to prevent duplicate paths
@@ -382,28 +376,6 @@ See [RELEASE.md](RELEASE.md) for complete workflow.
 
 ---
 
-## Architecture Status (v0.14.0)
-
-**Phase 1 Complete** ✅ - SettingsPanelV3 Modularization
-- Reduced from 1,788 → 244 lines (86% reduction)
-- Created 5 specialized modules (1,975 lines)
-- Improved type safety (eliminated critical `any` types)
-- Consolidated `escapeHtml` implementations to single source
-
-**Phase 2 Complete** ✅ - UnifiedAIPanel Modularization
-- Reduced from 2,038 → 1,718 lines (15.7% reduction)
-- Target achieved: <1,800 lines ✅
-- Created 6 specialized modules (1,211 lines)
-- Coordinator pattern with context-based communication
-- All modules use static utility methods (stateless design)
-
-**Next Steps (Phase 3 - Planned)**:
-- Further extract core business logic (sendMessage, addChatMessageToUI, addEditMessageToUI)
-- Implement Dependency Injection container for better testability
-- Create automated integration tests for modular components
-
----
-
 ## Known Limitations
 
 - Hot reload not supported (must restart SiYuan after code changes)
@@ -412,7 +384,3 @@ See [RELEASE.md](RELEASE.md) for complete workflow.
 - API keys stored unencrypted in localStorage (warn users to protect workspace)
 - QuickEditManager uses hybrid architecture (legacy + new modular components for backward compatibility)
 
----
-
-**Last Updated**: 2025-01-17
-**Version**: 0.14.0 (Phase 2 Complete - UnifiedAIPanel Modularization)

@@ -111,12 +111,13 @@ export class UniversalAIClient {
             }
 
             // Choose appropriate default model based on provider
-            let defaultModel = 'claude-sonnet-4-5-20250929';  // Default for Anthropic
-            if (activeProvider === 'openai') defaultModel = 'gpt-4o';
-            else if (activeProvider === 'gemini') defaultModel = 'gemini-2.0-flash-exp';
-            else if (activeProvider === 'xai') defaultModel = 'grok-beta';
-            else if (activeProvider === 'deepseek') defaultModel = 'deepseek-chat';
-            else if (activeProvider === 'moonshot') defaultModel = 'moonshot-v1-8k';
+            // Uses AIProviderFactory metadata as single source of truth
+            let defaultModel: string;
+            try {
+                defaultModel = AIProviderFactory.getMetadata(activeProvider).defaultModel;
+            } catch {
+                defaultModel = 'claude-sonnet-4-5-20250929';  // Fallback for unknown providers
+            }
 
             const modelId = (providerConfig.model && providerConfig.model.trim() !== '')
                 ? providerConfig.model
@@ -224,18 +225,15 @@ export class UniversalAIClient {
 
     /**
      * Get display-friendly provider name (short form)
+     * Uses AIProviderFactory metadata as single source of truth
      */
     getProviderDisplayName(): string {
-        const provider = this.settings.activeProvider;
-        const names: Record<string, string> = {
-            'anthropic': 'Claude',
-            'openai': 'GPT',
-            'gemini': 'Gemini',
-            'xai': 'Grok',
-            'deepseek': 'DeepSeek',
-            'moonshot': 'Kimi'
-        };
-        return names[provider] || provider || 'Unknown';
+        const provider = this.settings.activeProvider || 'anthropic';
+        try {
+            return AIProviderFactory.getMetadata(provider).displayName;
+        } catch {
+            return provider || 'Unknown';
+        }
     }
 
     /**
@@ -574,16 +572,14 @@ export class UniversalAIClient {
 
     /**
      * Get default base URL for current provider
+     * Uses AIProviderFactory metadata as single source of truth
      */
     private getDefaultBaseURL(): string {
         const activeProvider = this.settings.activeProvider || 'anthropic';
-        const defaultURLs: Record<string, string> = {
-            anthropic: 'https://api.anthropic.com',
-            openai: 'https://api.openai.com',
-            gemini: 'https://generativelanguage.googleapis.com',
-            xai: 'https://api.x.ai',
-            deepseek: 'https://api.deepseek.com',
-        };
-        return defaultURLs[activeProvider] || 'unknown';
+        try {
+            return AIProviderFactory.getMetadata(activeProvider).defaultBaseURL;
+        } catch {
+            return 'unknown';
+        }
     }
 }

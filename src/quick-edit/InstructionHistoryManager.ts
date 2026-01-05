@@ -15,10 +15,17 @@ const FILE_PATH = '/data/storage/siyuan-plugin-claude-assistant/instruction-hist
 const MAX_HISTORY_SIZE = 30;
 const INIT_TIMEOUT = 3000; // 3s timeout for initialization
 
-export interface HistoryEntry {
+/**
+ * Entry in the instruction/command history for recall functionality
+ * Renamed from HistoryEntry to avoid naming conflict with EditHistoryEntry
+ */
+export interface InstructionHistoryEntry {
     text: string;
     timestamp: number;
 }
+
+/** @deprecated Use InstructionHistoryEntry instead */
+export type HistoryEntry = InstructionHistoryEntry;
 
 export class InstructionHistoryManager {
     private history: HistoryEntry[] = [];

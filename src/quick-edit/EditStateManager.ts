@@ -1,9 +1,11 @@
 /**
  * Edit State Manager
  * Manages state for active Quick Edit sessions
+ *
+ * Refactored v0.18.0: Added activeRequestBlockId, pendingSelection
  */
 
-import type { InlineEditBlock } from './inline-types';
+import type { InlineEditBlock, InlineEditSelection } from './inline-types';
 
 export class EditStateManager {
     /** Map of active edit blocks (blockId -> InlineEditBlock) */
@@ -11,6 +13,12 @@ export class EditStateManager {
 
     /** Currently processing flag (prevents concurrent edits) */
     private isProcessing: boolean = false;
+
+    /** Block ID of the currently active AI request (for cancellation) */
+    private activeRequestBlockId: string | null = null;
+
+    /** Pending selection waiting to be processed */
+    private pendingSelection: InlineEditSelection | null = null;
 
     /** Keyboard event handlers (blockId -> handler) */
     private keyboardHandlers: Map<string, (e: KeyboardEvent) => void> = new Map();
@@ -33,6 +41,41 @@ export class EditStateManager {
      */
     setProcessing(processing: boolean): void {
         this.isProcessing = processing;
+    }
+
+    /**
+     * Get active request block ID
+     */
+    getActiveRequestBlockId(): string | null {
+        return this.activeRequestBlockId;
+    }
+
+    /**
+     * Set active request block ID
+     */
+    setActiveRequestBlockId(blockId: string | null): void {
+        this.activeRequestBlockId = blockId;
+    }
+
+    /**
+     * Get pending selection
+     */
+    getPendingSelection(): InlineEditSelection | null {
+        return this.pendingSelection;
+    }
+
+    /**
+     * Set pending selection
+     */
+    setPendingSelection(selection: InlineEditSelection | null): void {
+        this.pendingSelection = selection;
+    }
+
+    /**
+     * Clear pending selection
+     */
+    clearPendingSelection(): void {
+        this.pendingSelection = null;
     }
 
     /**
@@ -68,6 +111,13 @@ export class EditStateManager {
      */
     clearAllActiveBlocks(): void {
         this.activeBlocks.clear();
+    }
+
+    /**
+     * Get keyboard handler for a block
+     */
+    getKeyboardHandler(blockId: string): ((e: KeyboardEvent) => void) | undefined {
+        return this.keyboardHandlers.get(blockId);
     }
 
     /**
@@ -198,6 +248,8 @@ export class EditStateManager {
 
         this.observedContainers.clear();
         this.isProcessing = false;
+        this.activeRequestBlockId = null;
+        this.pendingSelection = null;
 
         console.log('[EditStateManager] Destroyed');
     }

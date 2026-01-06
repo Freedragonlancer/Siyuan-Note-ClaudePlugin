@@ -38,7 +38,10 @@ export class SelectionHandler {
 
         if (!selection || selection.rangeCount === 0) {
             // No text selection, try block selection fallback
-            return this.getBlockSelectionFallback();
+            const blockFallback = this.getBlockSelectionFallback();
+            if (blockFallback) return blockFallback;
+            // Try cursor block fallback (select entire block where cursor is)
+            return this.getCursorBlockFallback();
         }
 
         const range = selection.getRangeAt(0);
@@ -46,7 +49,10 @@ export class SelectionHandler {
 
         if (!selectedText) {
             // Empty text selection, try block selection fallback
-            return this.getBlockSelectionFallback();
+            const blockFallback = this.getBlockSelectionFallback();
+            if (blockFallback) return blockFallback;
+            // Try cursor block fallback (select entire block where cursor is)
+            return this.getCursorBlockFallback();
         }
 
         // Find containing block
@@ -159,6 +165,58 @@ export class SelectionHandler {
     private getSelectedBlocks(): HTMLElement[] {
         const selectedBlocks = document.querySelectorAll('.protyle-wysiwyg--select[data-node-id]');
         return Array.from(selectedBlocks) as HTMLElement[];
+    }
+
+    /**
+     * Fallback: Get the block where cursor is located (no text selection)
+     * This enables Quick Edit to work when user just places cursor in a block
+     */
+    private getCursorBlockFallback(): ExtendedSelection | null {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+            return null;
+        }
+
+        const range = selection.getRangeAt(0);
+        // Only handle cursor position (collapsed range)
+        if (!range.collapsed) {
+            return null; // Has selection, should not reach here
+        }
+
+        // Find block element from cursor position
+        const blockElement = this.findBlockElement(range.startContainer);
+        if (!blockElement) {
+            return null;
+        }
+
+        const blockId = blockElement.getAttribute('data-node-id');
+        if (!blockId) {
+            return null;
+        }
+
+        // Get full text content of the block
+        const blockText = blockElement.textContent?.trim() || '';
+        if (!blockText) {
+            return null; // Empty block, don't process
+        }
+
+        // Create range covering the entire block
+        const blockRange = document.createRange();
+        blockRange.selectNodeContents(blockElement);
+
+        console.log(`[SelectionHandler] Using cursor block fallback: blockId=${blockId}, text length=${blockText.length}`);
+
+        return {
+            text: blockText,
+            range: blockRange,
+            blockId: blockId,
+            blockElement: blockElement,
+            selectedBlockIds: [blockId],
+            selectedBlockElements: [blockElement],
+            isMultiBlock: false,
+            startOffset: 0,
+            endOffset: blockText.length
+        };
     }
 
     /**

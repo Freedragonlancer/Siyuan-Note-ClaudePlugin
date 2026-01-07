@@ -166,34 +166,21 @@ export class GeminiProvider extends BaseAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            // Gemini 3.0 models (1M token context window)
-            'gemini-3-pro': 8192,                // Max output tokens
-            'gemini-3-pro-preview': 8192,
+            // Gemini 3 models (1M context, 64K output) - Released Dec 2025
+            'gemini-3-flash': 65536,             // Max 64K output tokens
+            'gemini-3-pro': 65536,
+            'gemini-3-pro-image': 65536,
 
-            // Gemini 2.5 models (1M token context window)
-            'gemini-2.5-pro': 8192,              // Max output tokens
+            // Gemini 2.5 models (1M context, 8K output)
+            'gemini-2.5-pro': 8192,
+            'gemini-2.5-pro-preview': 8192,
             'gemini-2.5-flash': 8192,
             'gemini-2.5-flash-lite': 8192,
-            'gemini-2.5-flash-image': 8192,
             'gemini-2.5-flash-preview': 8192,
 
-            // Gemini 2.0 models (1M token context window)
+            // Gemini 2.0 models (1M context, 8K output)
             'gemini-2.0-flash': 8192,
-            'gemini-2.0-flash-001': 8192,
-            'gemini-2.0-flash-exp': 8192,
             'gemini-2.0-flash-lite': 8192,
-
-            // Gemini 1.5 models
-            'gemini-1.5-pro': 8192,
-            'gemini-1.5-pro-latest': 8192,
-            'gemini-1.5-flash': 8192,
-            'gemini-1.5-flash-latest': 8192,
-            'gemini-1.5-flash-8b': 8192,
-
-            // Legacy models
-            'gemini-pro': 8192,
-            'gemini-pro-vision': 4096,
-            'gemini-ultra': 8192,
         };
 
         // Try exact match first
@@ -201,7 +188,7 @@ export class GeminiProvider extends BaseAIProvider {
             return limits[model];
         }
 
-        // Try prefix match (e.g., "gemini-2.5-pro-001" matches "gemini-2.5-pro")
+        // Try prefix match (e.g., "gemini-3-flash-001" matches "gemini-3-flash")
         for (const [key, value] of Object.entries(limits)) {
             if (model.startsWith(key)) {
                 return value;
@@ -226,31 +213,44 @@ export class GeminiProvider extends BaseAIProvider {
         return {
             type: 'gemini',
             displayName: 'Google Gemini',
-            description: 'Gemini Pro 及其他 Google AI 模型',
+            description: 'Gemini 3/2.5/2.0 系列 AI 模型',
             icon: '✨',
-            apiKeyUrl: 'https://makersuite.google.com/app/apikey',
+            apiKeyUrl: 'https://aistudio.google.com/apikey',
             defaultBaseURL: 'https://generativelanguage.googleapis.com',
-            defaultModel: 'gemini-2.5-flash',
+            defaultModel: 'gemini-3-flash',
             models: [
+                // Gemini 3 系列 - 2025年12月发布，最新一代
                 {
-                    id: 'gemini-3-pro-preview-11-2025',
-                    displayName: 'Gemini 3 Pro Preview (最新，2025年11月)',
+                    id: 'gemini-3-flash',
+                    displayName: 'Gemini 3 Flash (推荐，最新默认)',
                     contextWindow: 1000000,
-                    description: '最新Gemini 3 Pro预览版，先进推理能力',
-                    recommended: false,
-                },
-                {
-                    id: 'gemini-2.5-flash',
-                    displayName: 'Gemini 2.5 Flash (推荐，性价比最高)',
-                    contextWindow: 1000000,
-                    description: '最新2.5 Flash，性价比最高',
+                    description: '最新一代，64K输出，SWE-bench 78%',
                     recommended: true,
                 },
                 {
-                    id: 'gemini-2.5-pro',
-                    displayName: 'Gemini 2.5 Pro (1M上下文)',
+                    id: 'gemini-3-pro',
+                    displayName: 'Gemini 3 Pro (最强推理)',
                     contextWindow: 1000000,
-                    description: '最先进的思考模型',
+                    description: '最强大模型，64K输出，超越GPT-5 Pro',
+                },
+                {
+                    id: 'gemini-3-pro-image',
+                    displayName: 'Gemini 3 Pro Image (图像)',
+                    contextWindow: 1000000,
+                    description: '图像生成和理解',
+                },
+                // Gemini 2.5 系列 - 生产就绪
+                {
+                    id: 'gemini-2.5-flash',
+                    displayName: 'Gemini 2.5 Flash (性价比)',
+                    contextWindow: 1000000,
+                    description: '2.5 Flash，性价比优秀',
+                },
+                {
+                    id: 'gemini-2.5-pro',
+                    displayName: 'Gemini 2.5 Pro',
+                    contextWindow: 1000000,
+                    description: '2.5 Pro，代码和函数调用优化',
                 },
                 {
                     id: 'gemini-2.5-flash-lite',
@@ -258,56 +258,25 @@ export class GeminiProvider extends BaseAIProvider {
                     contextWindow: 1000000,
                     description: '最快、最经济的模型',
                 },
-                {
-                    id: 'gemini-2.5-flash-image',
-                    displayName: 'Gemini 2.5 Flash Image (图像生成)',
-                    contextWindow: 1000000,
-                    description: '图像生成和理解',
-                },
+                // Gemini 2.0 系列 - 仍可用
                 {
                     id: 'gemini-2.0-flash',
-                    displayName: 'Gemini 2.0 Flash (1M)',
+                    displayName: 'Gemini 2.0 Flash',
                     contextWindow: 1000000,
-                    description: '2.0下一代特性',
+                    description: '2.0 Flash，稳定可靠',
                 },
                 {
                     id: 'gemini-2.0-flash-lite',
                     displayName: 'Gemini 2.0 Flash Lite',
                     contextWindow: 1000000,
-                    description: '2.0轻量版',
-                },
-                {
-                    id: 'gemini-1.5-pro',
-                    displayName: 'Gemini 1.5 Pro (2M)',
-                    contextWindow: 2000000,
-                    description: '1.5 Pro，超大上下文',
-                },
-                {
-                    id: 'gemini-1.5-flash',
-                    displayName: 'Gemini 1.5 Flash',
-                    contextWindow: 1000000,
-                    description: '1.5 Flash，快速响应',
-                },
-                {
-                    id: 'gemini-pro',
-                    displayName: 'Gemini Pro (传统)',
-                    contextWindow: 32768,
-                    description: '传统Gemini Pro',
-                    deprecated: true,
-                },
-                {
-                    id: 'gemini-pro-vision',
-                    displayName: 'Gemini Pro Vision (传统)',
-                    contextWindow: 16384,
-                    description: '传统视觉模型',
-                    deprecated: true,
+                    description: '2.0 轻量版',
                 },
             ],
             features: {
                 supportsStreaming: true,
                 supportsSystemPrompt: true,
                 supportsVision: true,
-                supportsFunctionCalling: false,
+                supportsFunctionCalling: true,
             },
             defaults: {
                 maxTokens: 8192,

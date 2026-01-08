@@ -270,6 +270,7 @@ export class UniversalAIClient {
 
     /**
      * Send a message and get a streaming response
+     * @param onGeneratedImages v0.19.0: Callback for AI-generated images (e.g., from Gemini Imagen)
      */
     async sendMessage(
         messages: Message[],
@@ -278,7 +279,8 @@ export class UniversalAIClient {
         onComplete: CompleteCallback,
         feature: string = "Chat",
         filterRules?: FilterRule[],
-        systemPrompt?: string
+        systemPrompt?: string,
+        onGeneratedImages?: (images: import('../ai/types').GeneratedImage[]) => void
     ): Promise<void> {
         if (!this.isConfigured()) {
             onError(new Error("AI provider is not configured. Please set your API key in settings."));
@@ -326,6 +328,8 @@ export class UniversalAIClient {
                         this.activeAbortController?.abort();
                     }, STREAM_CHUNK_TIMEOUT);
                 },
+                // v0.19.0: Pass through generated images callback
+                onGeneratedImages: onGeneratedImages,
             };
 
             // Set initial timeout

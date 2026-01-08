@@ -4,7 +4,9 @@
  */
 
 import OpenAI from 'openai';
-import type { Message } from '../../claude/types';
+import type { ChatCompletionContentPart, ChatCompletionContentPartImage, ChatCompletionContentPartText } from 'openai/resources/chat/completions';
+import type { Message, ContentBlock, ImageContent, TextContent } from '../../claude/types';
+import { extractText } from '../../claude/types';
 import type {
     AIModelConfig,
     AIRequestOptions,
@@ -375,10 +377,14 @@ export class OpenAIProvider extends BaseAIProvider {
     /**
      * Convert messages to OpenAI format
      * OpenAI uses separate system message instead of system prompt in options
+     * Supports multimodal content (text + images)
      */
-    private convertMessages(messages: Message[], systemPrompt?: string): Array<{ role: string; content: string }> {
+    private convertMessages(messages: Message[], systemPrompt?: string): Array<{
+        role: string;
+        content: string | ChatCompletionContentPart[];
+    }> {
         const normalized = this.normalizeMessages(messages);
-        const converted: Array<{ role: string; content: string }> = [];
+        const converted: Array<{ role: string; content: string | ChatCompletionContentPart[] }> = [];
 
         // Add system message if provided
         if (systemPrompt && systemPrompt.trim()) {
@@ -390,12 +396,59 @@ export class OpenAIProvider extends BaseAIProvider {
 
         // Convert user/assistant messages
         for (const msg of normalized) {
-            converted.push({
-                role: msg.role,
-                content: msg.content,
-            });
+            // Check if content is multimodal (ContentBlock array)
+            if (typeof msg.content !== 'string' && Array.isArray(msg.content)) {
+                const openaiContent = this.convertContentBlocks(msg.content);
+                converted.push({
+                    role: msg.role,
+                    content: openaiContent,
+                });
+            } else {
+                // Simple string content
+                converted.push({
+                    role: msg.role,
+                    content: msg.content as string,
+                });
+            }
         }
 
         return converted;
+    }
+
+    /**
+     * Convert ContentBlock array to OpenAI's ChatCompletionContentPart array
+     */
+    private convertContentBlocks(blocks: ContentBlock[]): ChatCompletionContentPart[] {
+        const parts: ChatCompletionContentPart[] = [];
+
+        for (const block of blocks) {
+            if (block.type === 'text') {
+                parts.push({
+                    type: 'text',
+                    text: block.text,
+                } as ChatCompletionContentPartText);
+            } else if (block.type === 'image') {
+                // OpenAI uses image_url format with data URL for base64 images
+                let imageUrl: string;
+
+                if (block.source.type === 'base64') {
+                    // Convert to data URL format: data:image/png;base64,...
+                    imageUrl = `data:${block.source.media_type};base64,${block.source.data}`;
+                } else {
+                    // URL type - use directly
+                    imageUrl = block.source.data;
+                }
+
+                parts.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: imageUrl,
+                        detail: 'auto', // Let OpenAI decide the detail level
+                    },
+                } as ChatCompletionContentPartImage);
+            }
+        }
+
+        return parts;
     }
 }

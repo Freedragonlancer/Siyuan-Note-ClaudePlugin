@@ -3,6 +3,7 @@
  * Handles AI request processing for Quick Edit
  *
  * Created v0.18.0: Extracted from QuickEditManager
+ * v0.19.0: Added multimodal image support
  */
 
 import { showMessage } from 'siyuan';
@@ -12,6 +13,9 @@ import type { PromptBuilder } from './PromptBuilder';
 import type { ClaudeClient } from '@/claude';
 import type { ConfigManager } from '@/settings/ConfigManager';
 import type { EditSettings } from '@/editor/types';
+import type { SelectionHandler } from './SelectionHandler';
+import type { ImageContent, Message, ContentBlock } from '@/claude/types';
+import { createMultimodalMessage } from '@/claude/types';
 import { Logger } from '@/utils/Logger';
 
 /**
@@ -33,6 +37,8 @@ export interface AIRequestHandlerDependencies {
     configManager: ConfigManager;
     /** Edit settings */
     settings: EditSettings;
+    /** Selection handler for image extraction (v0.19.0) */
+    selectionHandler?: SelectionHandler;
     /** Get current preset ID */
     getCurrentPresetId: () => Promise<string | null>;
     /** Set processing flag */
@@ -92,16 +98,52 @@ export class AIRequestHandler {
 
             const { userPrompt, systemPrompt: presetSystemPrompt, filterRules } = promptResult;
 
+            // v0.19.0: Extract images from selected blocks for multimodal support
+            let extractedImages: ImageContent[] = [];
+            if (this.deps.selectionHandler && block.selectedBlockIds && block.selectedBlockIds.length > 0) {
+                try {
+                    // Get block elements from DOM
+                    const blockElements: HTMLElement[] = [];
+                    for (const blockId of block.selectedBlockIds) {
+                        const element = document.querySelector(`.protyle-wysiwyg [data-node-id="${blockId}"]`) as HTMLElement;
+                        if (element) {
+                            blockElements.push(element);
+                        }
+                    }
+
+                    // Extract images from selected blocks
+                    if (blockElements.length > 0 && this.deps.selectionHandler.hasImagesInBlocks(blockElements)) {
+                        extractedImages = await this.deps.selectionHandler.extractImagesFromBlocks(blockElements);
+                        this.logger.info(`Extracted ${extractedImages.length} images from selected blocks`);
+                    }
+                } catch (error) {
+                    this.logger.warn('Failed to extract images from blocks:', error);
+                    // Continue without images
+                }
+            }
+
+            // Build message - multimodal if images present, otherwise text-only
+            let messages: Message[];
+            if (extractedImages.length > 0) {
+                // Create multimodal message with images + text
+                messages = [createMultimodalMessage('user', userPrompt, extractedImages)];
+                this.logger.debug(`Sending multimodal request with ${extractedImages.length} images`);
+            } else {
+                // Text-only message
+                messages = [{ role: 'user', content: userPrompt }];
+            }
+
             // Diagnostic logging
             this.logger.debug(
                 `Request params - UserPrompt: ${userPrompt.length} chars, ` +
                 `FilterRules: ${filterRules.length}, ` +
                 `SystemPrompt: ${presetSystemPrompt ? 'preset' : 'global'}, ` +
-                `Preset: ${promptResult.presetName || 'none'}`
+                `Preset: ${promptResult.presetName || 'none'}, ` +
+                `Images: ${extractedImages.length}`
             );
 
             await this.deps.claudeClient.sendMessage(
-                [{ role: 'user', content: userPrompt }],
+                messages,
                 // onMessage callback
                 (chunk) => {
                     const result = this.handleStreamChunk(

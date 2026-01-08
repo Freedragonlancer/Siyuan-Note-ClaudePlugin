@@ -34,6 +34,10 @@ import type { PresetEvent } from "../settings/PresetEventBus";
 import { marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
+// Multimodal support (v0.19.0)
+import type { ImageContent, ImageMediaType, ContentBlock } from "../claude/types";
+import { createImageContent, detectMediaType, parseDataUrl, createMultimodalMessage } from "../claude/types";
+import { BlockOperations } from "../quick-edit/BlockOperations";
 
 export class UnifiedAIPanel {
     // Core dependencies
@@ -45,6 +49,18 @@ export class UnifiedAIPanel {
     private messages: UnifiedMessage[] = [];
     private isStreaming: boolean = false;
     private activeChatPresetId: string = 'default'; // Active preset for chat
+
+    // Multimodal state (v0.19.0) - pending images for next message
+    private pendingImages: Array<{
+        id: string;
+        dataUrl: string;
+        base64: string;
+        mediaType: ImageMediaType;
+        fileName: string;
+    }> = [];
+
+    // Block operations for saving AI-generated images (v0.19.0)
+    private blockOperations: BlockOperations;
 
     // Edit state
     private textSelectionManager: TextSelectionManager;
@@ -106,6 +122,7 @@ export class UnifiedAIPanel {
         this.editQueue = editQueue;
         this.diffRenderer = diffRenderer;
         this.contextExtractor = new ContextExtractor(new EditorHelper());
+        this.blockOperations = new BlockOperations();  // v0.19.0: For saving AI-generated images
         this.onSettingsCallback = onSettings;
         this.config = { ...DEFAULT_UNIFIED_PANEL_CONFIG, ...config };
 
@@ -401,7 +418,189 @@ export class UnifiedAIPanel {
             e.stopPropagation();
             this.clearEditQueue();
         });
+
+        // Image upload event listeners (v0.19.0)
+        this.attachImageEventListeners();
     }
+
+    /**
+     * Attach image upload event listeners (v0.19.0)
+     */
+    private attachImageEventListeners(): void {
+        const input = this.element.querySelector("#claude-input") as HTMLTextAreaElement;
+        const imageUploadBtn = this.element.querySelector("#claude-image-upload-btn");
+        const imageFileInput = this.element.querySelector("#claude-image-file-input") as HTMLInputElement;
+        const imagePreviewArea = this.element.querySelector("#claude-image-preview-area");
+
+        // Click image upload button -> trigger file input
+        imageUploadBtn?.addEventListener("click", () => {
+            imageFileInput?.click();
+        });
+
+        // Handle file selection
+        imageFileInput?.addEventListener("change", async () => {
+            const files = imageFileInput.files;
+            if (files && files.length > 0) {
+                for (const file of Array.from(files)) {
+                    await this.handleImageFile(file);
+                }
+                // Reset file input for next selection
+                imageFileInput.value = '';
+            }
+        });
+
+        // Handle clipboard paste on textarea
+        input?.addEventListener("paste", async (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of Array.from(items)) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault(); // Prevent default paste behavior for images
+                    const file = item.getAsFile();
+                    if (file) {
+                        await this.handleImageFile(file);
+                    }
+                }
+            }
+        });
+
+        // Handle drag and drop on input area
+        const inputArea = this.element.querySelector(".claude-input-area");
+        inputArea?.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            (inputArea as HTMLElement).style.background = 'var(--b3-theme-primary-lightest)';
+        });
+
+        inputArea?.addEventListener("dragleave", (e) => {
+            e.preventDefault();
+            (inputArea as HTMLElement).style.background = '';
+        });
+
+        inputArea?.addEventListener("drop", async (e: DragEvent) => {
+            e.preventDefault();
+            (inputArea as HTMLElement).style.background = '';
+
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                for (const file of Array.from(files)) {
+                    if (file.type.startsWith('image/')) {
+                        await this.handleImageFile(file);
+                    }
+                }
+            }
+        });
+
+        // Handle remove button clicks on preview images (event delegation)
+        imagePreviewArea?.addEventListener("click", (e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('claude-image-remove-btn')) {
+                const imageId = target.dataset.imageId;
+                if (imageId) {
+                    this.removeImage(imageId);
+                }
+            }
+        });
+    }
+
+    /**
+     * Handle an image file: convert to base64 and add to pending images
+     */
+    private async handleImageFile(file: File): Promise<void> {
+        // Validate file type
+        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validTypes.includes(file.type)) {
+            console.warn(`[UnifiedAIPanel] Unsupported image type: ${file.type}`);
+            this.addSystemMessage(`不支持的图片格式: ${file.type}。请使用 JPEG, PNG, GIF 或 WebP。`, 'warning');
+            return;
+        }
+
+        // Check file size (limit to 4MB)
+        const maxSize = 4 * 1024 * 1024; // 4MB
+        if (file.size > maxSize) {
+            console.warn(`[UnifiedAIPanel] Image too large: ${file.size} bytes`);
+            this.addSystemMessage(`图片太大 (${(file.size / 1024 / 1024).toFixed(2)} MB)。请使用小于 4MB 的图片。`, 'warning');
+            return;
+        }
+
+        try {
+            // Read file as data URL
+            const dataUrl = await this.readFileAsDataURL(file);
+            const parsed = parseDataUrl(dataUrl);
+
+            if (!parsed) {
+                throw new Error('Failed to parse data URL');
+            }
+
+            // Create pending image entry
+            const imageEntry = {
+                id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                dataUrl: dataUrl,
+                base64: parsed.data,
+                mediaType: parsed.mediaType,
+                fileName: file.name
+            };
+
+            this.pendingImages.push(imageEntry);
+            this.updateImagePreviewArea();
+
+            console.log(`[UnifiedAIPanel] Added image: ${file.name} (${parsed.mediaType})`);
+        } catch (error) {
+            console.error('[UnifiedAIPanel] Failed to process image:', error);
+            this.addSystemMessage('图片处理失败，请重试。', 'error');
+        }
+    }
+
+    /**
+     * Read file as data URL (Promise wrapper)
+     */
+    private readFileAsDataURL(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /**
+     * Remove an image from pending images
+     */
+    private removeImage(imageId: string): void {
+        const index = this.pendingImages.findIndex(img => img.id === imageId);
+        if (index !== -1) {
+            this.pendingImages.splice(index, 1);
+            this.updateImagePreviewArea();
+        }
+    }
+
+    /**
+     * Update the image preview area UI
+     */
+    private updateImagePreviewArea(): void {
+        const previewArea = this.element.querySelector("#claude-image-preview-area") as HTMLElement;
+        if (!previewArea) return;
+
+        if (this.pendingImages.length === 0) {
+            previewArea.style.display = 'none';
+            previewArea.innerHTML = '';
+            return;
+        }
+
+        previewArea.style.display = 'flex';
+        previewArea.innerHTML = this.pendingImages.map(img =>
+            UnifiedPanelUIBuilder.createImagePreviewItem(img.id, img.dataUrl, img.fileName)
+        ).join('');
+    }
+
+    /**
+     * Clear all pending images
+     */
+    private clearPendingImages(): void {
+        this.pendingImages = [];
+        this.updateImagePreviewArea();
+    }
+
     //#endregion
 
     //#region Chat Functionality
@@ -410,7 +609,8 @@ export class UnifiedAIPanel {
         const sendBtn = this.element.querySelector("#claude-send-btn") as HTMLButtonElement;
         const userMessage = input.value.trim();
 
-        if (!userMessage || this.isStreaming) {
+        // Allow sending with just images (no text required if images are present)
+        if ((!userMessage && this.pendingImages.length === 0) || this.isStreaming) {
             return;
         }
 
@@ -468,9 +668,14 @@ export class UnifiedAIPanel {
             id: `chat-${Date.now()}`,
             type: 'chat',
             role: 'user',
-            content: userMessage,  // Display original message to user
+            content: userMessage || '(Image)',  // Display original message to user
             timestamp: Date.now(),
-            isSelectionQA: isSelectionQA  // Mark as Selection Q&A message
+            isSelectionQA: isSelectionQA,  // Mark as Selection Q&A message
+            // Store images for UI display (v0.19.0)
+            images: this.pendingImages.length > 0 ? this.pendingImages.map(img => ({
+                dataUrl: img.dataUrl,
+                fileName: img.fileName
+            })) : undefined
         };
 
         this.messages.push(chatMessage);
@@ -490,20 +695,42 @@ export class UnifiedAIPanel {
         // Send to Claude
         let fullResponse = "";
 
+        // Capture pending images before clearing
+        const messageImages = [...this.pendingImages];
+        const hasImages = messageImages.length > 0;
+
         // Build API messages - use enriched content for the last message if in Selection Q&A mode
         const apiMessages = this.messages.filter(isChatMessage).map((m, index, arr) => {
-            // For the last user message in Selection Q&A mode, use enriched content
-            if (isSelectionQA && index === arr.length - 1 && m.role === 'user') {
-                return {
-                    role: m.role,
-                    content: content  // Use selection-enriched content
-                };
+            const isLastUserMessage = index === arr.length - 1 && m.role === 'user';
+
+            // Determine the text content for this message
+            let textContent = m.content;
+            if (isSelectionQA && isLastUserMessage) {
+                textContent = content; // Use selection-enriched content
             }
+
+            // For the last user message with images, create multimodal content
+            if (isLastUserMessage && hasImages) {
+                // Convert pending images to ImageContent blocks
+                const imageContents: ImageContent[] = messageImages.map(img =>
+                    createImageContent(img.base64, img.mediaType)
+                );
+
+                // Return multimodal message
+                return createMultimodalMessage(m.role, textContent, imageContents);
+            }
+
+            // Regular text-only message
             return {
                 role: m.role,
-                content: m.content
+                content: textContent
             };
         });
+
+        // Clear pending images after building messages
+        if (hasImages) {
+            this.clearPendingImages();
+        }
 
         // Get active preset
         const configManager = (this.claudeClient as any).configManager;
@@ -532,6 +759,9 @@ export class UnifiedAIPanel {
         console.log(`[UnifiedAIPanel] Sending message - Preset: ${activePreset?.name ?? 'default'} (${this.activeChatPresetId})`);
         console.log(`[UnifiedAIPanel] SystemPrompt: ${systemPrompt?.length ?? 0} chars, Messages: ${apiMessages.length}, FilterRules: ${filterRules?.length ?? 0}`);
 
+        // v0.19.0: Track AI-generated images during response
+        let generatedImages: Array<{ base64: string; mimeType: string; fileName?: string }> = [];
+
         await this.claudeClient.sendMessage(
             apiMessages,
             (chunk) => {
@@ -551,7 +781,9 @@ export class UnifiedAIPanel {
                     role: 'assistant',
                     content: fullResponse,
                     timestamp: Date.now(),
-                    isSelectionQA: isSelectionQA  // Mark as Selection Q&A message
+                    isSelectionQA: isSelectionQA,  // Mark as Selection Q&A message
+                    // v0.19.0: Include AI-generated images
+                    generatedImages: generatedImages.length > 0 ? generatedImages : undefined
                 };
 
                 this.messages.push(assistantMessage);
@@ -570,7 +802,12 @@ export class UnifiedAIPanel {
             },
             "Chat",
             filterRules,
-            systemPrompt
+            systemPrompt,
+            // v0.19.0: Capture AI-generated images
+            (images) => {
+                generatedImages = images;
+                console.log(`[UnifiedAIPanel] Received ${images.length} generated images from AI`);
+            }
         );
     }
 
@@ -675,11 +912,73 @@ export class UnifiedAIPanel {
         const contentDiv = document.createElement("div");
         contentDiv.className = "claude-message-content";
 
+        // Render images first if present (v0.19.0 multimodal support)
+        if (message.images && message.images.length > 0) {
+            const imagesHtml = message.images.map(img =>
+                UnifiedPanelUIBuilder.createMessageImage(img.dataUrl, img.fileName || 'Image')
+            ).join('');
+            contentDiv.innerHTML = imagesHtml;
+        }
+
+        // Render AI-generated images with save buttons (v0.19.0 multimodal output)
+        if (message.generatedImages && message.generatedImages.length > 0) {
+            const generatedImagesDiv = document.createElement("div");
+            generatedImagesDiv.className = "claude-generated-images";
+            generatedImagesDiv.style.cssText = "display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;";
+
+            message.generatedImages.forEach((img, index) => {
+                const imageWrapper = document.createElement("div");
+                imageWrapper.className = "claude-generated-image-wrapper";
+                imageWrapper.style.cssText = "position: relative; display: inline-block;";
+
+                const imgElement = document.createElement("img");
+                imgElement.src = `data:${img.mimeType};base64,${img.base64}`;
+                imgElement.alt = img.fileName || `AI Generated Image ${index + 1}`;
+                imgElement.style.cssText = "max-width: 300px; max-height: 300px; border-radius: 4px; cursor: pointer;";
+                imgElement.onclick = () => {
+                    // Open image in new tab for full view
+                    const win = window.open();
+                    if (win) {
+                        win.document.write(`<img src="data:${img.mimeType};base64,${img.base64}" style="max-width: 100%;">`);
+                    }
+                };
+
+                const saveBtn = document.createElement("button");
+                saveBtn.className = "b3-button b3-button--text fn__size200";
+                saveBtn.style.cssText = "position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; border-radius: 4px; padding: 2px 6px;";
+                saveBtn.title = "保存到思源笔记";
+                saveBtn.innerHTML = `<svg><use xlink:href="#iconDownload"></use></svg>`;
+                saveBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '...';
+                    const assetPath = await this.blockOperations.saveImageAsAsset(img.base64, img.mimeType, img.fileName);
+                    if (assetPath) {
+                        saveBtn.innerHTML = `<svg><use xlink:href="#iconCheck"></use></svg>`;
+                        saveBtn.title = `已保存: ${assetPath}`;
+                    } else {
+                        saveBtn.innerHTML = `<svg><use xlink:href="#iconClose"></use></svg>`;
+                        saveBtn.title = "保存失败";
+                        saveBtn.disabled = false;
+                    }
+                };
+
+                imageWrapper.appendChild(imgElement);
+                imageWrapper.appendChild(saveBtn);
+                generatedImagesDiv.appendChild(imageWrapper);
+            });
+
+            contentDiv.appendChild(generatedImagesDiv);
+        }
+
         // Use markdown rendering for assistant messages
         if (message.role === "assistant") {
-            contentDiv.innerHTML = this.renderMarkdown(message.content);
+            contentDiv.innerHTML += this.renderMarkdown(message.content);
         } else {
-            contentDiv.textContent = message.content;
+            // For user messages, add text after images
+            const textSpan = document.createElement("span");
+            textSpan.textContent = message.content;
+            contentDiv.appendChild(textSpan);
         }
 
         messageDiv.appendChild(headerDiv);

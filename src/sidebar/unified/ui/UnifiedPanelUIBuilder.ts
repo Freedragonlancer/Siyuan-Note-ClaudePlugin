@@ -82,10 +82,27 @@ export class UnifiedPanelUIBuilder {
             <!-- Compact Input Area -->
             <div class="claude-input-area" style="flex-shrink: 0; padding: 6px; border-top: 1px solid var(--b3-border-color);">
                 <div class="fn__flex-column" style="gap: 6px;">
-                    <textarea class="b3-text-field" id="claude-input"
-                              placeholder="Ask Claude anything..."
-                              rows="3"
-                              style="resize: vertical; min-height: 54px; font-size: 13px;"></textarea>
+                    <!-- Image Preview Area (initially hidden) -->
+                    <div class="claude-image-preview-area" id="claude-image-preview-area" style="display: none; flex-wrap: wrap; gap: 6px; padding: 6px; background: var(--b3-theme-background-light); border-radius: 6px; max-height: 120px; overflow-y: auto;">
+                        <!-- Image previews will be inserted here -->
+                    </div>
+                    <!-- Text Input with Image Upload Button -->
+                    <div class="fn__flex" style="gap: 6px; align-items: flex-start;">
+                        <div style="flex: 1;">
+                            <textarea class="b3-text-field" id="claude-input"
+                                      placeholder="Ask Claude anything... (Ctrl+V to paste image)"
+                                      rows="3"
+                                      style="resize: vertical; min-height: 54px; font-size: 13px; width: 100%;"></textarea>
+                        </div>
+                        <div class="fn__flex-column" style="gap: 4px;">
+                            <button class="b3-button b3-button--text" id="claude-image-upload-btn" title="上传图片" style="padding: 4px;">
+                                <svg class="fn__size200" style="width: 16px; height: 16px;">
+                                    <use xlink:href="#iconImage"></use>
+                                </svg>
+                            </button>
+                            <input type="file" id="claude-image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display: none;">
+                        </div>
+                    </div>
                     <div class="fn__flex" style="justify-content: space-between; align-items: center; gap: 8px;">
                         <div class="fn__flex" style="align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden;">
                             <div class="provider-info-badge" data-provider-badge style="display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; font-size: 10px; font-weight: 500; color: var(--b3-theme-on-surface); white-space: nowrap; overflow: hidden; flex-shrink: 1; min-width: 60px;">
@@ -271,6 +288,47 @@ export class UnifiedPanelUIBuilder {
         const escapedIcon = SecurityUtils.escapeHtml(icon);
 
         return `<option value="${escapedId}" ${selected ? 'selected' : ''}>${escapedIcon} ${escapedName}</option>`;
+    }
+
+    /**
+     * Create image preview item HTML for the upload preview area
+     * @param imageId Unique identifier for the image
+     * @param dataUrl Base64 data URL of the image for preview
+     * @param fileName Original file name (for tooltip)
+     */
+    static createImagePreviewItem(imageId: string, dataUrl: string, fileName: string): string {
+        const escapedFileName = SecurityUtils.escapeHtml(fileName);
+        return `
+            <div class="claude-image-preview-item" data-image-id="${imageId}" style="position: relative; display: inline-block;">
+                <img src="${dataUrl}" alt="${escapedFileName}" title="${escapedFileName}"
+                     style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid var(--b3-border-color); cursor: pointer;"
+                     onclick="this.parentElement.querySelector('.claude-image-fullscreen').style.display='flex'">
+                <button class="claude-image-remove-btn" data-image-id="${imageId}" title="移除图片"
+                        style="position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--b3-theme-error); color: white; border: none; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1;">
+                    ×
+                </button>
+                <!-- Fullscreen overlay (initially hidden) -->
+                <div class="claude-image-fullscreen" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 10000; align-items: center; justify-content: center; cursor: pointer;" onclick="this.style.display='none'">
+                    <img src="${dataUrl}" alt="${escapedFileName}" style="max-width: 90%; max-height: 90%; object-fit: contain;">
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Create HTML for rendering an image in a chat message
+     * @param dataUrl Base64 data URL or image URL
+     * @param altText Alt text for the image
+     */
+    static createMessageImage(dataUrl: string, altText: string = 'Image'): string {
+        const escapedAlt = SecurityUtils.escapeHtml(altText);
+        return `
+            <div class="claude-message-image" style="margin: 8px 0;">
+                <img src="${dataUrl}" alt="${escapedAlt}"
+                     style="max-width: 100%; max-height: 300px; border-radius: 6px; cursor: pointer; border: 1px solid var(--b3-border-color);"
+                     onclick="window.open('${dataUrl}', '_blank')">
+            </div>
+        `;
     }
 
     /**

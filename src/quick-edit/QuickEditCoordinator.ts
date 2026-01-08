@@ -161,12 +161,14 @@ export class QuickEditCoordinator {
         });
 
         // Initialize AIRequestHandler with dependencies (using stateManager)
+        // v0.19.0: Added selectionHandler for multimodal image extraction
         this.aiRequestHandler = new AIRequestHandler({
             renderer: this.renderer,
             promptBuilder: this.promptBuilder,
             claudeClient: this.claudeClient,
             configManager: this.configManager,
             settings: this.settings,
+            selectionHandler: this.selectionHandler,  // v0.19.0: For image extraction
             getCurrentPresetId: () => this.getCurrentPresetId(),
             setProcessing: (p) => this.stateManager.setProcessing(p),
             setActiveRequestBlockId: (id) => this.stateManager.setActiveRequestBlockId(id),

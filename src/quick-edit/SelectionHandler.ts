@@ -3,10 +3,13 @@
  * Handles text selection extraction and validation in SiYuan editor
  *
  * Refactored v0.18.0: Made IProtyle optional, supports standalone usage
+ * v0.19.0: Added image extraction for multimodal Quick Edit
  */
 
 import type { InlineEditSelection } from './inline-types';
 import type { IProtyle } from '../types/siyuan';
+import type { ImageContent, ImageMediaType } from '../claude/types';
+import { createImageContent, detectMediaType } from '../claude/types';
 
 /**
  * Extended selection result with additional metadata
@@ -452,5 +455,188 @@ export class SelectionHandler {
      */
     public getBlockForNode(node: Node): HTMLElement | null {
         return this.findBlockElement(node);
+    }
+
+    // ============================================================
+    // Image Extraction (v0.19.0 Multimodal Support)
+    // ============================================================
+
+    /**
+     * Extract images from selected blocks
+     * Returns ImageContent array for multimodal AI requests
+     *
+     * @param blocks Block elements to extract images from
+     * @returns Promise of ImageContent array
+     */
+    async extractImagesFromBlocks(blocks: HTMLElement[]): Promise<ImageContent[]> {
+        const images: ImageContent[] = [];
+
+        for (const block of blocks) {
+            const imgElements = block.querySelectorAll('img');
+
+            for (const img of Array.from(imgElements)) {
+                try {
+                    const imageContent = await this.extractImageFromElement(img);
+                    if (imageContent) {
+                        images.push(imageContent);
+                    }
+                } catch (error) {
+                    console.warn('[SelectionHandler] Failed to extract image:', error);
+                }
+            }
+        }
+
+        return images;
+    }
+
+    /**
+     * Extract image from an img element
+     * Handles both local SiYuan assets and external URLs
+     */
+    private async extractImageFromElement(img: HTMLImageElement): Promise<ImageContent | null> {
+        const src = img.getAttribute('src') || img.getAttribute('data-src');
+        if (!src) {
+            return null;
+        }
+
+        // Skip data URLs (already base64)
+        if (src.startsWith('data:')) {
+            const match = src.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/i);
+            if (match) {
+                return createImageContent(match[2], match[1].toLowerCase() as ImageMediaType);
+            }
+            return null;
+        }
+
+        // Handle SiYuan local assets
+        if (src.startsWith('assets/') || src.includes('/assets/')) {
+            return await this.loadSiyuanAsset(src);
+        }
+
+        // Handle external URLs - try to fetch
+        if (src.startsWith('http://') || src.startsWith('https://')) {
+            return await this.loadExternalImage(src);
+        }
+
+        // Handle relative paths (may be local assets)
+        if (!src.startsWith('/') && !src.includes('://')) {
+            return await this.loadSiyuanAsset(src);
+        }
+
+        console.warn('[SelectionHandler] Unsupported image source:', src);
+        return null;
+    }
+
+    /**
+     * Load a SiYuan asset and convert to base64
+     * SiYuan assets are served from /assets/ endpoint
+     */
+    private async loadSiyuanAsset(assetPath: string): Promise<ImageContent | null> {
+        try {
+            // Normalize path - ensure it starts with /assets/
+            let normalizedPath = assetPath;
+            if (!normalizedPath.startsWith('/')) {
+                if (normalizedPath.startsWith('assets/')) {
+                    normalizedPath = '/' + normalizedPath;
+                } else {
+                    normalizedPath = '/assets/' + normalizedPath;
+                }
+            }
+
+            // Fetch the image
+            const response = await fetch(normalizedPath);
+            if (!response.ok) {
+                console.warn(`[SelectionHandler] Failed to fetch asset: ${normalizedPath} (${response.status})`);
+                return null;
+            }
+
+            const blob = await response.blob();
+
+            // Check file size (limit to 4MB)
+            if (blob.size > 4 * 1024 * 1024) {
+                console.warn(`[SelectionHandler] Image too large: ${blob.size} bytes`);
+                return null;
+            }
+
+            // Convert to base64
+            const base64 = await this.blobToBase64(blob);
+            const mediaType = detectMediaType(assetPath);
+
+            return createImageContent(base64, mediaType);
+        } catch (error) {
+            console.error('[SelectionHandler] Error loading SiYuan asset:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Load an external image URL and convert to base64
+     * Note: This may fail due to CORS restrictions
+     */
+    private async loadExternalImage(url: string): Promise<ImageContent | null> {
+        try {
+            // Try to fetch through proxy or directly
+            const response = await fetch(url, {
+                mode: 'cors',
+                credentials: 'omit'
+            });
+
+            if (!response.ok) {
+                console.warn(`[SelectionHandler] Failed to fetch external image: ${url}`);
+                return null;
+            }
+
+            const blob = await response.blob();
+
+            // Check file size (limit to 4MB)
+            if (blob.size > 4 * 1024 * 1024) {
+                console.warn(`[SelectionHandler] External image too large: ${blob.size} bytes`);
+                return null;
+            }
+
+            // Verify it's an image
+            if (!blob.type.startsWith('image/')) {
+                console.warn(`[SelectionHandler] Not an image: ${blob.type}`);
+                return null;
+            }
+
+            const base64 = await this.blobToBase64(blob);
+            const mediaType = detectMediaType(url) || blob.type as ImageMediaType;
+
+            return createImageContent(base64, mediaType);
+        } catch (error) {
+            // CORS errors are expected for many external images
+            console.warn('[SelectionHandler] Cannot load external image (likely CORS):', url);
+            return null;
+        }
+    }
+
+    /**
+     * Convert Blob to base64 string (without data URL prefix)
+     */
+    private blobToBase64(blob: Blob): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result as string;
+                // Remove data URL prefix to get pure base64
+                const base64 = dataUrl.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    /**
+     * Check if selected blocks contain any images
+     */
+    hasImagesInBlocks(blocks: HTMLElement[]): boolean {
+        for (const block of blocks) {
+            if (block.querySelector('img')) {
+                return true;
+            }
+        }
+        return false;
     }
 }

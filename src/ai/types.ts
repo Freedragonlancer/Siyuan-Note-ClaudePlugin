@@ -54,6 +54,15 @@ export interface ParameterLimits {
 export type StreamCallback = (chunk: string) => void;
 
 /**
+ * Generated image data from AI response (v0.19.0)
+ */
+export interface GeneratedImage {
+    base64: string;
+    mimeType: string;
+    fileName?: string;
+}
+
+/**
  * Request options for AI API calls
  */
 export interface AIRequestOptions {
@@ -73,6 +82,8 @@ export interface AIRequestOptions {
     onComplete?: () => void;
     /** Error callback (optional, provider-specific) */
     onError?: (error: Error) => void;
+    /** Generated images callback (v0.19.0 multimodal output) */
+    onGeneratedImages?: (images: GeneratedImage[]) => void;
 }
 
 /**

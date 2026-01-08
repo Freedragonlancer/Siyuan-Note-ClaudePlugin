@@ -35,6 +35,19 @@ export interface ChatMessage extends BaseMessage {
 
     /** Whether this message is part of a Selection Q&A conversation */
     isSelectionQA?: boolean;
+
+    /** Image data URLs for display (v0.19.0 multimodal support) */
+    images?: Array<{
+        dataUrl: string;
+        fileName?: string;
+    }>;
+
+    /** AI-generated images in response (v0.19.0 multimodal output) */
+    generatedImages?: Array<{
+        base64: string;
+        mimeType: string;
+        fileName?: string;
+    }>;
 }
 
 /**

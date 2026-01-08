@@ -464,4 +464,69 @@ export class BlockOperations {
         // Default: return as-is
         return text;
     }
+
+    /**
+     * Save an image to SiYuan assets (v0.19.0 multimodal output)
+     * @param base64Data Base64-encoded image data (without data URL prefix)
+     * @param mimeType MIME type of the image (e.g., 'image/png')
+     * @param fileName Optional file name (auto-generated if not provided)
+     * @returns Asset path (e.g., 'assets/ai-image-xxx.png') or null if failed
+     */
+    async saveImageAsAsset(base64Data: string, mimeType: string, fileName?: string): Promise<string | null> {
+        try {
+            // Generate a unique filename if not provided
+            const ext = mimeType.split('/')[1] || 'png';
+            const finalFileName = fileName || `ai-image-${Date.now()}.${ext}`;
+
+            // Convert base64 to Blob
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: mimeType });
+
+            // Create FormData for upload
+            const formData = new FormData();
+            formData.append('file[]', blob, finalFileName);
+            // assetsDirPath not specified - will use default assets folder
+
+            // Upload to SiYuan using /api/asset/upload
+            const response = await fetch('/api/asset/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.code === 0 && result.data?.succMap) {
+                // Return the asset path from succMap
+                const assetPath = result.data.succMap[finalFileName];
+                console.log(`[BlockOperations] Image saved to assets: ${assetPath}`);
+                return assetPath;
+            } else {
+                throw new Error(result.msg || 'Upload failed');
+            }
+        } catch (error) {
+            console.error('[BlockOperations] Failed to save image as asset:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Insert an image block after a specified block
+     * @param assetPath Path to the asset (e.g., 'assets/image.png')
+     * @param afterBlockId ID of the block to insert after
+     * @param altText Optional alt text for the image
+     * @returns Insert result with new block ID
+     */
+    async insertImageBlock(assetPath: string, afterBlockId: string, altText?: string): Promise<BlockInsertResult> {
+        const markdown = `![${altText || 'AI Generated Image'}](${assetPath})`;
+        return this.insertBlock(markdown, afterBlockId);
+    }
 }

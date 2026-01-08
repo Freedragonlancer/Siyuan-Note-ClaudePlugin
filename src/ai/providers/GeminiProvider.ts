@@ -4,7 +4,11 @@
  */
 
 import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
-import type { Message } from '../../claude/types';
+
+// Gemini Part type for multimodal content
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+import type { Message, ContentBlock, ImageContent, TextContent } from '../../claude/types';
+import { extractText } from '../../claude/types';
 import type {
     AIModelConfig,
     AIRequestOptions,
@@ -89,9 +93,10 @@ export class GeminiProvider extends BaseAIProvider {
                 },
             });
 
-            // Get the last user message
+            // Get the last user message and convert to Gemini format
             const lastMessage = messages[messages.length - 1];
-            const result = await chat.sendMessage(lastMessage.content);
+            const lastMessageParts = this.convertContentToParts(lastMessage.content);
+            const result = await chat.sendMessage(lastMessageParts);
             const response = await result.response;
 
             return response.text();
@@ -117,9 +122,13 @@ export class GeminiProvider extends BaseAIProvider {
                 },
             });
 
-            // Get the last user message
+            // Get the last user message and convert to Gemini format
             const lastMessage = messages[messages.length - 1];
-            const result = await chat.sendMessageStream(lastMessage.content);
+            const lastMessageParts = this.convertContentToParts(lastMessage.content);
+            const result = await chat.sendMessageStream(lastMessageParts);
+
+            // v0.19.0: Collect generated images during streaming
+            const generatedImages: Array<{ base64: string; mimeType: string }> = [];
 
             // Stream the response
             for await (const chunk of result.stream) {
@@ -127,6 +136,31 @@ export class GeminiProvider extends BaseAIProvider {
                 if (text) {
                     options?.onStream?.(text);
                 }
+
+                // v0.19.0: Check for generated images in response parts
+                const candidate = chunk.candidates?.[0];
+                if (candidate?.content?.parts) {
+                    for (const part of candidate.content.parts) {
+                        // Check for inline image data
+                        if ((part as any).inlineData?.data && (part as any).inlineData?.mimeType) {
+                            const inlineData = (part as any).inlineData;
+                            generatedImages.push({
+                                base64: inlineData.data,
+                                mimeType: inlineData.mimeType
+                            });
+                            console.log(`[GeminiProvider] Received generated image: ${inlineData.mimeType}`);
+                        }
+                    }
+                }
+            }
+
+            // v0.19.0: Notify about generated images after streaming completes
+            if (generatedImages.length > 0 && options?.onGeneratedImages) {
+                options.onGeneratedImages(generatedImages.map((img, i) => ({
+                    base64: img.base64,
+                    mimeType: img.mimeType,
+                    fileName: `gemini-image-${Date.now()}-${i + 1}.${img.mimeType.split('/')[1] || 'png'}`
+                })));
             }
         } catch (error) {
             this.handleError(error, 'streamMessage');
@@ -289,12 +323,48 @@ export class GeminiProvider extends BaseAIProvider {
     }
 
     /**
+     * Convert message content to Gemini Part array
+     * Handles both string content and ContentBlock[] (multimodal)
+     */
+    private convertContentToParts(content: string | ContentBlock[]): GeminiPart[] {
+        // Simple string content
+        if (typeof content === 'string') {
+            return [{ text: content }];
+        }
+
+        // Multimodal ContentBlock array
+        const parts: GeminiPart[] = [];
+        for (const block of content) {
+            if (block.type === 'text') {
+                parts.push({ text: block.text });
+            } else if (block.type === 'image') {
+                if (block.source.type === 'base64') {
+                    // Gemini uses inlineData format for base64 images
+                    parts.push({
+                        inlineData: {
+                            mimeType: block.source.media_type,
+                            data: block.source.data,
+                        },
+                    });
+                } else if (block.source.type === 'url') {
+                    // Gemini also supports URL images via fileData (but requires gcloud auth)
+                    // For now, log a warning - users should pre-convert to base64
+                    console.warn('[GeminiProvider] URL images not directly supported. Pre-convert to base64.');
+                }
+            }
+        }
+
+        return parts;
+    }
+
+    /**
      * Convert messages to Gemini chat history format
      * Gemini requires alternating user/model roles
+     * Supports multimodal content (text + images)
      */
-    private convertMessagesToHistory(messages: Message[], systemPrompt?: string): Array<{ role: string; parts: string }> {
+    private convertMessagesToHistory(messages: Message[], systemPrompt?: string): Array<{ role: string; parts: GeminiPart[] }> {
         const normalized = this.normalizeMessages(messages);
-        const history: Array<{ role: string; parts: string }> = [];
+        const history: Array<{ role: string; parts: GeminiPart[] }> = [];
 
         // Gemini doesn't have a separate system prompt field
         // We prepend it as the first user message if provided
@@ -302,11 +372,11 @@ export class GeminiProvider extends BaseAIProvider {
             const firstUserIndex = normalized.findIndex(m => m.role === 'user');
             if (firstUserIndex >= 0) {
                 // Found user message - merge system prompt with it
+                const existingContent = normalized[firstUserIndex].content;
+                const existingText = extractText(existingContent);
                 normalized[firstUserIndex] = {
                     ...normalized[firstUserIndex],
-                    content: `${systemPrompt.trim()}
-
-${normalized[firstUserIndex].content}`,
+                    content: `${systemPrompt.trim()}\n\n${existingText}`,
                 };
             } else {
                 // No user message found - insert a virtual user message at the beginning
@@ -323,7 +393,7 @@ ${normalized[firstUserIndex].content}`,
             const msg = normalized[i];
             history.push({
                 role: msg.role === 'user' ? 'user' : 'model',
-                parts: msg.content,
+                parts: this.convertContentToParts(msg.content),
             });
         }
 

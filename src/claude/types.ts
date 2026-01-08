@@ -65,9 +65,220 @@ export interface ClaudeSettings {
     keyboardShortcuts?: KeyboardShortcuts;
 }
 
+// ============================================================
+// Multimodal Content Types (v0.19.0)
+// ============================================================
+
+/**
+ * Text content block for multimodal messages
+ */
+export interface TextContent {
+    type: 'text';
+    text: string;
+}
+
+/**
+ * Supported image media types
+ */
+export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+/**
+ * Image content block for multimodal messages
+ * Supports both base64 encoded data and URLs
+ */
+export interface ImageContent {
+    type: 'image';
+    source: {
+        type: 'base64' | 'url';
+        media_type: ImageMediaType;
+        data: string;  // base64 string or URL depending on source.type
+    };
+}
+
+/**
+ * Union type for all content block types
+ * Extensible for future content types (audio, video, etc.)
+ */
+export type ContentBlock = TextContent | ImageContent;
+
+/**
+ * Message interface with multimodal support
+ * - content: string - backward compatible text-only message
+ * - content: ContentBlock[] - multimodal message with text and images
+ */
 export interface Message {
     role: "user" | "assistant";
-    content: string;
+    content: string | ContentBlock[];
+}
+
+// ============================================================
+// Multimodal Helper Functions
+// ============================================================
+
+/**
+ * Check if a message contains image content
+ * @param message Message to check
+ * @returns true if message contains at least one image
+ */
+export function hasImageContent(message: Message): boolean {
+    if (typeof message.content === 'string') {
+        return false;
+    }
+    return message.content.some(block => block.type === 'image');
+}
+
+/**
+ * Normalize message content to ContentBlock array
+ * Converts string content to array with single TextContent block
+ * @param content String or ContentBlock array
+ * @returns ContentBlock array
+ */
+export function normalizeContent(content: string | ContentBlock[]): ContentBlock[] {
+    if (typeof content === 'string') {
+        return [{ type: 'text', text: content }];
+    }
+    return content;
+}
+
+/**
+ * Extract plain text from message content
+ * Concatenates all TextContent blocks, ignores images
+ * @param content String or ContentBlock array
+ * @returns Plain text string
+ */
+export function extractText(content: string | ContentBlock[]): string {
+    if (typeof content === 'string') {
+        return content;
+    }
+    return content
+        .filter((block): block is TextContent => block.type === 'text')
+        .map(block => block.text)
+        .join('\n');
+}
+
+/**
+ * Create a text-only message (convenience function)
+ * @param role Message role
+ * @param text Text content
+ * @returns Message with string content
+ */
+export function createTextMessage(role: 'user' | 'assistant', text: string): Message {
+    return { role, content: text };
+}
+
+/**
+ * Create a multimodal message with text and images
+ * @param role Message role
+ * @param text Text content
+ * @param images Array of ImageContent blocks
+ * @returns Message with ContentBlock array
+ */
+export function createMultimodalMessage(
+    role: 'user' | 'assistant',
+    text: string,
+    images: ImageContent[]
+): Message {
+    const content: ContentBlock[] = [
+        ...images,  // Images first (common convention for vision models)
+        { type: 'text', text }
+    ];
+    return { role, content };
+}
+
+/**
+ * Convert base64 data to ImageContent block
+ * @param base64Data Base64 encoded image data (without data URL prefix)
+ * @param mediaType Image media type
+ * @returns ImageContent block
+ */
+export function createImageContent(
+    base64Data: string,
+    mediaType: ImageMediaType
+): ImageContent {
+    return {
+        type: 'image',
+        source: {
+            type: 'base64',
+            media_type: mediaType,
+            data: base64Data
+        }
+    };
+}
+
+/**
+ * Convert image URL to ImageContent block
+ * @param url Image URL
+ * @param mediaType Image media type
+ * @returns ImageContent block
+ */
+export function createImageContentFromURL(
+    url: string,
+    mediaType: ImageMediaType
+): ImageContent {
+    return {
+        type: 'image',
+        source: {
+            type: 'url',
+            media_type: mediaType,
+            data: url
+        }
+    };
+}
+
+/**
+ * Detect media type from file extension or data URL prefix
+ * @param source File name, URL, or data URL
+ * @returns Detected media type or default to image/png
+ */
+export function detectMediaType(source: string): ImageMediaType {
+    const lower = source.toLowerCase();
+
+    // Check data URL prefix
+    if (lower.startsWith('data:image/jpeg') || lower.startsWith('data:image/jpg')) {
+        return 'image/jpeg';
+    }
+    if (lower.startsWith('data:image/png')) {
+        return 'image/png';
+    }
+    if (lower.startsWith('data:image/gif')) {
+        return 'image/gif';
+    }
+    if (lower.startsWith('data:image/webp')) {
+        return 'image/webp';
+    }
+
+    // Check file extension
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        return 'image/jpeg';
+    }
+    if (lower.endsWith('.png')) {
+        return 'image/png';
+    }
+    if (lower.endsWith('.gif')) {
+        return 'image/gif';
+    }
+    if (lower.endsWith('.webp')) {
+        return 'image/webp';
+    }
+
+    // Default to PNG
+    return 'image/png';
+}
+
+/**
+ * Extract base64 data from a data URL
+ * @param dataUrl Data URL (e.g., "data:image/png;base64,...")
+ * @returns Object with base64 data and media type
+ */
+export function parseDataUrl(dataUrl: string): { data: string; mediaType: ImageMediaType } | null {
+    const match = dataUrl.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/i);
+    if (!match) {
+        return null;
+    }
+    return {
+        data: match[2],
+        mediaType: match[1].toLowerCase() as ImageMediaType
+    };
 }
 
 export interface StreamChunk {
@@ -78,12 +289,14 @@ export interface StreamChunk {
     };
 }
 
-// Re-export StreamCallback from ai/types as the canonical callback type
-export type { StreamCallback };
+// Re-export StreamCallback and GeneratedImage from ai/types as canonical types
+export type { StreamCallback, GeneratedImage } from '../ai/types';
 // MessageCallback is an alias for backward compatibility
 export type MessageCallback = StreamCallback;
 export type ErrorCallback = (error: Error) => void;
 export type CompleteCallback = () => void;
+// v0.19.0: Callback for AI-generated images
+export type GeneratedImagesCallback = (images: import('../ai/types').GeneratedImage[]) => void;
 
 /**
  * Single AI Provider Configuration

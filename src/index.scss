@@ -1427,6 +1427,35 @@
     -moz-user-select: none !important;
 }
 
+/* Quick Edit Selection Highlight - 选中文字时的视觉提示 */
+.quick-edit-selection-highlight {
+    position: relative;
+    
+    &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--b3-theme-primary-lighter, rgba(52, 152, 219, 0.15));
+        border: 2px solid var(--b3-theme-primary, #3498db);
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 1;
+        animation: selectionPulse 1.5s ease-in-out infinite;
+    }
+}
+
+@keyframes selectionPulse {
+    0%, 100% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
 /* Instruction Input Popup */
 .instruction-input-popup {
     position: fixed;

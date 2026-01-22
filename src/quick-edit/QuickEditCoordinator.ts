@@ -32,7 +32,7 @@ import { Logger } from '@/utils/Logger';
 import { PresetSelectionManager } from '@/settings/PresetSelectionManager';
 import type { PresetEvent } from '@/settings/PresetEventBus';
 import { BlockOperations } from './BlockOperations';
-import { SelectionHandler } from './SelectionHandler';
+import { SelectionHandler, ExtendedSelection } from './SelectionHandler';
 import { PromptBuilder } from './PromptBuilder';
 import { EditStateManager } from './EditStateManager';
 import { ActionHandler } from './ActionHandler';
@@ -180,6 +180,7 @@ export class QuickEditCoordinator {
         this.inputPopup.setCallbacks({
             onSubmit: (instruction) => this.handleInstructionSubmit(instruction),
             onCancel: () => {
+                this.removeSelectionHighlight();
                 this.stateManager.setPendingSelection(null);
             },
             onPresetSwitch: (presetId) => this.handlePresetSwitch(presetId)
@@ -226,6 +227,36 @@ export class QuickEditCoordinator {
 
         // Optionally notify user
         showMessage('⚠️ AI 编辑已被撤销操作移除', 2000, 'info');
+    }
+
+    // Selection highlight class name for visual feedback
+    private static readonly SELECTION_HIGHLIGHT_CLASS = 'quick-edit-selection-highlight';
+
+    /**
+     * Add highlight to selected blocks as visual feedback
+     * Called when popup is shown to indicate which content will be edited
+     */
+    private addSelectionHighlight(selection: ExtendedSelection): void {
+        // Highlight all selected block elements
+        const elements = selection.selectedBlockElements || [selection.blockElement];
+        elements.forEach(el => {
+            if (el && !el.classList.contains(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS)) {
+                el.classList.add(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS);
+            }
+        });
+    }
+
+    /**
+     * Remove highlight from all blocks
+     * Called when popup is closed or edit operation completes
+     */
+    private removeSelectionHighlight(): void {
+        const highlightedElements = document.querySelectorAll(
+            `.${QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS}`
+        );
+        highlightedElements.forEach(el => {
+            el.classList.remove(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS);
+        });
     }
 
     /**
@@ -365,6 +396,9 @@ export class QuickEditCoordinator {
         // FIX 1.2: Store selection in stateManager instead of instance property
         this.stateManager.setPendingSelection(selection);
 
+        // Add visual highlight to selected blocks as feedback
+        this.addSelectionHighlight(selection);
+
         // Refresh presets to ensure we have the latest data (including custom templates)
         // This is critical for first-time load when ConfigManager is still loading templates
         this.refreshPresets();
@@ -459,6 +493,9 @@ export class QuickEditCoordinator {
 
         // Clear immediately to prevent reuse
         this.stateManager.setPendingSelection(null);
+
+        // Remove selection highlight before processing
+        this.removeSelectionHighlight();
 
         // ✨ Phase 2.1: 清除选中状态，移除灰色遮罩
         // 清除文本选中

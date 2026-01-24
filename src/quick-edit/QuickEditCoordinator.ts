@@ -231,32 +231,78 @@ export class QuickEditCoordinator {
 
     // Selection highlight class name for visual feedback
     private static readonly SELECTION_HIGHLIGHT_CLASS = 'quick-edit-selection-highlight';
+    private static readonly TEXT_HIGHLIGHT_CLASS = 'quick-edit-text-highlight';
 
     /**
-     * Add highlight to selected blocks as visual feedback
-     * Called when popup is shown to indicate which content will be edited
+     * Add highlight to selected content as visual feedback
+     * For partial text selection: creates overlay rectangles on selected text
+     * For full block selection: highlights entire block
      */
     private addSelectionHighlight(selection: ExtendedSelection): void {
-        // Highlight all selected block elements
-        const elements = selection.selectedBlockElements || [selection.blockElement];
-        elements.forEach(el => {
-            if (el && !el.classList.contains(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS)) {
-                el.classList.add(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS);
-            }
-        });
+        // Check if this is a partial text selection within a single block
+        const isSingleBlock = !selection.isMultiBlock && 
+            (!selection.selectedBlockIds || selection.selectedBlockIds.length <= 1);
+        const blockText = selection.blockElement.textContent?.trim() || '';
+        const selectedText = selection.text.trim();
+        const isPartialText = isSingleBlock && selectedText.length > 0 && selectedText.length < blockText.length;
+
+        if (isPartialText && selection.range) {
+            // Create text-level highlight using Range rectangles
+            this.createTextHighlightOverlay(selection.range);
+        } else {
+            // Fall back to block-level highlight
+            const elements = selection.selectedBlockElements || [selection.blockElement];
+            elements.forEach(el => {
+                if (el && !el.classList.contains(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS)) {
+                    el.classList.add(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS);
+                }
+            });
+        }
     }
 
     /**
-     * Remove highlight from all blocks
+     * Create overlay elements to highlight selected text range
+     * Uses Range.getClientRects() to get accurate positions for multi-line selections
+     */
+    private createTextHighlightOverlay(range: Range): void {
+        const rects = range.getClientRects();
+        if (rects.length === 0) return;
+
+        for (let i = 0; i < rects.length; i++) {
+            const rect = rects[i];
+            const overlay = document.createElement('div');
+            overlay.className = QuickEditCoordinator.TEXT_HIGHLIGHT_CLASS;
+            overlay.style.cssText = `
+                position: fixed;
+                left: ${rect.left}px;
+                top: ${rect.top}px;
+                width: ${rect.width}px;
+                height: ${rect.height}px;
+                pointer-events: none;
+                z-index: 9999;
+            `;
+            document.body.appendChild(overlay);
+        }
+    }
+
+    /**
+     * Remove highlight from all blocks and text overlays
      * Called when popup is closed or edit operation completes
      */
     private removeSelectionHighlight(): void {
+        // Remove block-level highlights
         const highlightedElements = document.querySelectorAll(
             `.${QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS}`
         );
         highlightedElements.forEach(el => {
             el.classList.remove(QuickEditCoordinator.SELECTION_HIGHLIGHT_CLASS);
         });
+
+        // Remove text-level highlight overlays
+        const textOverlays = document.querySelectorAll(
+            `.${QuickEditCoordinator.TEXT_HIGHLIGHT_CLASS}`
+        );
+        textOverlays.forEach(el => el.remove());
     }
 
     /**
@@ -519,6 +565,49 @@ export class QuickEditCoordinator {
         const originalBlockType = selection.blockElement.getAttribute('data-type') || undefined;
         const originalBlockSubtype = selection.blockElement.getAttribute('data-subtype') || undefined;
 
+        // Detect partial selection within a single block
+        let isPartialSelection = false;
+        let fullBlockMarkdown: string | undefined;
+        let markdownStartOffset: number | undefined;
+        let markdownEndOffset: number | undefined;
+
+        // Only check for partial selection if:
+        // 1. Single block selection (not multi-block)
+        // 2. Not a code block (code blocks should be edited as whole)
+        const isSingleBlock = !selection.isMultiBlock && 
+            (!selection.selectedBlockIds || selection.selectedBlockIds.length <= 1);
+        const isCodeBlock = originalBlockType === 'c' || originalBlockType === 'code';
+
+        if (isSingleBlock && !isCodeBlock) {
+            // Get block's full text content for comparison
+            const blockText = selection.blockElement.textContent?.trim() || '';
+            const selectedText = selection.text.trim();
+
+            // Check if selection is partial (less than full block content)
+            if (selectedText.length > 0 && selectedText.length < blockText.length) {
+                // Fetch block's markdown content
+                const markdown = await this.blockOps.getBlockMarkdown(selection.blockId);
+                
+                if (markdown) {
+                    // Find selected text position in markdown
+                    const startIdx = markdown.indexOf(selectedText);
+                    
+                    if (startIdx !== -1) {
+                        isPartialSelection = true;
+                        fullBlockMarkdown = markdown;
+                        markdownStartOffset = startIdx;
+                        markdownEndOffset = startIdx + selectedText.length;
+                        
+                        console.log(`[QuickEdit] Partial selection detected: [${startIdx}:${markdownEndOffset}] in block ${selection.blockId}`);
+                    } else {
+                        // Selected text not found in markdown (may contain formatting)
+                        // Fall back to full block replacement
+                        console.log(`[QuickEdit] Selected text not found in markdown, using full block replacement`);
+                    }
+                }
+            }
+        }
+
         // Create inline edit block
         const blockId = `inline-edit-${Date.now()}`;
         const inlineBlock: InlineEditBlock = {
@@ -541,7 +630,12 @@ export class QuickEditCoordinator {
             originalRange: selection.range.cloneRange(),
             // FIX Issue #1: Store block type for format preservation
             originalBlockType,
-            originalBlockSubtype
+            originalBlockSubtype,
+            // Partial selection info
+            isPartialSelection,
+            fullBlockMarkdown,
+            markdownStartOffset,
+            markdownEndOffset
         };
 
         this.stateManager.addActiveBlock(blockId, inlineBlock);

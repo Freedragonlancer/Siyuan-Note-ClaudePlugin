@@ -3,6 +3,16 @@
  * Handles all SiYuan API operations for block manipulation
  */
 
+import { withRetry, isRetryableError, type RetryConfig } from '@/utils/RetryHelper';
+
+/** Default retry config for block operations */
+const BLOCK_RETRY_CONFIG: Partial<RetryConfig> = {
+    maxRetries: 2,
+    baseDelay: 100,
+    maxDelay: 1000,
+    backoffMultiplier: 2
+};
+
 export interface BlockInsertResult {
     success: boolean;
     blockId?: string;
@@ -83,13 +93,14 @@ export class BlockOperations {
     }
 
     /**
-     * Insert a new block after a specified block
+     * Insert a new block after a specified block with automatic retry on transient failures
      * @param content Block content (markdown)
      * @param previousID ID of the block to insert after
+     * @param enableRetry Whether to enable retry (default: true)
      * @returns Insert result with new block ID
      */
-    async insertBlock(content: string, previousID: string): Promise<BlockInsertResult> {
-        try {
+    async insertBlock(content: string, previousID: string, enableRetry: boolean = true): Promise<BlockInsertResult> {
+        const doInsert = async (): Promise<BlockInsertResult> => {
             const response = await fetch('/api/block/insertBlock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -112,16 +123,24 @@ export class BlockOperations {
                     blockId: result.data[0].doOperations[0].id
                 };
             } else {
+                // Non-zero code or missing data - application error, not retryable
                 return {
                     success: false,
-                    error: result
+                    error: new Error(result.msg || 'Insert failed: no block ID returned')
                 };
             }
+        };
+
+        try {
+            if (enableRetry) {
+                return await withRetry(doInsert, BLOCK_RETRY_CONFIG, isRetryableError);
+            }
+            return await doInsert();
         } catch (error) {
             console.error('[BlockOperations] Insert block failed:', error);
             return {
                 success: false,
-                error
+                error: error instanceof Error ? error : new Error(String(error))
             };
         }
     }
@@ -169,9 +188,44 @@ export class BlockOperations {
                     });
                 }
 
-                // If we got results, return them
+                // If we got results, check if the count matches expected
                 if (insertedBlocks.length > 0) {
                     console.log(`[BlockOperations] Batch inserted ${insertedBlocks.length} blocks`);
+
+                    // CRITICAL FIX: Verify that all paragraphs were inserted as separate blocks
+                    // If SiYuan merged them into fewer blocks, we need to fall back to sequential
+                    if (insertedBlocks.length < paragraphs.length) {
+                        console.warn(`[BlockOperations] Batch insert created ${insertedBlocks.length} blocks but expected ${paragraphs.length}. Falling back to sequential.`);
+                        // Delete the incorrectly merged block(s) first
+                        const blockIdsToDelete = insertedBlocks.map(b => b.blockId).filter(id => id !== undefined) as string[];
+                        console.log(`[BlockOperations] Deleting ${blockIdsToDelete.length} incorrectly merged blocks:`, blockIdsToDelete);
+
+                        if (blockIdsToDelete.length > 0) {
+                            const deleteResults = await this.deleteMultipleBlocks(blockIdsToDelete);
+                            const failedDeletes = deleteResults.filter(r => !r.success);
+
+                            if (failedDeletes.length > 0) {
+                                console.error(`[BlockOperations] CRITICAL: Failed to delete ${failedDeletes.length} merged blocks. This may cause duplicate content!`, failedDeletes);
+                                // Wait longer and retry once
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                const retryResults = await this.deleteMultipleBlocks(failedDeletes.map(r => r.blockId));
+                                const stillFailed = retryResults.filter(r => !r.success);
+                                if (stillFailed.length > 0) {
+                                    console.error(`[BlockOperations] Retry also failed for ${stillFailed.length} blocks`);
+                                }
+                            } else {
+                                console.log(`[BlockOperations] Successfully deleted ${deleteResults.length} merged blocks`);
+                            }
+                        }
+
+                        // Wait for SiYuan to process the deletion before inserting new blocks
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        // Fall back to sequential insertion
+                        console.log(`[BlockOperations] Starting sequential fallback insert for ${paragraphs.length} paragraphs`);
+                        return this.sequentialInsertBlocks(paragraphs, afterBlockId);
+                    }
+
                     return insertedBlocks;
                 }
 
@@ -241,28 +295,27 @@ export class BlockOperations {
         // Check if batch API is available
         const supportsBatch = await this.supportsBatchInsert();
 
-        if (supportsBatch && paragraphs.length > 10) {
+        // DISABLED: Batch insert API merges paragraphs into single block (SiYuan API limitation)
+        // Always use sequential insert for reliability until SiYuan fixes this behavior
+        if (false && supportsBatch && paragraphs.length > 10) {
             // Use batch API for better performance (only for 10+ blocks to avoid overhead)
             console.log(`[BlockOperations] Using batch insert API for ${paragraphs.length} blocks`);
             return this.batchInsertBlocks(paragraphs, afterBlockId);
         } else {
-            // Fall back to sequential insertion
-            if (!supportsBatch) {
-                console.log(`[BlockOperations] Batch API not available, using sequential insert for ${paragraphs.length} blocks`);
-            } else {
-                console.log(`[BlockOperations] Using sequential insert for ${paragraphs.length} blocks (< 10 blocks)`);
-            }
+            // Always use sequential insertion for reliability
+            console.log(`[BlockOperations] Using sequential insert for ${paragraphs.length} blocks`);
             return this.sequentialInsertBlocks(paragraphs, afterBlockId);
         }
     }
 
     /**
-     * Delete a block
+     * Delete a block with automatic retry on transient failures
      * @param blockId Block ID to delete
+     * @param enableRetry Whether to enable retry (default: true)
      * @returns Delete result
      */
-    async deleteBlock(blockId: string): Promise<BlockDeleteResult> {
-        try {
+    async deleteBlock(blockId: string, enableRetry: boolean = true): Promise<BlockDeleteResult> {
+        const doDelete = async (): Promise<BlockDeleteResult> => {
             const response = await fetch('/api/block/deleteBlock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -275,17 +328,32 @@ export class BlockOperations {
 
             const result = await response.json();
 
+            if (result.code !== 0) {
+                // Non-zero code from API - this is an application error, not retryable
+                return {
+                    success: false,
+                    blockId,
+                    error: new Error(result.msg || `API error code: ${result.code}`)
+                };
+            }
+
             return {
-                success: result.code === 0,
-                blockId,
-                error: result.code !== 0 ? result : undefined
+                success: true,
+                blockId
             };
+        };
+
+        try {
+            if (enableRetry) {
+                return await withRetry(doDelete, BLOCK_RETRY_CONFIG, isRetryableError);
+            }
+            return await doDelete();
         } catch (error) {
             console.error(`[BlockOperations] Delete block ${blockId} failed:`, error);
             return {
                 success: false,
                 blockId,
-                error
+                error: error instanceof Error ? error : new Error(String(error))
             };
         }
     }
@@ -337,12 +405,33 @@ export class BlockOperations {
 
     /**
      * Delete multiple blocks in parallel (fallback)
+     * Uses Promise.allSettled for resilient partial failure handling
      * @param blockIds Array of block IDs to delete
      * @returns Array of delete results
      */
     private async parallelDeleteBlocks(blockIds: string[]): Promise<BlockDeleteResult[]> {
         const deletePromises = blockIds.map(id => this.deleteBlock(id));
-        return await Promise.all(deletePromises);
+        const settledResults = await Promise.allSettled(deletePromises);
+
+        const results = settledResults.map((result, index) => {
+            if (result.status === 'fulfilled') {
+                return result.value;
+            }
+            // Handle rejected promise - create error result
+            console.error(`[BlockOperations] Delete failed for block ${blockIds[index]}:`, result.reason);
+            return {
+                success: false,
+                blockId: blockIds[index],
+                error: result.reason instanceof Error ? result.reason : new Error(String(result.reason))
+            };
+        });
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+        if (failCount > 0) {
+            console.warn(`[BlockOperations] Parallel delete completed: ${successCount} success, ${failCount} failed`);
+        }
+        return results;
     }
 
     /**
@@ -355,14 +444,15 @@ export class BlockOperations {
             return [];
         }
 
-        // Use batch delete for 10+ blocks
-        if (blockIds.length > 10) {
-            console.log(`[BlockOperations] Using batch delete for ${blockIds.length} blocks`);
-            return this.batchDeleteBlocks(blockIds);
-        } else {
-            console.log(`[BlockOperations] Using parallel delete for ${blockIds.length} blocks`);
-            return this.parallelDeleteBlocks(blockIds);
-        }
+        // DISABLED: Batch delete via /api/transactions may not actually delete blocks
+        // Always use parallel delete for reliability
+        // if (blockIds.length > 10) {
+        //     console.log(`[BlockOperations] Using batch delete for ${blockIds.length} blocks`);
+        //     return this.batchDeleteBlocks(blockIds);
+        // }
+
+        console.log(`[BlockOperations] Using parallel delete for ${blockIds.length} blocks`);
+        return this.parallelDeleteBlocks(blockIds);
     }
 
     /**
@@ -402,6 +492,65 @@ export class BlockOperations {
                 error
             };
         }
+    }
+
+
+    /**
+     * Get block's markdown content via API
+     * @param blockId - Target block ID
+     * @returns Markdown content or null if failed
+     */
+    async getBlockMarkdown(blockId: string): Promise<string | null> {
+        try {
+            const response = await fetch('/api/block/getBlockKramdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: blockId })
+            });
+
+            if (!response.ok) return null;
+
+            const result = await response.json();
+            if (result.code === 0 && result.data) {
+                let kramdown = result.data.kramdown || null;
+                if (kramdown) {
+                    // Remove kramdown block attributes like {: id="..." updated="..." ...}
+                    kramdown = kramdown.replace(/\{:\s*id="[^"]*"[^}]*\}/g, '').trim();
+                }
+                return kramdown;
+            }
+            return null;
+        } catch (error) {
+            console.error(`[BlockOperations] Get block markdown ${blockId} failed:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Update a portion of a block's content (partial replacement)
+     * @param blockId - Target block ID
+     * @param fullMarkdown - Original full block markdown
+     * @param newPartialContent - New content to replace the selected portion
+     * @param startOffset - Start offset in markdown
+     * @param endOffset - End offset in markdown
+     */
+    async updateBlockPartial(
+        blockId: string,
+        fullMarkdown: string,
+        newPartialContent: string,
+        startOffset: number,
+        endOffset: number
+    ): Promise<BlockUpdateResult> {
+        // Construct new full content by replacing the specified range
+        const newFullContent =
+            fullMarkdown.substring(0, startOffset) +
+            newPartialContent +
+            fullMarkdown.substring(endOffset);
+
+        console.log(`[BlockOperations] Partial update: replacing [${startOffset}:${endOffset}] in block ${blockId}`);
+
+        // Use existing updateBlock to apply the change
+        return this.updateBlock(blockId, newFullContent);
     }
 
     /**

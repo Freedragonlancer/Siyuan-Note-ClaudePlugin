@@ -86,6 +86,18 @@ export interface InlineEditBlock {
     /** 原始块类型信息（用于保留块格式） - FIX Issue #1 */
     originalBlockType?: string;       // data-type attribute (e.g., "h", "l", "p", "c")
     originalBlockSubtype?: string;    // data-subtype attribute (e.g., "h1", "h2", "u", "o")
+
+    /** Whether this edit is for partial text within a block */
+    isPartialSelection?: boolean;
+
+    /** Full original block content (markdown) for partial edits */
+    fullBlockMarkdown?: string;
+
+    /** Markdown offset of selection start */
+    markdownStartOffset?: number;
+
+    /** Markdown offset of selection end */
+    markdownEndOffset?: number;
 }
 
 /**
@@ -203,6 +215,18 @@ export interface InlineEditSelection {
     /** Context before and after (optional) */
     contextBefore?: string;
     contextAfter?: string;
+
+    /** Whether this is a partial selection within a single block (not full block) */
+    isPartialSelection?: boolean;
+
+    /** Full block content (markdown) - needed for partial replacement */
+    fullBlockMarkdown?: string;
+
+    /** Character offset of selection start within full block markdown */
+    markdownStartOffset?: number;
+
+    /** Character offset of selection end within full block markdown */
+    markdownEndOffset?: number;
 }
 
 /**

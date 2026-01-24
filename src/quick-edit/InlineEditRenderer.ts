@@ -14,11 +14,12 @@ import { SecurityUtils } from '@/utils/Security';
 
 export class InlineEditRenderer {
     private dmp: DiffMatchPatch.diff_match_patch;
-    private typingTimers: Map<string, number> = new Map();
-
     // PERFORMANCE: Cache DOM elements to avoid repeated queries
     private suggestionContentCache: WeakMap<HTMLElement, HTMLElement> = new WeakMap();
     private progressThrottle: Map<string, number> = new Map();
+    
+    // Store pure AI content separately for partial selection (without prefix/suffix)
+    private partialAIContentCache: Map<string, string> = new Map();
 
     constructor() {
         this.dmp = new DiffMatchPatch.diff_match_patch();
@@ -45,8 +46,36 @@ export class InlineEditRenderer {
         compareBlock.style.mozUserSelect = 'none';
         compareBlock.style.msUserSelect = 'none';
 
+        // Build original text display - handle partial selection with context
+        let originalTextHtml = this.escapeHtml(block.originalText);
+        let suggestionLabel = 'AI 建议';
+        let originalLabel = '原文（保留）';
+
+        if (block.isPartialSelection && block.fullBlockMarkdown !== undefined) {
+            // For partial selection, show context with highlighted selection
+            const startOffset = block.markdownStartOffset ?? 0;
+            const endOffset = block.markdownEndOffset ?? block.fullBlockMarkdown.length;
+            
+            const prefix = block.fullBlockMarkdown.substring(0, startOffset);
+            const selected = block.fullBlockMarkdown.substring(startOffset, endOffset);
+            const suffix = block.fullBlockMarkdown.substring(endOffset);
+            
+            // Build original with highlighted selection
+            originalTextHtml = 
+                `<span class="partial-context">${this.escapeHtml(prefix)}</span>` +
+                `<span class="partial-selected">${this.escapeHtml(selected)}</span>` +
+                `<span class="partial-context">${this.escapeHtml(suffix)}</span>`;
+            
+            originalLabel = '原文（仅替换高亮部分）';
+            suggestionLabel = 'AI 建议（替换高亮部分）';
+
+            // Store context info for streaming updates
+            compareBlock.setAttribute('data-partial-prefix', prefix);
+            compareBlock.setAttribute('data-partial-suffix', suffix);
+        }
+
         // Build HTML structure - 移除所有多余空白和缩进
-        compareBlock.innerHTML = `<div class="inline-edit-block__container"><div class="inline-edit-block__loading" style="display: ${block.state === 'processing' ? 'flex' : 'none'};"><div class="loading-spinner"></div><span>AI 思考中...</span></div>${options.showProgress ? `<div class="inline-edit-block__progress" style="display: none;"><span class="progress-text">已接收 <span class="progress-count">0</span> 字符</span></div>` : ''}${!options.hideOriginal ? `<div class="inline-edit-block__original" style="display: none;"><div class="block-label">原文（保留）</div><div class="block-content" data-content-type="original">${this.escapeHtml(block.originalText)}</div></div>` : ''}<div class="inline-edit-block__suggestion" style="display: none;"><div class="block-label">AI 建议</div><div class="block-content" data-content-type="suggestion"></div></div><div class="inline-edit-block__error" style="display: none;"><svg class="error-icon"><use xlink:href="#iconClose"></use></svg><span class="error-message"></span></div><div class="inline-edit-block__toolbar" style="display: none;"><div class="toolbar-actions"><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--cancel" data-action="cancel" style="display: none;"><svg><use xlink:href="#iconClose"></use></svg><span>取消</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="reject"><svg><use xlink:href="#iconClose"></use></svg><span>拒绝</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="retry"><svg><use xlink:href="#iconRefresh"></use></svg><span>重试</span><span class="shortcut">Ctrl+R</span></button><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--insert" data-action="insert"><svg><use xlink:href="#iconDown"></use></svg><span>插入到下方</span><span class="shortcut">Ctrl+I</span></button><button class="b3-button b3-button--text toolbar-btn toolbar-btn--primary" data-action="accept"><svg><use xlink:href="#iconCheck"></use></svg><span>接受替换</span><span class="shortcut">Tab</span></button></div></div></div>`;
+        compareBlock.innerHTML = `<div class="inline-edit-block__container"><div class="inline-edit-block__loading" style="display: ${block.state === 'processing' ? 'flex' : 'none'};"><div class="loading-spinner"></div><span>AI 思考中...</span></div>${options.showProgress ? `<div class="inline-edit-block__progress" style="display: none;"><span class="progress-text">已接收 <span class="progress-count">0</span> 字符</span></div>` : ''}${!options.hideOriginal ? `<div class="inline-edit-block__original" style="display: none;"><div class="block-label">${originalLabel}</div><div class="block-content" data-content-type="original">${originalTextHtml}</div></div>` : ''}<div class="inline-edit-block__suggestion" style="display: none;"><div class="block-label">${suggestionLabel}</div><div class="block-content" data-content-type="suggestion"></div></div><div class="inline-edit-block__error" style="display: none;"><svg class="error-icon"><use xlink:href="#iconClose"></use></svg><span class="error-message"></span></div><div class="inline-edit-block__toolbar" style="display: none;"><div class="toolbar-actions"><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--cancel" data-action="cancel" style="display: none;"><svg><use xlink:href="#iconClose"></use></svg><span>取消</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="reject"><svg><use xlink:href="#iconClose"></use></svg><span>拒绝</span><span class="shortcut">Esc</span></button><button class="b3-button b3-button--outline toolbar-btn" data-action="retry"><svg><use xlink:href="#iconRefresh"></use></svg><span>重试</span><span class="shortcut">Ctrl+R</span></button><button class="b3-button b3-button--outline toolbar-btn toolbar-btn--insert" data-action="insert"><svg><use xlink:href="#iconDown"></use></svg><span>插入到下方</span><span class="shortcut">Ctrl+I</span></button><button class="b3-button b3-button--text toolbar-btn toolbar-btn--primary" data-action="accept"><svg><use xlink:href="#iconCheck"></use></svg><span>接受替换</span><span class="shortcut">Tab</span></button></div></div></div>`;
 
         // Apply custom colors
         const originalBlock = compareBlock.querySelector('.inline-edit-block__original') as HTMLElement;
@@ -192,9 +221,23 @@ export class InlineEditRenderer {
             this.suggestionContentCache.set(blockElement, suggestionContent);
         }
 
-        // 智能处理第一个chunk：只移除开头的换行符，保留缩进（空格和制表符）
-        const currentText = suggestionContent.textContent || '';
-        const isFirstChunk = currentText.length === 0;
+        // Streaming完整性验证：记录每个chunk
+        const blockId = blockElement.getAttribute('data-inline-edit-id') || '';
+        
+        // Check if this is a partial selection with context
+        const partialPrefix = blockElement.getAttribute('data-partial-prefix');
+        const partialSuffix = blockElement.getAttribute('data-partial-suffix');
+        const isPartialSelection = partialPrefix !== null || partialSuffix !== null;
+
+        // Get current AI content - use cache for partial selection to avoid prefix/suffix contamination
+        let currentAIText: string;
+        if (isPartialSelection) {
+            currentAIText = this.partialAIContentCache.get(blockId) || '';
+        } else {
+            currentAIText = suggestionContent.textContent || '';
+        }
+        
+        const isFirstChunk = currentAIText.length === 0;
 
         // 只移除开头的换行符 \n 和 \r，保留空格和tab缩进
         let processedChunk = chunk;
@@ -202,30 +245,21 @@ export class InlineEditRenderer {
             processedChunk = chunk.replace(/^[\r\n]+/, '');
         }
 
-        // Streaming完整性验证：记录每个chunk
-        const blockId = blockElement.getAttribute('data-inline-edit-id') || '';
-
-        // CRITICAL FIX: 禁用打字动画以避免chunk丢失
-        // 打字动画在streaming场景下会导致chunk冲突，因为新chunk到达时
-        // 上一个chunk的动画可能还没完成，clearTimeout后剩余字符会丢失
-        // Streaming本身已经有渐进显示的视觉效果，不需要额外的打字动画
-        const useTypingAnimation = false; // 强制禁用，无论enableTyping设置如何
-
-        if (useTypingAnimation && enableTyping) {
-            // Typing animation (已禁用)
-            this.typeText(suggestionContent, processedChunk, typingSpeed);
+        // Append chunk to AI content
+        const newAIText = currentAIText + processedChunk;
+        
+        if (isPartialSelection) {
+            // Store pure AI content in cache
+            this.partialAIContentCache.set(blockId, newAIText);
+            
+            // Render with context
+            suggestionContent.innerHTML = 
+                `<span class="partial-context">${this.escapeHtml(partialPrefix || '')}</span>` +
+                `<span class="partial-replacement">${this.escapeHtml(newAIText)}</span>` +
+                `<span class="partial-context">${this.escapeHtml(partialSuffix || '')}</span>`;
         } else {
-            // Direct append - 唯一安全的方式
-            const newText = currentText + processedChunk;
-            suggestionContent.textContent = newText;
-
-            // 验证文本确实被添加
-            const verifyText = suggestionContent.textContent || '';
-            if (verifyText.length !== newText.length) {
-                console.error(`[InlineEditRenderer] Text length mismatch! Expected: ${newText.length}, Actual: ${verifyText.length}`);
-                console.error(`[InlineEditRenderer] newText: "${newText}"`);
-                console.error(`[InlineEditRenderer] verifyText: "${verifyText}"`);
-            }
+            // Full block: just show the text
+            suggestionContent.textContent = newAIText;
         }
 
         // PERFORMANCE: Throttle progress updates (every 100ms instead of every chunk)
@@ -375,6 +409,14 @@ export class InlineEditRenderer {
      * Remove comparison block from DOM
      */
     public removeBlock(blockElement: HTMLElement): void {
+        // Clean up caches
+        const blockId = blockElement.getAttribute('data-inline-edit-id') || '';
+        if (blockId) {
+            this.partialAIContentCache.delete(blockId);
+            this.progressThrottle.delete(blockId);
+        }
+        this.suggestionContentCache.delete(blockElement);
+        
         blockElement.remove();
     }
 
@@ -404,38 +446,6 @@ export class InlineEditRenderer {
         if (progressCount) {
             progressCount.textContent = characterCount.toString();
         }
-    }
-
-    /**
-     * Typing animation effect
-     */
-    private typeText(element: HTMLElement, text: string, speed: number): void {
-        const blockId = element.closest('[data-inline-edit-id]')?.getAttribute('data-inline-edit-id');
-        if (!blockId) return;
-
-        // Clear existing timer
-        const existingTimer = this.typingTimers.get(blockId);
-        if (existingTimer) {
-            clearTimeout(existingTimer);
-        }
-
-        // Add text character by character
-        let currentIndex = 0;
-        const currentText = element.textContent || '';
-
-        const type = () => {
-            if (currentIndex < text.length) {
-                element.textContent = currentText + text.substring(0, currentIndex + 1);
-                currentIndex++;
-
-                const timer = window.setTimeout(type, speed);
-                this.typingTimers.set(blockId, timer);
-            } else {
-                this.typingTimers.delete(blockId);
-            }
-        };
-
-        type();
     }
 
     /**
@@ -485,10 +495,9 @@ export class InlineEditRenderer {
     }
 
     /**
-     * Cleanup timers
+     * Cleanup resources
      */
     public cleanup(): void {
-        this.typingTimers.forEach(timer => clearTimeout(timer));
-        this.typingTimers.clear();
+        // Reserved for future cleanup tasks
     }
 }

@@ -88,9 +88,60 @@ export class ActionHandler {
      */
     async handleAccept(blockId: string): Promise<void> {
         const block = this.deps.getActiveBlock(blockId);
-        if (!block || !block.element) return;
+        if (!block || !block.element) {
+            console.error('[ActionHandler] handleAccept: block or element not found', { blockId, hasBlock: !!block, hasElement: !!block?.element });
+            return;
+        }
 
         try {
+            // Handle partial selection: update block in-place instead of delete + insert
+            if (block.isPartialSelection && block.fullBlockMarkdown !== undefined) {
+
+                const result = await this.deps.blockOps.updateBlockPartial(
+                    block.blockId,
+                    block.fullBlockMarkdown,
+                    block.suggestedText,
+                    block.markdownStartOffset ?? 0,
+                    block.markdownEndOffset ?? block.fullBlockMarkdown.length
+                );
+
+                if (!result.success) {
+                    throw new Error(`Failed to update block: ${result.error}`);
+                }
+
+                // Cleanup UI
+                this.deps.pauseObserver();
+                this.removeBlockMarking([block.blockId]);
+                if (block.element && document.contains(block.element)) {
+                    this.deps.renderer.removeBlock(block.element);
+                }
+                this.deps.resumeObserver();
+
+                // Add to history
+                this.deps.history.addToHistory({
+                    selection: {
+                        id: block.id,
+                        blockId: block.blockId,
+                        startLine: 0,
+                        endLine: 0,
+                        selectedText: block.originalText,
+                        contextBefore: '',
+                        contextAfter: '',
+                        timestamp: block.createdAt,
+                        status: 'completed'
+                    },
+                    originalContent: block.originalText,
+                    modifiedContent: block.suggestedText,
+                    blockId: block.blockId,
+                    applied: true
+                });
+
+                this.cleanupBlock(blockId);
+                showMessage('✅ 部分文字已替换', 2000);
+                return;
+            }
+
+            // Full block replacement logic (existing code)
             // Use indented text if available (preserves indentation shown in preview)
             let textToApply = block.suggestedTextWithIndent || block.suggestedText;
 
@@ -151,6 +202,8 @@ export class ActionHandler {
                     console.error(`[ActionHandler] Failed to delete ${failed.length}/${results.length} blocks:`, failed);
                     showMessage(`部分块删除失败 (${failed.length}/${results.length})`, 5000, 'error');
                 }
+            } else {
+                console.warn('[ActionHandler] No selectedBlockIds to delete! This will result in INSERT behavior instead of REPLACE.');
             }
 
             // Step 7: Wait for SiYuan to complete all async operations
@@ -388,12 +441,23 @@ export class ActionHandler {
     /**
      * Split text into paragraphs for SiYuan blocks
      * In SiYuan, \n\n separates different blocks (paragraphs)
+     *
+     * Smart splitting strategy:
+     * 1. First try splitting by double line breaks (\n\n)
+     * 2. If only one paragraph results and text contains single line breaks,
+     *    fall back to splitting by single line breaks (\n)
+     * This handles AI responses that use single \n instead of \n\n
      */
     private splitIntoParagraphs(text: string): string[] {
-        return text
-            .split(/(?:\r?\n){2,}/)  // Split by 2+ line breaks (supports \n\n and \r\n\r\n)
-            .map(p => p.trim())
-            .filter(p => p.length > 0);
+        // First try splitting by double line breaks
+        let paragraphs = text.split(/(?:\r?\n){2,}/);
+
+        // If only one paragraph and text contains single line breaks, split by single \n
+        if (paragraphs.length === 1 && text.includes('\n')) {
+            paragraphs = text.split(/\r?\n/);
+        }
+
+        return paragraphs.map(p => p.trim()).filter(p => p.length > 0);
     }
 
     /**

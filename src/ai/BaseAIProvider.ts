@@ -11,7 +11,8 @@ import type {
     ParameterLimits,
     ProviderMetadata,
 } from './types';
-import type { Message } from '../claude/types';
+import type { Message, ContentBlock, TextContent } from '../claude/types';
+import { sanitizeForAI } from '../utils/Security';
 
 /**
  * Abstract base class for AI providers
@@ -112,11 +113,49 @@ export abstract class BaseAIProvider implements AIProvider {
      */
     protected normalizeMessages(messages: Message[]): Message[] {
         return messages
-            .filter(m => m.content && m.content.trim() !== '')
+            .filter(m => {
+                // Handle both string and ContentBlock[] content types
+                if (typeof m.content === 'string') {
+                    return m.content.trim() !== '';
+                }
+                // For ContentBlock array, check if there's any valid content (text OR image)
+                if (Array.isArray(m.content)) {
+                    return m.content.some(block => {
+                        if (block.type === 'text') {
+                            return block.text.trim() !== '';
+                        }
+                        if (block.type === 'image') {
+                            // Image blocks are always valid if they have data
+                            return block.source && block.source.data;
+                        }
+                        return false;
+                    });
+                }
+                return false;
+            })
             .map(m => ({
                 role: m.role,
-                content: m.content.trim(),
+                // Sanitize and preserve original content type
+                content: typeof m.content === 'string' 
+                    ? sanitizeForAI(m.content.trim())
+                    : this.sanitizeContentBlocks(m.content),
             }));
+    }
+
+    /**
+     * Helper method to sanitize ContentBlock array
+     * Removes control characters from text blocks while preserving image blocks
+     */
+    protected sanitizeContentBlocks(content: ContentBlock[]): ContentBlock[] {
+        return content.map(block => {
+            if (block.type === 'text') {
+                return {
+                    ...block,
+                    text: sanitizeForAI(block.text),
+                } as TextContent;
+            }
+            return block;  // Keep image blocks as-is
+        });
     }
 
     /**

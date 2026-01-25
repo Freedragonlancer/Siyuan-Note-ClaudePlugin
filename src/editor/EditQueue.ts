@@ -13,6 +13,38 @@ import type {
 import { AIEditProcessor } from './AIEditProcessor';
 import { TextSelectionManager } from './TextSelectionManager';
 
+/**
+ * Simple event emitter for queue events
+ */
+class QueueEventEmitter {
+    private listeners: Map<string, Set<() => void>> = new Map();
+
+    on(event: string, callback: () => void): void {
+        if (!this.listeners.has(event)) {
+            this.listeners.set(event, new Set());
+        }
+        this.listeners.get(event)!.add(callback);
+    }
+
+    off(event: string, callback: () => void): void {
+        this.listeners.get(event)?.delete(callback);
+    }
+
+    emit(event: string): void {
+        this.listeners.get(event)?.forEach(cb => {
+            try {
+                cb();
+            } catch (e) {
+                console.error(`[EditQueue] Error in event listener for ${event}:`, e);
+            }
+        });
+    }
+
+    clear(): void {
+        this.listeners.clear();
+    }
+}
+
 export class EditQueue implements IEditQueue {
     private queue: string[] = []; // Queue of selection IDs
     private processing: Set<string> = new Set();
@@ -21,6 +53,7 @@ export class EditQueue implements IEditQueue {
     private processor: AIEditProcessor;
     private manager: TextSelectionManager;
     private eventListeners: Set<EditEventCallback> = new Set();
+    private queueEmitter: QueueEventEmitter = new QueueEventEmitter();
 
     constructor(
         processor: AIEditProcessor,
@@ -30,6 +63,14 @@ export class EditQueue implements IEditQueue {
         this.processor = processor;
         this.manager = manager;
         this.settings = settings;
+
+        // Event-driven processing: listen for 'itemCompleted' to process next
+        this.queueEmitter.on('itemCompleted', () => {
+            if (!this.paused && this.queue.length > 0) {
+                // Use microtask to avoid stack overflow on rapid completions
+                queueMicrotask(() => this.processNext());
+            }
+        });
 
         // Note: Removed auto-enqueue listener
         // All enqueue operations should be explicit via enqueue() calls
@@ -125,11 +166,8 @@ export class EditQueue implements IEditQueue {
             // Remove from processing set
             this.processing.delete(selection.id);
 
-            // Process next item if available
-            if (!this.paused && this.queue.length > 0) {
-                // Small delay to prevent overwhelming the API
-                setTimeout(() => this.processNext(), 100);
-            }
+            // Emit event to trigger next processing (event-driven, no setTimeout polling)
+            this.queueEmitter.emit('itemCompleted');
         }
     }
 
@@ -242,14 +280,28 @@ export class EditQueue implements IEditQueue {
             this.resumeQueue();
         }
 
-        // Start processing
-        while (this.queue.length > 0 || this.processing.size > 0) {
-            await this.processNext();
-            // Small delay between batches
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Start processing and wait for completion
+        // Event-driven: processNext triggers the next via events, we just wait
+        return new Promise<void>((resolve) => {
+            const checkComplete = () => {
+                if (this.queue.length === 0 && this.processing.size === 0) {
+                    this.queueEmitter.off('itemCompleted', checkComplete);
+                    console.log('[AIEdit] Finished processing all selections');
+                    resolve();
+                }
+            };
 
-        console.log('[AIEdit] Finished processing all selections');
+            // Listen for completion events
+            this.queueEmitter.on('itemCompleted', checkComplete);
+
+            // Start processing if not already
+            if (this.processing.size < this.settings.maxConcurrentEdits && this.queue.length > 0) {
+                this.processNext();
+            }
+
+            // Check immediately in case queue is already empty
+            checkComplete();
+        });
     }
 
     /**

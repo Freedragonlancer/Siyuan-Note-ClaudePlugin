@@ -713,12 +713,12 @@ export class ConfigManager {
         try {
             console.log('[ConfigManager] Loading custom templates...');
 
-            // Try localStorage first
-            let stored = localStorage.getItem('claude-assistant-custom-templates');
+            let stored: string | null = null;
 
-            // If not in localStorage, try loading from file system
-            if (!stored && this.plugin && typeof this.plugin.loadData === 'function') {
-                console.log('[ConfigManager] localStorage empty, trying file system...');
+            // FIX: File system is the authoritative source (synced via cloud)
+            // Load from file system FIRST, then fallback to localStorage
+            if (this.plugin && typeof this.plugin.loadData === 'function') {
+                console.log('[ConfigManager] Loading from file system (authoritative source)...');
                 try {
                     const fileData = await this.plugin.loadData('custom-templates.json');
                     if (fileData) {
@@ -733,14 +733,25 @@ export class ConfigManager {
                             console.log('[ConfigManager] fileData was already an object, converted to string');
                         }
 
-                        // Cache to localStorage for faster access next time
+                        // Update localStorage cache with authoritative data
                         if (stored) {
                             localStorage.setItem('claude-assistant-custom-templates', stored);
-                            console.log('[ConfigManager] ✅ Cached to localStorage');
+                            console.log('[ConfigManager] ✅ Updated localStorage cache from file system');
                         }
+                    } else {
+                        console.log('[ConfigManager] File system returned no data');
                     }
                 } catch (fileError) {
-                    console.log('[ConfigManager] No templates file found, starting fresh');
+                    console.log('[ConfigManager] File system load failed, will try localStorage fallback:', fileError);
+                }
+            }
+
+            // Fallback to localStorage only if file system load failed
+            if (!stored) {
+                console.log('[ConfigManager] Trying localStorage fallback...');
+                stored = localStorage.getItem('claude-assistant-custom-templates');
+                if (stored) {
+                    console.log('[ConfigManager] Found templates in localStorage (fallback)');
                 }
             }
 

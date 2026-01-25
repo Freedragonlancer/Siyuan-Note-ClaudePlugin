@@ -176,9 +176,76 @@ export class SecurityUtils {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
     }
+
+    /**
+     * Sanitize text for AI API requests
+     * Removes control characters that may cause API errors
+     * Preserves normal whitespace (space, tab, newline, carriage return)
+     * 
+     * Control characters that are removed:
+     * - C0 control codes (U+0000-U+001F, except \t, \n, \r)
+     * - C1 control codes (U+0080-U+009F)
+     * - Unicode replacement character (U+FFFD)
+     * - Byte Order Marks (U+FEFF, U+FFFE)
+     * - Invisible formatting characters (U+2060-U+2064)
+     * 
+     * Preserved characters:
+     * - ZWJ (U+200D) - needed for emoji combinations (👨‍👩‍👧) and some scripts
+     * - ZWNJ (U+200C) - needed for Arabic, Persian, Hindi text
+     */
+    static sanitizeForAI(text: string): string {
+        if (!text) return text;
+
+        return text
+            // Remove C0 control characters except tab (0x09), newline (0x0A), carriage return (0x0D)
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+            // Remove C1 control characters (U+0080-U+009F)
+            .replace(/[\x80-\x9F]/g, '')
+            // Remove Unicode replacement character
+            .replace(/\uFFFD/g, '')
+            // Remove Byte Order Marks
+            .replace(/[\uFEFF\uFFFE]/g, '')
+            // Remove invisible formatting characters (but keep ZWJ U+200D and ZWNJ U+200C for emoji/scripts)
+            .replace(/[\u2060\u2061\u2062\u2063\u2064]/g, '')
+            // Convert line/paragraph separators to newline
+            .replace(/[\u2028\u2029]/g, '\n')
+            // Collapse 3+ consecutive whitespace chars to 2 spaces (preserve formatting)
+            .replace(/[^\S\n\r]{3,}/g, '  ');
+    }
+
+    /**
+     * Check if text contains potentially problematic characters for AI APIs
+     * Useful for diagnostics
+     */
+    static hasProblematicCharacters(text: string): { hasIssues: boolean; issues: string[] } {
+        const issues: string[] = [];
+
+        if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(text)) {
+            issues.push('C0 control characters detected');
+        }
+        if (/[\x80-\x9F]/.test(text)) {
+            issues.push('C1 control characters detected');
+        }
+        if (/\uFFFD/.test(text)) {
+            issues.push('Unicode replacement character (encoding error indicator) detected');
+        }
+        if (/[\uFEFF\uFFFE]/.test(text)) {
+            issues.push('Byte Order Mark detected');
+        }
+        if (/[\u2060-\u2064]/.test(text)) {
+            issues.push('Invisible formatting characters detected');
+        }
+
+        return {
+            hasIssues: issues.length > 0,
+            issues
+        };
+    }
 }
 
 // Export convenience functions
 export const escapeHtml = SecurityUtils.escapeHtml.bind(SecurityUtils);
 export const sanitizeBlockId = SecurityUtils.sanitizeBlockId.bind(SecurityUtils);
 export const validateNumericRange = SecurityUtils.validateNumericRange.bind(SecurityUtils);
+export const sanitizeForAI = SecurityUtils.sanitizeForAI.bind(SecurityUtils);
+export const hasProblematicCharacters = SecurityUtils.hasProblematicCharacters.bind(SecurityUtils);

@@ -20,7 +20,8 @@ export class UniversalAIClient {
     private provider: AIProvider | null = null;
     private settings: MultiProviderSettings;
     private logger: RequestLogger;
-    private activeAbortController: AbortController | null = null;
+    /** Map of requestId -> AbortController for concurrent request management */
+    private activeAbortControllers: Map<string, AbortController> = new Map();
     private configManager: IConfigManager | null = null; // ConfigManager reference for preset-level filterRules
     public plugin: ISiYuanPlugin | null = null; // Plugin instance for file storage access
 
@@ -79,10 +80,9 @@ export class UniversalAIClient {
             }
 
             // FIX: Cancel any active requests before switching providers
-            if (this.activeAbortController) {
-                console.log('[UniversalAIClient] Cancelling active request before provider switch');
-                this.activeAbortController.abort();
-                this.activeAbortController = null;
+            if (this.activeAbortControllers.size > 0) {
+                console.log(`[UniversalAIClient] Cancelling ${this.activeAbortControllers.size} active request(s) before provider switch`);
+                this.cancelAllRequests();
             }
 
             // FIX: Cleanup old provider (could add provider.dispose() if needed)
@@ -287,12 +287,13 @@ export class UniversalAIClient {
             return;
         }
 
-        // Create AbortController for request cancellation
-        this.activeAbortController = new AbortController();
-        const STREAM_CHUNK_TIMEOUT = 30000; // 30 seconds chunk timeout
-
         // Logging: preparation
         const requestId = RequestLogger.generateRequestId();
+
+        // Create AbortController for this specific request
+        const abortController = new AbortController();
+        this.activeAbortControllers.set(requestId, abortController);
+        const STREAM_CHUNK_TIMEOUT = 30000; // 30 seconds chunk timeout
         const startTime = Date.now();
         const startedAt = new Date().toISOString();
         let accumulatedResponse = "";  // Accumulated streaming response
@@ -311,10 +312,10 @@ export class UniversalAIClient {
                 systemPrompt: systemPrompt || this.settings.systemPrompt,
                 maxTokens: maxTokens,
                 temperature: temperature,
-                signal: this.activeAbortController.signal,
+                signal: abortController.signal,
                 onStream: (chunk: string) => {
                     // Check if cancelled
-                    if (this.activeAbortController?.signal.aborted) {
+                    if (abortController.signal.aborted) {
                         throw new Error('Request cancelled by user');
                     }
 
@@ -325,7 +326,7 @@ export class UniversalAIClient {
                     if (timeoutHandle) clearTimeout(timeoutHandle);
                     timeoutHandle = setTimeout(() => {
                         console.error('[UniversalAIClient] Stream timeout: no data received for 30 seconds');
-                        this.activeAbortController?.abort();
+                        abortController.abort();
                     }, STREAM_CHUNK_TIMEOUT);
                 },
                 // v0.19.0: Pass through generated images callback
@@ -335,7 +336,7 @@ export class UniversalAIClient {
             // Set initial timeout
             timeoutHandle = setTimeout(() => {
                 console.error('[UniversalAIClient] Stream timeout: no data received for 30 seconds');
-                this.activeAbortController?.abort();
+                abortController.abort();
             }, STREAM_CHUNK_TIMEOUT);
 
             // Stream message via provider
@@ -436,9 +437,9 @@ export class UniversalAIClient {
         } finally {
             // Always cleanup and call completion callback
             if (timeoutHandle) clearTimeout(timeoutHandle);
-            this.activeAbortController = null;
+            this.activeAbortControllers.delete(requestId);
             onComplete();
-            console.log(`[UniversalAIClient] Request ${requestId} completed/cancelled`);
+            console.log(`[UniversalAIClient] Request ${requestId} completed/cancelled (${this.activeAbortControllers.size} active)`);
         }
     }
 
@@ -561,17 +562,54 @@ export class UniversalAIClient {
     }
 
     /**
-     * Cancel the currently active request
-     * This will abort the ongoing streaming operation
+     * Cancel a specific request by ID, or all requests if no ID provided
+     * @param requestId Optional request ID to cancel. If not provided, cancels all active requests.
      */
-    cancelActiveRequest(): void {
-        if (this.activeAbortController) {
-            console.log('[UniversalAIClient] Cancelling active request');
-            this.activeAbortController.abort();
-            this.activeAbortController = null;
+    cancelActiveRequest(requestId?: string): void {
+        if (requestId) {
+            // Cancel specific request
+            const controller = this.activeAbortControllers.get(requestId);
+            if (controller) {
+                console.log(`[UniversalAIClient] Cancelling request ${requestId}`);
+                controller.abort();
+                this.activeAbortControllers.delete(requestId);
+            } else {
+                console.log(`[UniversalAIClient] Request ${requestId} not found`);
+            }
         } else {
-            console.log('[UniversalAIClient] No active request to cancel');
+            // Cancel all requests (backward compatible behavior)
+            this.cancelAllRequests();
         }
+    }
+
+    /**
+     * Cancel all active requests
+     */
+    cancelAllRequests(): void {
+        if (this.activeAbortControllers.size > 0) {
+            console.log(`[UniversalAIClient] Cancelling all ${this.activeAbortControllers.size} active request(s)`);
+            for (const [id, controller] of this.activeAbortControllers) {
+                console.log(`[UniversalAIClient] Aborting request ${id}`);
+                controller.abort();
+            }
+            this.activeAbortControllers.clear();
+        } else {
+            console.log('[UniversalAIClient] No active requests to cancel');
+        }
+    }
+
+    /**
+     * Get the number of active requests
+     */
+    getActiveRequestCount(): number {
+        return this.activeAbortControllers.size;
+    }
+
+    /**
+     * Check if a specific request is active
+     */
+    isRequestActive(requestId: string): boolean {
+        return this.activeAbortControllers.has(requestId);
     }
 
     /**

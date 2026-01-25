@@ -5,6 +5,33 @@
 import type { FilterRule } from "../filter";
 
 /**
+ * Concurrency and retry settings for API operations
+ */
+export interface ConcurrencySettings {
+    /** Maximum retry attempts for failed operations (default: 2) */
+    maxRetries: number;
+    /** Base delay before first retry in ms (default: 100) */
+    retryBaseDelay: number;
+    /** Maximum delay cap for retries in ms (default: 2000) */
+    retryMaxDelay: number;
+    /** Backoff multiplier for exponential retry (default: 2) */
+    retryBackoffMultiplier: number;
+    /** Request timeout in ms (default: 30000) */
+    requestTimeout: number;
+}
+
+/**
+ * Default concurrency settings
+ */
+export const DEFAULT_CONCURRENCY_SETTINGS: ConcurrencySettings = {
+    maxRetries: 2,
+    retryBaseDelay: 100,
+    retryMaxDelay: 2000,
+    retryBackoffMultiplier: 2,
+    requestTimeout: 30000
+};
+
+/**
  * Custom instruction with optional diff display
  */
 export interface CustomInstruction {
@@ -164,6 +191,9 @@ export interface EditSettings {
 
     /** Quick edit auto action after completion (default: 'preview') */
     quickEditAutoAction?: 'preview' | 'replace' | 'insert';
+
+    /** Concurrency and retry settings for API operations */
+    concurrency?: ConcurrencySettings;
 }
 
 /**
@@ -206,7 +236,10 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
     quickEditSuggestionTextColor: 'rgba(34, 197, 94, 0.1)',
 
     // Auto action after completion
-    quickEditAutoAction: 'preview'  // 'preview' | 'replace' | 'insert'
+    quickEditAutoAction: 'preview',  // 'preview' | 'replace' | 'insert'
+
+    // Concurrency and retry settings
+    concurrency: DEFAULT_CONCURRENCY_SETTINGS
 };
 
 /**

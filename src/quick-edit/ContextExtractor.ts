@@ -135,7 +135,7 @@ export class ContextExtractor {
     }
 
     /**
-     * 提取上下文内容
+     * 提取上下文内容（优化版：并行提取 above 和 below）
      * @param blockIds 选中的块ID数组
      * @param placeholders 解析后的占位符数组
      * @returns 上下文信息
@@ -158,35 +158,53 @@ export class ContextExtractor {
         const firstBlockId = blockIds[0];
         const lastBlockId = blockIds[blockIds.length - 1];
 
-        // 处理每个占位符
-        for (const placeholder of placeholders) {
-            try {
-                switch (placeholder.type) {
-                    case PlaceholderType.ABOVE_LINES:
-                        context.aboveContent = await this.getContextLines(firstBlockId, 'above', placeholder.count);
-                        context.aboveCount = placeholder.count;
-                        break;
+        // 分离 above 和 below 类型的占位符
+        const abovePlaceholder = placeholders.find(p =>
+            p.type === PlaceholderType.ABOVE_LINES || p.type === PlaceholderType.ABOVE_BLOCKS
+        );
+        const belowPlaceholder = placeholders.find(p =>
+            p.type === PlaceholderType.BELOW_LINES || p.type === PlaceholderType.BELOW_BLOCKS
+        );
 
-                    case PlaceholderType.BELOW_LINES:
-                        context.belowContent = await this.getContextLines(lastBlockId, 'below', placeholder.count);
-                        context.belowCount = placeholder.count;
-                        break;
+        // 构建并行提取任务
+        const extractionTasks: Promise<void>[] = [];
 
-                    case PlaceholderType.ABOVE_BLOCKS:
-                        context.aboveContent = await this.getContextBlocks(firstBlockId, 'above', placeholder.count);
-                        context.aboveCount = placeholder.count;
-                        context.isBlockMode = true;
-                        break;
+        if (abovePlaceholder) {
+            const isBlockMode = abovePlaceholder.type === PlaceholderType.ABOVE_BLOCKS;
+            extractionTasks.push(
+                (isBlockMode
+                    ? this.getContextBlocks(firstBlockId, 'above', abovePlaceholder.count)
+                    : this.getContextLines(firstBlockId, 'above', abovePlaceholder.count)
+                ).then(content => {
+                    context.aboveContent = content;
+                    context.aboveCount = abovePlaceholder.count;
+                    if (isBlockMode) context.isBlockMode = true;
+                }).catch(error => {
+                    console.error(`[ContextExtractor] Error extracting above context:`, error);
+                })
+            );
+        }
 
-                    case PlaceholderType.BELOW_BLOCKS:
-                        context.belowContent = await this.getContextBlocks(lastBlockId, 'below', placeholder.count);
-                        context.belowCount = placeholder.count;
-                        context.isBlockMode = true;
-                        break;
-                }
-            } catch (error) {
-                console.error(`[ContextExtractor] Error extracting context for ${placeholder.original}:`, error);
-            }
+        if (belowPlaceholder) {
+            const isBlockMode = belowPlaceholder.type === PlaceholderType.BELOW_BLOCKS;
+            extractionTasks.push(
+                (isBlockMode
+                    ? this.getContextBlocks(lastBlockId, 'below', belowPlaceholder.count)
+                    : this.getContextLines(lastBlockId, 'below', belowPlaceholder.count)
+                ).then(content => {
+                    context.belowContent = content;
+                    context.belowCount = belowPlaceholder.count;
+                    if (isBlockMode) context.isBlockMode = true;
+                }).catch(error => {
+                    console.error(`[ContextExtractor] Error extracting below context:`, error);
+                })
+            );
+        }
+
+        // 并行执行所有提取任务
+        if (extractionTasks.length > 0) {
+            await Promise.all(extractionTasks);
+            console.log(`[ContextExtractor] Parallel extraction completed: ${extractionTasks.length} task(s)`);
         }
 
         return context;
@@ -531,26 +549,31 @@ export class ContextExtractor {
                 const batchIds = blockIds.slice(i, i + BATCH_SIZE);
 
                 const batchPromises = batchIds.map(async (id: string) => {
-                    try {
-                        const fullContent = await this.getBlockKramdownViaAPI(id);
-                        return {
-                            id: id,
-                            content: fullContent || '',
-                            type: siblingResult.data.find((r: any) => r.id === id)?.type || 'paragraph'
-                        };
-                    } catch (error) {
-                        console.warn(`[ContextExtractor] Failed to fetch content for block ${id}:`, error);
-                        // Fallback to SQL content (title/summary)
-                        const row = siblingResult.data.find((r: any) => r.id === id);
-                        return {
-                            id: id,
-                            content: row?.content || '',
-                            type: row?.type || 'paragraph'
-                        };
-                    }
+                    const fullContent = await this.getBlockKramdownViaAPI(id);
+                    return {
+                        id: id,
+                        content: fullContent || '',
+                        type: siblingResult.data.find((r: any) => r.id === id)?.type || 'paragraph'
+                    };
                 });
 
-                const batchResults = await Promise.all(batchPromises);
+                // Use Promise.allSettled for resilient partial failure handling
+                const settledResults = await Promise.allSettled(batchPromises);
+                const batchResults = settledResults.map((result, index) => {
+                    if (result.status === 'fulfilled') {
+                        return result.value;
+                    }
+                    // Handle rejected promise - fallback to SQL content
+                    const id = batchIds[index];
+                    console.warn(`[ContextExtractor] Failed to fetch content for block ${id}:`, result.reason);
+                    const row = siblingResult.data.find((r: any) => r.id === id);
+                    return {
+                        id: id,
+                        content: row?.content || '',
+                        type: row?.type || 'paragraph'
+                    };
+                });
+
                 siblings.push(...batchResults);
             }
 

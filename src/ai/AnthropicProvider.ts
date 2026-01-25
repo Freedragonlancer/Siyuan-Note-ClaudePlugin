@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { TextBlock, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import type { Message, ContentBlock, ImageContent, TextContent } from '../claude/types';
 import { normalizeContent, extractText } from '../claude/types';
+import { sanitizeForAI } from '../utils/Security';
 import type {
     AIModelConfig,
     AIRequestOptions,
@@ -61,49 +62,68 @@ export class AnthropicProvider extends BaseAIProvider {
         role: 'user' | 'assistant';
         content: string | Array<{ type: 'text'; text: string } | ImageBlockParam>;
     }> {
-        return messages.map(m => {
-            // If content is a simple string, keep it as-is for backward compatibility
-            if (typeof m.content === 'string') {
-                return {
-                    role: m.role as 'user' | 'assistant',
-                    content: m.content,
-                };
-            }
+        return messages
+            .map(m => {
+                // If content is a simple string, sanitize and return
+                if (typeof m.content === 'string') {
+                    const sanitized = sanitizeForAI(m.content);
+                    // Skip empty messages after sanitization
+                    if (!sanitized.trim()) {
+                        console.warn('[AnthropicProvider] Message content empty after sanitization, skipping');
+                        return null;
+                    }
+                    return {
+                        role: m.role as 'user' | 'assistant',
+                        content: sanitized,
+                    };
+                }
 
-            // Convert ContentBlock[] to Anthropic format
-            const anthropicContent: Array<{ type: 'text'; text: string } | ImageBlockParam> = [];
+                // Convert ContentBlock[] to Anthropic format
+                const anthropicContent: Array<{ type: 'text'; text: string } | ImageBlockParam> = [];
 
-            for (const block of m.content) {
-                if (block.type === 'text') {
-                    anthropicContent.push({
-                        type: 'text',
-                        text: block.text,
-                    });
-                } else if (block.type === 'image') {
-                    // Anthropic only supports base64 images
-                    if (block.source.type === 'base64') {
-                        anthropicContent.push({
-                            type: 'image',
-                            source: {
-                                type: 'base64',
-                                media_type: block.source.media_type,
-                                data: block.source.data,
-                            },
-                        });
-                    } else if (block.source.type === 'url') {
-                        // For URL images, we need to fetch and convert to base64
-                        // This should be done before calling sendMessage
-                        // For now, log a warning and skip
-                        console.warn('[AnthropicProvider] URL images not directly supported, skipping. Pre-convert to base64.');
+                for (const block of m.content) {
+                    if (block.type === 'text') {
+                        // Sanitize text content and skip empty blocks
+                        const sanitizedText = sanitizeForAI(block.text);
+                        if (sanitizedText.trim()) {
+                            anthropicContent.push({
+                                type: 'text',
+                                text: sanitizedText,
+                            });
+                        }
+                    } else if (block.type === 'image') {
+                        // Anthropic only supports base64 images
+                        if (block.source.type === 'base64') {
+                            anthropicContent.push({
+                                type: 'image',
+                                source: {
+                                    type: 'base64',
+                                    media_type: block.source.media_type,
+                                    data: block.source.data,
+                                },
+                            });
+                        } else if (block.source.type === 'url') {
+                            // For URL images, we need to fetch and convert to base64
+                            // This should be done before calling sendMessage
+                            // For now, log a warning and skip
+                            console.warn('[AnthropicProvider] URL images not directly supported, skipping. Pre-convert to base64.');
+                        }
                     }
                 }
-            }
 
-            return {
-                role: m.role as 'user' | 'assistant',
-                content: anthropicContent.length > 0 ? anthropicContent : '',
-            };
-        });
+                // If no valid content after conversion, return null to filter out
+                if (anthropicContent.length === 0) {
+                    console.warn('[AnthropicProvider] Message has no valid content after conversion, skipping');
+                    return null;
+                }
+
+                return {
+                    role: m.role as 'user' | 'assistant',
+                    content: anthropicContent,
+                };
+            })
+            // Filter out null entries (messages with no valid content)
+            .filter((m): m is NonNullable<typeof m> => m !== null);
     }
 
     async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
@@ -120,13 +140,19 @@ export class AnthropicProvider extends BaseAIProvider {
             return fullResponse;
         }
 
+        // Convert and validate messages
+        const convertedMessages = this.convertMessages(messages);
+        if (convertedMessages.length === 0) {
+            throw new Error('No valid message content to send. The message may contain only control characters or be empty after sanitization.');
+        }
+
         // Non-streaming mode
         const response = await this.client.messages.create({
             model: this.config.modelId,
             max_tokens: options?.maxTokens || this.config.maxTokens || 4096,
             temperature: options?.temperature ?? this.config.temperature ?? 0.7,
             system: options?.systemPrompt || '',
-            messages: this.convertMessages(messages),
+            messages: convertedMessages,
             stop_sequences: options?.stopSequences,
             // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)
             ...(this.thinkingMode && {
@@ -145,12 +171,18 @@ export class AnthropicProvider extends BaseAIProvider {
     }
 
     async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
+        // Convert and validate messages
+        const convertedMessages = this.convertMessages(messages);
+        if (convertedMessages.length === 0) {
+            throw new Error('No valid message content to send. The message may contain only control characters or be empty after sanitization.');
+        }
+
         const stream = await this.client.messages.create({
             model: this.config.modelId,
             max_tokens: options?.maxTokens || this.config.maxTokens || 4096,
             temperature: options?.temperature ?? this.config.temperature ?? 0.7,
             system: options?.systemPrompt || '',
-            messages: this.convertMessages(messages),
+            messages: convertedMessages,
             stop_sequences: options?.stopSequences,
             stream: true,
             // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)

@@ -146,6 +146,9 @@ export class AnthropicProvider extends BaseAIProvider {
             throw new Error('No valid message content to send. The message may contain only control characters or be empty after sanitization.');
         }
 
+        const thinkingEnabled = options?.thinkingMode ?? this.thinkingMode;
+        const thinkingBudget = options?.thinkingBudget ?? this.thinkingBudget;
+
         // Non-streaming mode
         const response = await this.client.messages.create({
             model: this.config.modelId,
@@ -155,10 +158,10 @@ export class AnthropicProvider extends BaseAIProvider {
             messages: convertedMessages,
             stop_sequences: options?.stopSequences,
             // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)
-            ...(this.thinkingMode && {
+            ...(thinkingEnabled && {
                 thinking: {
                     type: 'enabled' as const,
-                    budget_tokens: this.thinkingBudget,
+                    budget_tokens: thinkingBudget,
                 },
             }),
         } as any, {
@@ -177,6 +180,9 @@ export class AnthropicProvider extends BaseAIProvider {
             throw new Error('No valid message content to send. The message may contain only control characters or be empty after sanitization.');
         }
 
+        const thinkingEnabled = options?.thinkingMode ?? this.thinkingMode;
+        const thinkingBudget = options?.thinkingBudget ?? this.thinkingBudget;
+
         const stream = await this.client.messages.create({
             model: this.config.modelId,
             max_tokens: options?.maxTokens || this.config.maxTokens || 4096,
@@ -186,10 +192,10 @@ export class AnthropicProvider extends BaseAIProvider {
             stop_sequences: options?.stopSequences,
             stream: true,
             // v0.13.0: Extended Thinking mode (Claude 3.7+, Sonnet 4+, Opus 4+)
-            ...(this.thinkingMode && {
+            ...(thinkingEnabled && {
                 thinking: {
                     type: 'enabled' as const,
-                    budget_tokens: this.thinkingBudget,
+                    budget_tokens: thinkingBudget,
                 },
             }),
         } as any, {
@@ -217,7 +223,7 @@ export class AnthropicProvider extends BaseAIProvider {
 
         // Validate model ID format (should start with 'claude-')
         if (!config.modelId.startsWith('claude-')) {
-            return 'Invalid model ID: must start with "claude-"';
+            return 'AnthropicProvider only supports Claude models (model ID must start with "claude-")';
         }
 
         return true;
@@ -226,17 +232,23 @@ export class AnthropicProvider extends BaseAIProvider {
     // getAvailableModels() - inherited from BaseAIProvider, derives from getMetadata()
 
     getMaxTokenLimit(model: string): number {
-        // Claude models have 200K context window but output is limited
-        if (model.includes('claude-3')) {
-            return 4096; // Safe default for output
+        if (model.includes('claude-sonnet-4') || model.includes('claude-3-7-sonnet')) {
+            return 64000;
         }
-        return 4096;
+        if (model.includes('claude-opus-4')) {
+            return 32000;
+        }
+        if (model.includes('claude-3-5-sonnet')) {
+            return 8192;
+        }
+        return 4096; // Unknown/legacy safe default
     }
 
     getParameterLimits(): ParameterLimits {
+        const modelId = this.config?.modelId || 'claude-sonnet-4-5-20250929';
         return {
             temperature: { min: 0, max: 1, default: 0.7 },
-            maxTokens: { min: 1, max: 8192, default: 4096 },  // Updated 2025: Extended mode supports 8K
+            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
             topP: { min: 0, max: 1, default: 0.9 },
         };
     }
@@ -249,46 +261,47 @@ export class AnthropicProvider extends BaseAIProvider {
             icon: '🤖',
             apiKeyUrl: 'https://console.anthropic.com/settings/keys',
             defaultBaseURL: 'https://api.anthropic.com',
-            defaultModel: 'claude-sonnet-4-5-20250929',
+            defaultModel: 'claude-sonnet-4-20250514',
             models: [
                 {
-                    id: 'claude-opus-4-5-20251101',
-                    displayName: 'Claude Opus 4.5 (Most Capable)',
+                    id: 'claude-sonnet-4-20250514',
+                    displayName: 'Claude Sonnet 4 (推荐)',
                     contextWindow: 200000,
-                    description: '最强旗舰模型，卓越的推理和创造力',
-                },
-                {
-                    id: 'claude-sonnet-4-5-20250929',
-                    displayName: 'Claude Sonnet 4.5 (Recommended)',
-                    contextWindow: 200000,
-                    description: '平衡性能和成本',
+                    description: '最新稳定Sonnet模型，平衡推理、编码和成本',
                     recommended: true,
                 },
                 {
-                    id: 'claude-sonnet-4-20250514',
-                    displayName: 'Claude Sonnet 4',
+                    id: 'claude-opus-4-1-20250805',
+                    displayName: 'Claude Opus 4.1 (最强)',
                     contextWindow: 200000,
+                    description: 'Claude Opus 4.1，复杂推理和编码旗舰模型',
+                    recommended: true,
                 },
                 {
                     id: 'claude-opus-4-20250514',
                     displayName: 'Claude Opus 4',
                     contextWindow: 200000,
+                    description: 'Claude Opus 4旗舰模型',
                 },
                 {
                     id: 'claude-3-7-sonnet-20250219',
                     displayName: 'Claude 3.7 Sonnet',
                     contextWindow: 200000,
+                    description: '支持扩展思考的上一代Sonnet模型',
                 },
                 {
                     id: 'claude-3-5-sonnet-20241022',
                     displayName: 'Claude 3.5 Sonnet',
                     contextWindow: 200000,
+                    description: '上一代Sonnet模型',
+                    deprecated: true,
                 },
                 {
                     id: 'claude-3-5-haiku-20241022',
-                    displayName: 'Claude 3.5 Haiku (Fast)',
+                    displayName: 'Claude 3.5 Haiku',
                     contextWindow: 200000,
-                    description: '快速模型',
+                    description: '快速低成本模型',
+                    deprecated: true,
                 },
                 {
                     id: 'claude-3-opus-20240229',

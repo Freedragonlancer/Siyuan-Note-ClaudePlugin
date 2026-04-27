@@ -54,7 +54,8 @@ export class SettingsPersistence {
         // v0.13.0: Read thinking/reasoning mode parameters
         const thinkingMode = (container.querySelector("#thinking-mode-toggle") as HTMLInputElement)?.checked ?? false;
         const thinkingBudget = parseInt((container.querySelector("#thinking-budget") as HTMLInputElement)?.value) || 10000;
-        const reasoningEffort = (container.querySelector("#reasoning-effort") as HTMLSelectElement)?.value as 'low' | 'high' || 'low';
+        const reasoningEffort = (container.querySelector("#reasoning-effort") as HTMLSelectElement)?.value as 'low' | 'high' | 'max' || 'low';
+        const openaiApiMode = ((container.querySelector("#openai-api-mode") as HTMLSelectElement)?.value as 'auto' | 'chat' | 'responses') || 'auto';
 
         // Build provider config
         const providerConfig: ProviderConfig = {
@@ -71,6 +72,7 @@ export class SettingsPersistence {
             thinkingMode: thinkingMode,
             thinkingBudget: thinkingBudget,
             reasoningEffort: reasoningEffort,
+            openaiApiMode: activeProvider === 'openai' ? openaiApiMode : undefined,
         };
 
         // Update multi-provider settings
@@ -143,6 +145,9 @@ export class SettingsPersistence {
                     : "",
                 model: (container.querySelector("#provider-model") as HTMLSelectElement)?.value || "",
                 enabled: true,
+                openaiApiMode: activeProvider === 'openai'
+                    ? (((container.querySelector("#openai-api-mode") as HTMLSelectElement)?.value as 'auto' | 'chat' | 'responses') || 'auto')
+                    : undefined,
             };
 
             const settings: MultiProviderSettings = {

@@ -149,7 +149,8 @@ export class SettingsUIBuilder {
         // v0.13.0: Thinking/Reasoning mode values
         const thinkingMode = providerConfig?.thinkingMode ?? false;
         const thinkingBudget = providerConfig?.thinkingBudget ?? 10000;
-        const reasoningEffort = providerConfig?.reasoningEffort ?? 'low';
+        const reasoningEffort = providerConfig?.reasoningEffort ?? (activeProvider === 'deepseek' ? 'high' : 'low');
+        const openaiApiMode = providerConfig?.openaiApiMode ?? 'auto';
 
         return `
             <div class="section-header" style="margin-bottom: 16px;">
@@ -235,6 +236,21 @@ export class SettingsUIBuilder {
                 >
                 <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
                     💡 支持反向代理或自建 API 服务
+                </div>
+            </div>
+
+            <!-- OpenAI API Mode (for reverse proxies / model relay services) -->
+            <div class="setting-item" id="openai-api-mode-section" style="margin-bottom: 16px; ${activeProvider === 'openai' ? '' : 'display: none;'}">
+                <div class="setting-label" style="margin-bottom: 8px;">
+                    <span style="font-weight: 500;">OpenAI 接口模式</span>
+                </div>
+                <select class="b3-select" id="openai-api-mode" style="width: 100%;">
+                    <option value="auto" ${openaiApiMode === 'auto' ? 'selected' : ''}>自动（新模型走 Responses，旧模型走 Chat Completions）</option>
+                    <option value="chat" ${openaiApiMode === 'chat' ? 'selected' : ''}>强制 Chat Completions (/chat/completions)</option>
+                    <option value="responses" ${openaiApiMode === 'responses' ? 'selected' : ''}>强制 Responses (/responses，适合反代模型模式）</option>
+                </select>
+                <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
+                    💡 如果你的 OpenAI 反向代理只支持 Responses API，选择“强制 Responses”。自定义端点可填 <code>https://proxy.example.com/v1</code> 或直接填到 <code>/responses</code>。
                 </div>
             </div>
 
@@ -336,18 +352,21 @@ export class SettingsUIBuilder {
                     </div>
                 </div>
 
-                <!-- Reasoning Effort (xAI only) -->
-                <div id="reasoning-effort-container" class="setting-item" style="margin-top: 16px; margin-left: 20px; display: ${thinkingMode && activeProvider === 'xai' ? 'block' : 'none'};">
+                <!-- Reasoning Effort (xAI / DeepSeek V4) -->
+                <div id="reasoning-effort-container" class="setting-item" style="margin-top: 16px; margin-left: 20px; display: ${thinkingMode && (activeProvider === 'xai' || activeProvider === 'deepseek') ? 'block' : 'none'};">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span class="ft__smaller" style="font-weight: 500;">推理强度</span>
                         <select id="reasoning-effort" class="b3-select">
-                            ${REASONING_EFFORT_OPTIONS.map(opt =>
+                            ${(activeProvider === 'deepseek' ? [
+                                { value: 'high', label: 'High (默认)' },
+                                { value: 'max', label: 'Max (最强)' },
+                            ] : REASONING_EFFORT_OPTIONS).map(opt =>
                                 `<option value="${opt.value}" ${reasoningEffort === opt.value ? 'selected' : ''}>${opt.label}</option>`
                             ).join('')}
                         </select>
                     </div>
                     <div class="ft__smaller ft__secondary" style="margin-top: 8px;">
-                        💡 ${REASONING_EFFORT_OPTIONS.map(opt => `'${opt.value}' ${opt.description}`).join('，')}（xAI Grok）
+                        💡 xAI 支持 low/high；DeepSeek V4 支持 high/max，且 Thinking 开启时 temperature/top_p 无效。
                     </div>
                 </div>
 
@@ -358,7 +377,8 @@ export class SettingsUIBuilder {
                     • Gemini: Thinking Budget (2.5+)<br>
                     • xAI (Grok): Reasoning Effort<br>
                     • Moonshot (Kimi): K2 Thinking 模型<br>
-                    • OpenAI/DeepSeek: 通过选择推理模型（o1/o3, deepseek-reasoner）
+                    • OpenAI: Responses API 模式支持 reasoning effort<br>
+                    • DeepSeek: V4 支持 Thinking 开关与 high/max effort
                 </div>
             </div>
 

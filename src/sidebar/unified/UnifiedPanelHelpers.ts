@@ -24,17 +24,23 @@ export class UnifiedPanelHelpers {
 
         // Map common model patterns to short names
         const patterns: [RegExp, string][] = [
-            // Claude models
-            [/claude-3-5-sonnet/, 'Sonnet 3.5'],
+            // Claude models (more specific patterns first)
+            [/claude-opus-4-1/, 'Opus 4.1'],
+            [/claude-opus-4/, 'Opus 4'],
             [/claude-sonnet-4/, 'Sonnet 4'],
+            [/claude-3-7-sonnet/, 'Sonnet 3.7'],
+            [/claude-3-5-sonnet/, 'Sonnet 3.5'],
+            [/claude-3-5-haiku/, 'Haiku 3.5'],
             [/claude-3-opus/, 'Opus 3'],
             [/claude-3-haiku/, 'Haiku 3'],
             [/claude-2/, 'Claude 2'],
 
-            // OpenAI models - GPT-5.1 Series (Latest)
-            [/gpt-5\.1-chat-latest/, 'GPT-5.1 Chat'],
-            [/gpt-5\.1-codex-mini/, 'GPT-5.1 Codex Mini'],
-            [/gpt-5\.1-codex/, 'GPT-5.1 Codex'],
+            // OpenAI models - GPT-5 Series
+            [/gpt-5\.5/, 'GPT-5.5'],
+            [/gpt-5\.4-mini/, 'GPT-5.4 Mini'],
+            [/gpt-5\.4-nano/, 'GPT-5.4 Nano'],
+            [/gpt-5\.4/, 'GPT-5.4'],
+            [/gpt-5\.2/, 'GPT-5.2'],
             [/gpt-5\.1/, 'GPT-5.1'],
             [/gpt-5/, 'GPT-5'],
 
@@ -54,13 +60,23 @@ export class UnifiedPanelHelpers {
             [/o1/, 'o1'],
 
             // Gemini models
+            [/gemini-3\.1-pro/, '3.1 Pro'],
+            [/gemini-3-flash/, '3 Flash'],
+            [/gemini-3-pro-image/, '3 Pro Image'],
             [/gemini-2\.5-pro/, '2.5 Pro'],
+            [/gemini-2\.5-flash-image/, '2.5 Image'],
             [/gemini-2\.5-flash/, '2.5 Flash'],
             [/gemini-2\.0-flash/, '2.0 Flash'],
             [/gemini-1\.5-pro/, '1.5 Pro'],
             [/gemini-1\.5-flash/, '1.5 Flash'],
 
             // xAI models
+            [/grok-4-20/, 'Grok 4.20'],
+            [/grok-4-1/, 'Grok 4.1'],
+            [/grok-code-fast-2/, 'Code Fast 2'],
+            [/grok-code-fast-1/, 'Code Fast 1'],
+            [/grok-4/, 'Grok 4'],
+            [/grok-3/, 'Grok 3'],
             [/grok-2/, 'Grok 2'],
             [/grok-/, 'Grok'],
 
@@ -69,6 +85,8 @@ export class UnifiedPanelHelpers {
             [/deepseek-coder/, 'Coder'],
 
             // Kimi (Moonshot) models
+            [/kimi-k2\.6/, 'K2.6'],
+            [/kimi-k2\.5/, 'K2.5'],
             [/kimi-k2-0905/, 'K2 0905'],
             [/kimi-k2-0711/, 'K2 0711'],
             [/kimi-k2-thinking-turbo/, 'K2 Thinking Turbo'],

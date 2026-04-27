@@ -2,7 +2,7 @@
  * Instruction Input Popup - Lightweight floating input for edit instructions
  */
 
-import type { PopupPosition } from './inline-types';
+import type { PopupPosition, QuickThinkingSettings } from './inline-types';
 import type { PromptTemplate } from '@/settings/config-types';
 import type { ConfigManager } from '@/settings/ConfigManager';
 import type { PresetSelectionManager } from '@/settings/PresetSelectionManager';
@@ -16,7 +16,7 @@ export class InstructionInputPopup {
     private presets: PromptTemplate[];
     private configManager: ConfigManager;
     private presetSelectionManager: PresetSelectionManager | null = null; // NEW v0.9.0
-    private onSubmitCallback?: (instruction: string) => void;
+    private onSubmitCallback?: (instruction: string, thinking?: QuickThinkingSettings) => void;
     private onCancelCallback?: () => void;
     private onPresetSwitchCallback?: (presetId: string) => void;
     private currentSelectedPresetId: string = 'custom'; // Track currently selected preset in the popup
@@ -164,7 +164,7 @@ export class InstructionInputPopup {
      * Set callbacks
      */
     public setCallbacks(callbacks: {
-        onSubmit?: (instruction: string) => void;
+        onSubmit?: (instruction: string, thinking?: QuickThinkingSettings) => void;
         onCancel?: () => void;
         onPresetSwitch?: (presetId: string) => void;
     }): void {
@@ -277,6 +277,142 @@ export class InstructionInputPopup {
     /**
      * Create popup element
      */
+    private getQuickThinkingConfig(): {
+        provider: string;
+        model: string;
+        enabled: boolean;
+        kind: 'budget' | 'effort' | 'toggle' | 'openai-effort' | 'deepseek-effort' | 'unsupported';
+        budget: number;
+        min: number;
+        max: number;
+        step: number;
+        effort: NonNullable<QuickThinkingSettings['effort']>;
+        label: string;
+        hint: string;
+    } {
+        const settings = this.configManager.getActiveProfile().settings as any;
+        const provider = settings.activeProvider || 'anthropic';
+        const providerConfig = settings.providers?.[provider] || {};
+        const model = providerConfig.model || settings.model || '';
+        const enabled = providerConfig.thinkingMode ?? false;
+        const budget = providerConfig.thinkingBudget ?? (provider === 'gemini' ? 8192 : 10000);
+        const effort = (providerConfig.reasoningEffort || 'medium') as NonNullable<QuickThinkingSettings['effort']>;
+
+        if (provider === 'anthropic') {
+            const isSupported = /claude-(sonnet-4|opus-4|3-7-sonnet)/.test(model);
+            return {
+                provider, model, enabled: enabled && isSupported,
+                kind: isSupported ? 'budget' : 'unsupported',
+                budget: Math.min(Math.max(budget, 1024), 64000),
+                min: 1024, max: 64000, step: 1024,
+                effort,
+                label: 'Claude Thinking',
+                hint: isSupported ? 'Claude Sonnet/Opus/3.7 支持扩展思考预算。' : '当前 Claude 模型不支持 Thinking。',
+            };
+        }
+
+        if (provider === 'gemini') {
+            const isSupported = /gemini-(3|2\.5)/.test(model);
+            return {
+                provider, model, enabled: enabled && isSupported,
+                kind: isSupported ? 'budget' : 'unsupported',
+                budget: Math.min(Math.max(budget, 1000), 24576),
+                min: 1000, max: 24576, step: 1000,
+                effort,
+                label: 'Gemini Thinking',
+                hint: isSupported ? 'Gemini 2.5/3 支持 Thinking Budget。' : '当前 Gemini 模型不支持 Thinking Budget。',
+            };
+        }
+
+        if (provider === 'xai') {
+            return {
+                provider, model, enabled,
+                kind: 'effort',
+                budget, min: 0, max: 0, step: 0,
+                effort: effort === 'high' ? 'high' : 'low',
+                label: 'Grok Reasoning',
+                hint: 'xAI Grok 支持 low/high 推理强度。',
+            };
+        }
+
+        if (provider === 'openai') {
+            const isResponses = providerConfig.openaiApiMode === 'responses' || /gpt-5\.(4|5)/.test(model);
+            return {
+                provider, model, enabled: enabled && isResponses,
+                kind: isResponses ? 'openai-effort' : 'unsupported',
+                budget, min: 0, max: 0, step: 0,
+                effort: ['minimal', 'low', 'medium', 'high'].includes(effort) ? effort : 'medium',
+                label: 'OpenAI Reasoning',
+                hint: isResponses ? 'OpenAI Responses API 支持 reasoning effort。' : '请使用 Responses 接口模式或 GPT-5.4/5.5 模型启用 Reasoning。',
+            };
+        }
+
+        if (provider === 'moonshot') {
+            const isSupported = /kimi-k2\.(5|6)|kimi-k2-thinking/.test(model);
+            return {
+                provider, model, enabled: enabled && isSupported,
+                kind: isSupported ? 'toggle' : 'unsupported',
+                budget, min: 0, max: 0, step: 0,
+                effort,
+                label: 'Kimi Thinking',
+                hint: isSupported ? 'Kimi K2.5/K2.6/Thinking 支持思考开关。' : '当前 Kimi 模型不支持 Thinking。',
+            };
+        }
+
+        if (provider === 'deepseek') {
+            const supportsToggle = model.startsWith('deepseek-v4');
+            const isLegacyReasoner = model.includes('reasoner');
+            return {
+                provider, model, enabled: supportsToggle ? enabled : isLegacyReasoner,
+                kind: supportsToggle ? 'deepseek-effort' : 'unsupported',
+                budget, min: 0, max: 0, step: 0,
+                effort: effort === 'max' ? 'max' : 'high',
+                label: 'DeepSeek Thinking',
+                hint: supportsToggle ? 'DeepSeek V4 支持 Thinking 开关，推理强度支持 high/max。' : '旧 deepseek-reasoner 会固定启用推理；deepseek-chat 固定非推理。',
+            };
+        }
+
+        return { provider, model, enabled: false, kind: 'unsupported', budget, min: 0, max: 0, step: 0, effort, label: 'Thinking', hint: '当前供应商未配置 Thinking 控件。' };
+    }
+
+    private createThinkingSection(config = this.getQuickThinkingConfig()): string {
+        const disabled = config.kind === 'unsupported';
+        const checked = config.enabled && !disabled ? 'checked' : '';
+        const disabledAttr = disabled ? 'disabled' : '';
+        const budgetVisible = config.kind === 'budget' && config.enabled;
+        const effortVisible = (config.kind === 'effort' || config.kind === 'openai-effort' || config.kind === 'deepseek-effort') && config.enabled;
+        const efforts = config.kind === 'effort'
+            ? ['low', 'high']
+            : config.kind === 'deepseek-effort'
+                ? ['high', 'max']
+                : ['minimal', 'low', 'medium', 'high'];
+
+        return `
+            <div class="quick-think-section" data-provider="${this.escapeHtml(config.provider)}">
+                <div class="quick-think-row">
+                    <label class="quick-think-toggle">
+                        <input type="checkbox" id="quick-think-toggle" ${checked} ${disabledAttr}>
+                        <span>${this.escapeHtml(config.label)}</span>
+                    </label>
+                    <span class="quick-think-model" title="${this.escapeHtml(config.model)}">${this.escapeHtml(config.model || 'default')}</span>
+                </div>
+                <div id="quick-think-budget-wrap" style="display: ${budgetVisible ? 'block' : 'none'}; margin-top: 6px;">
+                    <div class="quick-think-row">
+                        <span class="ft__smaller ft__secondary">思考预算</span>
+                        <span class="ft__smaller ft__secondary" id="quick-think-budget-value">${config.budget} tokens</span>
+                    </div>
+                    <input type="range" id="quick-think-budget" min="${config.min}" max="${config.max}" step="${config.step}" value="${config.budget}" class="settings-full-width" ${disabledAttr}>
+                </div>
+                <div id="quick-think-effort-wrap" style="display: ${effortVisible ? 'block' : 'none'}; margin-top: 6px;">
+                    <select class="b3-select" id="quick-think-effort" style="width: 100%;" ${disabledAttr}>
+                        ${efforts.map(e => `<option value="${e}" ${config.effort === e ? 'selected' : ''}>${e}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="ft__smaller ft__secondary" style="margin-top: 6px;">💡 ${this.escapeHtml(config.hint)}</div>
+            </div>
+        `;
+    }
+
     private createPopup(defaultInstruction: string, presetId: string = 'custom'): HTMLElement {
         const popup = document.createElement('div');
         popup.className = 'instruction-input-popup';
@@ -335,6 +471,7 @@ export class InstructionInputPopup {
                 </div>
                 ` : ''}
                 ${autoActionSection}
+                ${this.createThinkingSection()}
                 <input
                     type="text"
                     class="b3-text-field"
@@ -362,6 +499,13 @@ export class InstructionInputPopup {
         const confirmBtn = popup.querySelector('.popup-confirm') as HTMLButtonElement;
         const presetSelect = popup.querySelector('#instruction-preset') as HTMLSelectElement;
         const input = popup.querySelector('#instruction-input') as HTMLInputElement;
+        const thinkToggle = popup.querySelector('#quick-think-toggle') as HTMLInputElement;
+        const thinkBudget = popup.querySelector('#quick-think-budget') as HTMLInputElement;
+        const thinkBudgetWrap = popup.querySelector('#quick-think-budget-wrap') as HTMLElement;
+        const thinkBudgetValue = popup.querySelector('#quick-think-budget-value') as HTMLElement;
+        const thinkEffort = popup.querySelector('#quick-think-effort') as HTMLSelectElement;
+        const thinkEffortWrap = popup.querySelector('#quick-think-effort-wrap') as HTMLElement;
+        const thinkConfig = this.getQuickThinkingConfig();
 
         // Set default selected preset (only if dropdown exists)
         if (presetSelect && presetId !== 'custom') {
@@ -383,6 +527,22 @@ export class InstructionInputPopup {
                     this.saveAutoAction(action);
                 }
             });
+        });
+
+        thinkToggle?.addEventListener('change', () => {
+            const enabled = thinkToggle.checked;
+            if (thinkBudgetWrap && thinkConfig.kind === 'budget') {
+                thinkBudgetWrap.style.display = enabled ? 'block' : 'none';
+            }
+            if (thinkEffortWrap && (thinkConfig.kind === 'effort' || thinkConfig.kind === 'openai-effort' || thinkConfig.kind === 'deepseek-effort')) {
+                thinkEffortWrap.style.display = enabled ? 'block' : 'none';
+            }
+        });
+
+        thinkBudget?.addEventListener('input', () => {
+            if (thinkBudgetValue) {
+                thinkBudgetValue.textContent = `${thinkBudget.value} tokens`;
+            }
         });
 
         closeBtn?.addEventListener('click', () => this.handleCancel());
@@ -517,8 +677,18 @@ export class InstructionInputPopup {
             });
         }
 
+        // Collect per-request thinking settings from the quick popup.
+        const thinkToggle = this.element?.querySelector('#quick-think-toggle') as HTMLInputElement;
+        const thinkBudget = this.element?.querySelector('#quick-think-budget') as HTMLInputElement;
+        const thinkEffort = this.element?.querySelector('#quick-think-effort') as HTMLSelectElement;
+        const thinking: QuickThinkingSettings = {
+            enabled: !!thinkToggle?.checked,
+            budget: thinkBudget ? parseInt(thinkBudget.value, 10) : undefined,
+            effort: thinkEffort?.value as QuickThinkingSettings['effort'] | undefined,
+        };
+
         // Call callback with instruction (either user input or placeholder)
-        this.onSubmitCallback(trimmedInstruction);
+        this.onSubmitCallback(trimmedInstruction, thinking);
 
         // Only close after successful submission
         this.close();

@@ -16,7 +16,8 @@ import type {
     InlineEditBlock,
     InlineEditSelection,
     InlineEditState,
-    InlineBlockRenderOptions
+    InlineBlockRenderOptions,
+    QuickThinkingSettings
 } from './inline-types';
 import { InlineEditRenderer } from './InlineEditRenderer';
 import { InstructionInputPopup } from './InstructionInputPopup';
@@ -178,7 +179,7 @@ export class QuickEditCoordinator {
 
         // Setup popup callbacks
         this.inputPopup.setCallbacks({
-            onSubmit: (instruction) => this.handleInstructionSubmit(instruction),
+            onSubmit: (instruction, thinking) => this.handleInstructionSubmit(instruction, thinking),
             onCancel: () => {
                 this.removeSelectionHighlight();
                 this.stateManager.setPendingSelection(null);
@@ -525,7 +526,7 @@ export class QuickEditCoordinator {
     /**
      * Handle instruction submit
      */
-    private async handleInstructionSubmit(instruction: string): Promise<void> {
+    private async handleInstructionSubmit(instruction: string, thinking?: QuickThinkingSettings): Promise<void> {
         // 设置处理中标志，防止并发
         this.stateManager.setProcessing(true);
 
@@ -617,6 +618,7 @@ export class QuickEditCoordinator {
             originalText: selection.text,
             suggestedText: '',
             instruction,
+            thinkingSettings: thinking,
             state: 'processing' as InlineEditState,
             element: null,
             position: {

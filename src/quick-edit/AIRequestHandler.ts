@@ -167,7 +167,13 @@ export class AIRequestHandler {
                 },
                 "QuickEdit",         // feature
                 filterRules,         // filterRules
-                presetSystemPrompt   // systemPrompt
+                presetSystemPrompt,  // systemPrompt
+                undefined,           // onGeneratedImages
+                {
+                    thinkingMode: block.thinkingSettings?.enabled,
+                    thinkingBudget: block.thinkingSettings?.budget,
+                    reasoningEffort: block.thinkingSettings?.effort,
+                }
             );
 
         } catch (error) {

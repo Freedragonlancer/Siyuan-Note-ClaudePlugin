@@ -141,6 +141,9 @@ export class UniversalAIClient {
                 thinkingMode: providerConfig.thinkingMode ?? false,
                 thinkingBudget: providerConfig.thinkingBudget,
                 reasoningEffort: providerConfig.reasoningEffort,
+                options: {
+                    openaiApiMode: providerConfig.openaiApiMode ?? 'auto',
+                },
             };
 
             this.provider = AIProviderFactory.create(config);
@@ -280,7 +283,8 @@ export class UniversalAIClient {
         feature: string = "Chat",
         filterRules?: FilterRule[],
         systemPrompt?: string,
-        onGeneratedImages?: (images: import('../ai/types').GeneratedImage[]) => void
+        onGeneratedImages?: (images: import('../ai/types').GeneratedImage[]) => void,
+        requestOptions?: Partial<AIRequestOptions>
     ): Promise<void> {
         if (!this.isConfigured()) {
             onError(new Error("AI provider is not configured. Please set your API key in settings."));
@@ -331,6 +335,7 @@ export class UniversalAIClient {
                 },
                 // v0.19.0: Pass through generated images callback
                 onGeneratedImages: onGeneratedImages,
+                ...requestOptions,
             };
 
             // Set initial timeout
@@ -450,7 +455,8 @@ export class UniversalAIClient {
         messages: Message[], 
         feature: string = "QuickEdit", 
         filterRules?: FilterRule[], 
-        systemPrompt?: string
+        systemPrompt?: string,
+        requestOptions?: Partial<AIRequestOptions>
     ): Promise<string> {
         if (!this.isConfigured()) {
             throw new Error("AI provider is not configured. Please set your API key in settings.");
@@ -476,6 +482,7 @@ export class UniversalAIClient {
                 systemPrompt: systemPrompt || this.settings.systemPrompt,
                 maxTokens: maxTokens,
                 temperature: temperature,
+                ...requestOptions,
             };
 
             const responseText = await this.provider!.sendMessage(messages, options);

@@ -317,7 +317,10 @@ export interface ProviderConfig {
     // Thinking/Reasoning mode parameters (v0.13.0)
     thinkingMode?: boolean;           // Enable thinking/reasoning mode
     thinkingBudget?: number;          // Thinking budget in tokens (Anthropic, Gemini)
-    reasoningEffort?: 'low' | 'high'; // Reasoning effort level (xAI)
+    reasoningEffort?: 'low' | 'high' | 'max'; // Reasoning effort level (xAI/DeepSeek)
+
+    // OpenAI API surface selection for reverse proxies/model relay services
+    openaiApiMode?: 'auto' | 'chat' | 'responses';
 }
 
 /**
@@ -359,7 +362,7 @@ function generateDefaultProvidersInline(): Record<string, ProviderConfig> {
         temperature: number;
         thinkingMode?: boolean;
         thinkingBudget?: number;
-        reasoningEffort?: 'low' | 'high';
+        reasoningEffort?: 'low' | 'high' | 'max';
     }> = {
         'anthropic': {
             maxTokens: 4096,
@@ -379,15 +382,16 @@ function generateDefaultProvidersInline(): Record<string, ProviderConfig> {
             thinkingBudget: 8192  // Default 8K, max 24576 for 2.5 Flash
         },
         'xai': {
-            maxTokens: 4096,
+            maxTokens: 16384,
             temperature: 0.7,
             thinkingMode: false,
             reasoningEffort: 'low'  // 'low' for speed, 'high' for depth
         },
         'deepseek': {
             maxTokens: 4096,
-            temperature: 0.7
-            // No thinking params - use deepseek-reasoner model instead
+            temperature: 1.0,
+            thinkingMode: true,
+            reasoningEffort: 'high'
         },
         'moonshot': {
             maxTokens: 4096,
@@ -468,8 +472,10 @@ export function migrateToMultiProvider(settings: ClaudeSettings): MultiProviderS
         // v0.13.0: Migrate per-provider parameters
         // Ensure each provider has maxTokens/temperature
         const migratedProviders: Record<string, ProviderConfig> = {};
+
         for (const [type, config] of Object.entries(migratedSettings.providers || {})) {
             const defaultConfig = defaultProviders[type];
+
             migratedProviders[type] = {
                 ...config,
                 // If provider config doesn't have parameters, use global or defaults

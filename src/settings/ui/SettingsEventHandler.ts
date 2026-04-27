@@ -198,6 +198,8 @@ export class SettingsEventHandler {
             const customBaseURLSection = container.querySelector("#custom-baseurl-section") as HTMLElement;
             const officialRadio = container.querySelector('input[name="api-endpoint-type"][value="official"]') as HTMLInputElement;
             const customRadio = container.querySelector('input[name="api-endpoint-type"][value="custom"]') as HTMLInputElement;
+            const openaiApiModeSection = container.querySelector('#openai-api-mode-section') as HTMLElement;
+            const openaiApiModeSelect = container.querySelector('#openai-api-mode') as HTMLSelectElement;
 
             // Update API Key
             if (apiKeyInput) {
@@ -215,6 +217,12 @@ export class SettingsEventHandler {
             }
             if (customBaseURLSection) {
                 customBaseURLSection.style.display = hasCustomBaseURL ? 'block' : 'none';
+            }
+            if (openaiApiModeSection) {
+                openaiApiModeSection.style.display = selectedProvider === 'openai' ? 'block' : 'none';
+            }
+            if (openaiApiModeSelect) {
+                openaiApiModeSelect.value = providerConfig?.openaiApiMode ?? 'auto';
             }
 
             // Update model options for selected provider
@@ -340,7 +348,7 @@ export class SettingsEventHandler {
                 thinkingBudgetContainer.style.display = enabled && (activeProvider === 'anthropic' || activeProvider === 'gemini') ? 'block' : 'none';
             }
             if (reasoningEffortContainer) {
-                reasoningEffortContainer.style.display = enabled && activeProvider === 'xai' ? 'block' : 'none';
+                reasoningEffortContainer.style.display = enabled && (activeProvider === 'xai' || activeProvider === 'deepseek') ? 'block' : 'none';
             }
         });
 
@@ -382,9 +390,14 @@ export class SettingsEventHandler {
                 thinkingBudgetValue.textContent = `${budget} tokens`;
             }
 
-            // Update reasoning effort
+            // Update reasoning effort options per provider
             if (reasoningEffortSelect) {
-                reasoningEffortSelect.value = providerConfig.reasoningEffort ?? 'low';
+                if (selectedProvider === 'deepseek') {
+                    reasoningEffortSelect.innerHTML = '<option value="high">High (默认)</option><option value="max">Max (最强)</option>';
+                } else {
+                    reasoningEffortSelect.innerHTML = '<option value="low">Low (快速)</option><option value="high">High (深度)</option>';
+                }
+                reasoningEffortSelect.value = providerConfig.reasoningEffort ?? (selectedProvider === 'deepseek' ? 'high' : 'low');
             }
 
             // Show/hide provider-specific controls
@@ -393,7 +406,7 @@ export class SettingsEventHandler {
                 thinkingBudgetContainer.style.display = thinkingEnabled && (selectedProvider === 'anthropic' || selectedProvider === 'gemini') ? 'block' : 'none';
             }
             if (reasoningEffortContainer) {
-                reasoningEffortContainer.style.display = thinkingEnabled && selectedProvider === 'xai' ? 'block' : 'none';
+                reasoningEffortContainer.style.display = thinkingEnabled && (selectedProvider === 'xai' || selectedProvider === 'deepseek') ? 'block' : 'none';
             }
         }
     }

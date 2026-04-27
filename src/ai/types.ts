@@ -35,8 +35,8 @@ export interface AIModelConfig {
     thinkingMode?: boolean;
     /** Thinking budget in tokens (Anthropic, Gemini) - max tokens for reasoning process */
     thinkingBudget?: number;
-    /** Reasoning effort level (xAI) - 'low' for speed, 'high' for depth */
-    reasoningEffort?: 'low' | 'high';
+    /** Reasoning effort level (xAI/DeepSeek) - 'low' for speed, 'high' for depth */
+    reasoningEffort?: 'low' | 'high' | 'max';
 }
 
 /**
@@ -84,7 +84,14 @@ export interface AIRequestOptions {
     onError?: (error: Error) => void;
     /** Generated images callback (v0.19.0 multimodal output) */
     onGeneratedImages?: (images: GeneratedImage[]) => void;
+    /** Per-request thinking/reasoning override (Quick Edit popup, etc.) */
+    thinkingMode?: boolean;
+    /** Per-request thinking budget in tokens (Anthropic/Gemini) */
+    thinkingBudget?: number;
+    /** Per-request reasoning effort (OpenAI/xAI and compatible APIs) */
+    reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
 }
+
 
 /**
  * AI Provider Interface
@@ -219,7 +226,7 @@ export interface ProviderDefaults {
     /** Default thinking budget (tokens) */
     thinkingBudget?: number;
     /** Default reasoning effort (xAI) */
-    reasoningEffort?: 'low' | 'high';
+    reasoningEffort?: 'low' | 'high' | 'max';
 }
 
 /**

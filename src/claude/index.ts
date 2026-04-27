@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
     // Legacy single-provider settings (for backward compatibility)
     // These will be migrated to multi-provider format automatically
     baseURL: "",
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-20250514",
     maxTokens: 4096,
     temperature: 0.7,
     systemPrompt: "You are a helpful AI assistant integrated into SiYuan Note. Help users with their writing, editing, and note-taking tasks. Be concise and clear in your responses.",
@@ -76,13 +76,12 @@ export const DEFAULT_SETTINGS: Omit<MultiProviderSettings, "apiKey"> = {
 
 // Default fallback models if API fetch fails
 export const AVAILABLE_MODELS = [
-    { value: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5 (Latest, Recommended)" },
-    { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-    { value: "claude-opus-4-20250514", label: "Claude Opus 4 (Most Capable)" },
-    { value: "claude-opus-4-1-20250805", label: "Claude Opus 4.1" },
+    { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4 (Recommended)" },
+    { value: "claude-opus-4-1-20250805", label: "Claude Opus 4.1 (Most Capable)" },
+    { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
     { value: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet" },
     { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
-    { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku (Fast)" },
+    { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
     { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
     { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
 ];

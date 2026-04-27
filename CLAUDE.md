@@ -19,6 +19,8 @@ npm run clean-deploy  # Remove duplicates + fresh deploy (fixes topbar icon issu
 npm run clean-cache   # Clear SiYuan's cached HTML/CSS
 ```
 
+**Mandatory final step for every development task**: after code changes, run the appropriate validation, then run `npm run deploy` (build + copy plugin files) before reporting completion. Without deploy/release, SiYuan will not show the updated plugin behavior. Tell the user clearly if deployment could not be completed.
+
 ### Testing
 ```bash
 npm run test          # Run all tests with Vitest
@@ -32,10 +34,11 @@ npm run test:coverage # Generate coverage report
 
 ### Development Workflow
 1. Edit TypeScript/Svelte files in `src/`
-2. Run `npm run deploy`
-3. Restart SiYuan (F5)
-4. Test in plugin dock panel
-5. Check console (F12) for errors
+2. Run relevant validation (`npm run build`, targeted tests, or `npm run test`)
+3. Run `npm run deploy` before finishing the task
+4. Restart SiYuan (F5)
+5. Test in plugin dock panel
+6. Check console (F12) for errors
 
 ### Path Aliases
 Use `@/` for imports from `src/`:
@@ -383,4 +386,3 @@ See [RELEASE.md](RELEASE.md) for complete workflow.
 - No offline mode (requires active API connection)
 - API keys stored unencrypted in localStorage (warn users to protect workspace)
 - QuickEditManager uses hybrid architecture (legacy + new modular components for backward compatibility)
-

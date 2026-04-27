@@ -467,6 +467,7 @@ export class PromptEditorPanel {
                         • <code>{below=3}</code> - 选中内容之后的3行文本<br>
                         • <code>{above_blocks=2}</code> - 选中块之前的2个SiYuan块<br>
                         • <code>{below_blocks=4}</code> - 选中块之后的4个块<br>
+                        • <code>{custom=((blockid 'name'))}</code> - 引用指定块的内容作为上下文<br>
                         <span style="color: var(--b3-theme-primary); font-weight: 500;">💡 使用上下文可以让AI更准确地理解文档结构和内容</span>
                     </div>
                 </div>
@@ -1260,7 +1261,7 @@ export class PromptEditorPanel {
                         </div>
                         <div style="margin-bottom: 16px;">
                             <label style="display: block; margin-bottom: 8px;">Selection Q&A 模板</label>
-                            <textarea id="template-selection-qa-template" class="b3-text-field" rows="6" placeholder="支持占位符: {selection}, {question}, {above_blocks=n}, {below_blocks=n}, {above=n}, {below=n}" style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;">${template?.selectionQATemplate || ''}</textarea>
+                            <textarea id="template-selection-qa-template" class="b3-text-field" rows="6" placeholder="支持占位符: {selection}, {question}, {above_blocks=n}, {below_blocks=n}, {above=n}, {below=n}, {custom=((blockid 'name'))}" style="width: 100%; font-family: 'Consolas', monospace; font-size: 13px;">${template?.selectionQATemplate || ''}</textarea>
                             <div class="ft__smaller ft__secondary" style="margin-top: 4px;">
                                 定义 Selection Q&A 模式下如何构建 AI 请求。留空使用默认格式。<br>
                                 支持的占位符：<br>
@@ -1269,7 +1270,8 @@ export class PromptEditorPanel {
                                 • <code>{above_blocks=2}</code> - 选中块之前的 2 个块<br>
                                 • <code>{below_blocks=2}</code> - 选中块之后的 2 个块<br>
                                 • <code>{above=5}</code> - 选中内容之前的 5 行文本<br>
-                                • <code>{below=5}</code> - 选中内容之后的 5 行文本
+                                • <code>{below=5}</code> - 选中内容之后的 5 行文本<br>
+                                • <code>{custom=((blockid 'name'))}</code> - 引用指定块的内容
                             </div>
                         </div>
                     </div>
@@ -2723,7 +2725,7 @@ export class PromptEditorPanel {
             <div style="margin-bottom: 12px;">
                 <h4 style="margin: 0 0 8px 0; font-size: 15px;">快速编辑模版</h4>
                 <div class="ft__smaller ft__secondary">
-                    支持占位符: <code>{instruction}</code>, <code>{original}</code>, <code>{above=n}</code>, <code>{below=n}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>
+                    支持占位符: <code>{instruction}</code>, <code>{original}</code>, <code>{above=n}</code>, <code>{below=n}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>, <code>{custom=((blockid 'name'))}</code>
                 </div>
             </div>
             <textarea
@@ -2775,7 +2777,7 @@ export class PromptEditorPanel {
             <div style="margin-bottom: 12px;">
                 <h4 style="margin: 0 0 8px 0; font-size: 15px;">Selection Q&A 模版</h4>
                 <div class="ft__smaller ft__secondary">
-                    支持占位符: <code>{selection}</code>, <code>{question}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>, <code>{above=n}</code>, <code>{below=n}</code>
+                    支持占位符: <code>{selection}</code>, <code>{question}</code>, <code>{above_blocks=n}</code>, <code>{below_blocks=n}</code>, <code>{above=n}</code>, <code>{below=n}</code>, <code>{custom=((blockid 'name'))}</code>
                 </div>
             </div>
             <textarea

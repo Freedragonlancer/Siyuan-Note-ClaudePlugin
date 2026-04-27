@@ -4,6 +4,7 @@
  */
 
 import type { EditResult } from '@/editor/types';
+import type { AIRequestOptions } from '@/ai/types';
 
 /**
  * Inline Edit state machine
@@ -28,6 +29,12 @@ export enum InlineEditState {
 /**
  * Inline edit block data
  */
+export interface QuickThinkingSettings {
+    enabled: boolean;
+    budget?: number;
+    effort?: AIRequestOptions['reasoningEffort'];
+}
+
 export interface InlineEditBlock {
     /** Unique block ID */
     id: string;
@@ -49,6 +56,9 @@ export interface InlineEditBlock {
 
     /** Editing instruction */
     instruction: string;
+
+    /** Per-request thinking/reasoning override from Quick Edit popup */
+    thinkingSettings?: QuickThinkingSettings;
 
     /** Current state */
     state: InlineEditState;

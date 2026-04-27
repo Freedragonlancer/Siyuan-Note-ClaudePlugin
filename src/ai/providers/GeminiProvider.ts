@@ -78,6 +78,9 @@ export class GeminiProvider extends BaseAIProvider {
             return fullResponse;
         }
 
+        const thinkingEnabled = options?.thinkingMode ?? this.thinkingMode;
+        const thinkingBudget = options?.thinkingBudget ?? this.thinkingBudget;
+
         // Non-streaming mode
         try {
             const chat = this.model.startChat({
@@ -87,8 +90,8 @@ export class GeminiProvider extends BaseAIProvider {
                     temperature: this.getEffectiveTemperature(options),
                     stopSequences: options?.stopSequences,
                     // v0.13.0: Thinking mode (Gemini 2.5+ supports thought budgets)
-                    ...(this.thinkingMode && {
-                        thoughtBudget: this.thinkingBudget,  // Budget for reasoning process
+                    ...(thinkingEnabled && {
+                        thoughtBudget: thinkingBudget,  // Budget for reasoning process
                     }),
                 },
             });
@@ -108,6 +111,9 @@ export class GeminiProvider extends BaseAIProvider {
     async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
         this.validateStreamingOptions(options);
 
+        const thinkingEnabled = options?.thinkingMode ?? this.thinkingMode;
+        const thinkingBudget = options?.thinkingBudget ?? this.thinkingBudget;
+
         try {
             const chat = this.model.startChat({
                 history: this.convertMessagesToHistory(messages, options?.systemPrompt),
@@ -116,8 +122,8 @@ export class GeminiProvider extends BaseAIProvider {
                     temperature: this.getEffectiveTemperature(options),
                     stopSequences: options?.stopSequences,
                     // v0.13.0: Thinking mode (Gemini 2.5+ supports thought budgets)
-                    ...(this.thinkingMode && {
-                        thoughtBudget: this.thinkingBudget,  // Budget for reasoning process
+                    ...(thinkingEnabled && {
+                        thoughtBudget: thinkingBudget,  // Budget for reasoning process
                     }),
                 },
             });
@@ -200,21 +206,23 @@ export class GeminiProvider extends BaseAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            // Gemini 3 models (1M context, 64K output) - Released Dec 2025
-            'gemini-3-flash': 65536,             // Max 64K output tokens
-            'gemini-3-pro': 65536,
-            'gemini-3-pro-image': 65536,
+            // Gemini 3 preview models (1M input / 64K output unless noted)
+            'gemini-3.1-pro-preview': 65536,
+            'gemini-3-flash-preview': 65536,
+            'gemini-3-pro-image-preview': 32768,
 
-            // Gemini 2.5 models (1M context, 8K output)
-            'gemini-2.5-pro': 8192,
-            'gemini-2.5-pro-preview': 8192,
-            'gemini-2.5-flash': 8192,
-            'gemini-2.5-flash-lite': 8192,
-            'gemini-2.5-flash-preview': 8192,
+            // Gemini 2.5 stable models (1M input / 64K output)
+            'gemini-2.5-pro': 65536,
+            'gemini-2.5-flash': 65536,
+            'gemini-2.5-flash-lite': 65536,
+            'gemini-2.5-flash-preview-09-2025': 65536,
+            'gemini-2.5-flash-lite-preview-09-2025': 65536,
+            'gemini-2.5-flash-image': 32768,
 
-            // Gemini 2.0 models (1M context, 8K output)
+            // Gemini 2.0 models
             'gemini-2.0-flash': 8192,
             'gemini-2.0-flash-lite': 8192,
+            'gemini-2.0-flash-preview-image-generation': 8192,
         };
 
         // Try exact match first
@@ -235,7 +243,7 @@ export class GeminiProvider extends BaseAIProvider {
     getParameterLimits(): ParameterLimits {
         // Note: this.config might not be set yet if called during construction validation
         // Use safe defaults for max tokens
-        const modelId = this.config?.modelId || 'gemini-1.5-pro';
+        const modelId = this.config?.modelId || 'gemini-3-flash-preview';
         return {
             temperature: { min: 0, max: 2, default: 0.9 },
             maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 8192 },
@@ -247,50 +255,57 @@ export class GeminiProvider extends BaseAIProvider {
         return {
             type: 'gemini',
             displayName: 'Google Gemini',
-            description: 'Gemini 3/2.5/2.0 系列 AI 模型',
+            description: 'Gemini 3 Preview / 2.5 / 2.0 系列 AI 模型',
             icon: '✨',
             apiKeyUrl: 'https://aistudio.google.com/apikey',
             defaultBaseURL: 'https://generativelanguage.googleapis.com',
-            defaultModel: 'gemini-3-flash',
+            defaultModel: 'gemini-3-flash-preview',
             models: [
-                // Gemini 3 系列 - 2025年12月发布，最新一代
+                // Gemini 3 系列 - 官方预览模型
                 {
-                    id: 'gemini-3-flash',
-                    displayName: 'Gemini 3 Flash (推荐，最新默认)',
-                    contextWindow: 1000000,
-                    description: '最新一代，64K输出，SWE-bench 78%',
+                    id: 'gemini-3.1-pro-preview',
+                    displayName: 'Gemini 3.1 Pro Preview (最强推理)',
+                    contextWindow: 1048576,
+                    description: 'Gemini 3.1 Pro预览版，1M输入/64K输出，多模态和智能体任务',
                     recommended: true,
                 },
                 {
-                    id: 'gemini-3-pro',
-                    displayName: 'Gemini 3 Pro (最强推理)',
-                    contextWindow: 1000000,
-                    description: '最强大模型，64K输出，超越GPT-5 Pro',
+                    id: 'gemini-3-flash-preview',
+                    displayName: 'Gemini 3 Flash Preview (推荐默认)',
+                    contextWindow: 1048576,
+                    description: 'Gemini 3 Flash预览版，速度/成本/能力平衡，1M输入/64K输出',
+                    recommended: true,
                 },
                 {
-                    id: 'gemini-3-pro-image',
-                    displayName: 'Gemini 3 Pro Image (图像)',
-                    contextWindow: 1000000,
-                    description: '图像生成和理解',
+                    id: 'gemini-3-pro-image-preview',
+                    displayName: 'Gemini 3 Pro Image Preview (图像生成)',
+                    contextWindow: 65536,
+                    description: 'Nano Banana Pro，图像生成和理解，65K输入/32K输出',
                 },
                 // Gemini 2.5 系列 - 生产就绪
                 {
                     id: 'gemini-2.5-flash',
-                    displayName: 'Gemini 2.5 Flash (性价比)',
-                    contextWindow: 1000000,
-                    description: '2.5 Flash，性价比优秀',
+                    displayName: 'Gemini 2.5 Flash (稳定，性价比)',
+                    contextWindow: 1048576,
+                    description: '稳定版，1M输入/64K输出，适合规模化任务',
                 },
                 {
                     id: 'gemini-2.5-pro',
-                    displayName: 'Gemini 2.5 Pro',
-                    contextWindow: 1000000,
-                    description: '2.5 Pro，代码和函数调用优化',
+                    displayName: 'Gemini 2.5 Pro (稳定推理)',
+                    contextWindow: 1048576,
+                    description: '稳定版复杂推理模型，1M输入/64K输出',
                 },
                 {
                     id: 'gemini-2.5-flash-lite',
-                    displayName: 'Gemini 2.5 Flash Lite (最快)',
-                    contextWindow: 1000000,
-                    description: '最快、最经济的模型',
+                    displayName: 'Gemini 2.5 Flash-Lite (最快稳定)',
+                    contextWindow: 1048576,
+                    description: '稳定版最快最经济模型，1M输入/64K输出',
+                },
+                {
+                    id: 'gemini-2.5-flash-image',
+                    displayName: 'Gemini 2.5 Flash Image (图像)',
+                    contextWindow: 65536,
+                    description: '稳定图像生成模型，65K输入/32K输出',
                 },
                 // Gemini 2.0 系列 - 仍可用
                 {

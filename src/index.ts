@@ -9,7 +9,12 @@ import { ClaudeClient, DEFAULT_SETTINGS } from "./claude";
 import type { ClaudeSettings } from "./claude";
 import { SettingsManager, SettingsPanelV3, ConfigManager, PromptEditorPanel } from "./settings";
 import { UnifiedAIPanel } from "./sidebar/UnifiedAIPanel";
-import { CLAUDE_ICON_SVG } from "./assets/icons";
+import {
+    AI_ASSISTANT_ICON_ID,
+    AI_ASSISTANT_ICON_SVG,
+    AI_ASSISTANT_TITLE,
+    getAiAssistantIconCleanupSelectors,
+} from "./assets/icons";
 import {
     TextSelectionManager,
     AIEditProcessor,
@@ -104,7 +109,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         });
 
         // Register custom icons
-        this.addIcons(CLAUDE_ICON_SVG);
+        this.addIcons(AI_ASSISTANT_ICON_SVG);
         console.log("Custom Claude icon registered");
 
         // Initialize ConfigManager (new configuration system)
@@ -281,7 +286,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
             config: {
                 position: "RightBottom",
                 size: { width: 400, height: 600 },
-                icon: "iconClaudeCode",
+                icon: AI_ASSISTANT_ICON_ID,
                 title: "Claude AI",
                 show: true,  // 尝试默认显示
             },
@@ -354,8 +359,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
         // Add topbar icon - 必须在 onLayoutReady 中调用
         this.topbarElement = this.addTopBar({
-            icon: "iconClaudeCode",
-            title: "Claude AI Assistant",
+            icon: AI_ASSISTANT_ICON_ID,
+            title: AI_ASSISTANT_TITLE,
             position: "right",
             callback: () => {
                 this.toggleDock();
@@ -372,7 +377,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         this.cleanupTopbarIconsSync();
 
         // Verify cleanup succeeded
-        const remainingElements = document.querySelectorAll('[aria-label*="Claude AI Assistant"]');
+        const remainingElements = document.querySelectorAll(`[aria-label*="${AI_ASSISTANT_TITLE}"]`);
         if (remainingElements.length > 0) {
             console.error(`[Plugin] ⚠️ Failed to remove ${remainingElements.length} topbar elements`);
         } else {
@@ -425,13 +430,8 @@ export default class ClaudeAssistantPlugin extends Plugin {
         try {
             console.log("[Plugin] Starting synchronous topbar cleanup...");
 
-            // Strategy: Use multiple selectors to ensure we catch all possible icon locations
-            const selectors = [
-                'svg[data-icon="iconClaudeCode"]',
-                '.toolbar__item:has(svg[data-icon="iconClaudeCode"])',
-                '[aria-label*="Claude AI Assistant"]',
-                '[xlink\\:href="#iconClaudeCode"]'
-            ];
+            // Strategy: derive every cleanup selector from the icon source module.
+            const selectors = getAiAssistantIconCleanupSelectors();
 
             let removedCount = 0;
 

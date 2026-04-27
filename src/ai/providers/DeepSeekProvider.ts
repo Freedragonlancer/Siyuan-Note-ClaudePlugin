@@ -15,14 +15,14 @@ export class DeepSeekProvider extends OpenAIProvider {
         // Override baseURL to DeepSeek endpoint if not provided
         const deepseekConfig = {
             ...config,
-            baseURL: config.baseURL || 'https://api.deepseek.com/v1',
+            baseURL: config.baseURL || 'https://api.deepseek.com',
         };
         super(deepseekConfig);
     }
 
     async sendMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
         // For reasoning models, override temperature to undefined
-        const adjustedOptions = this.isReasoningModel()
+        const adjustedOptions = this.shouldOmitSamplingParams(options)
             ? { ...options, temperature: undefined }
             : options;
 
@@ -31,11 +31,38 @@ export class DeepSeekProvider extends OpenAIProvider {
 
     async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
         // For reasoning models, override temperature to undefined
-        const adjustedOptions = this.isReasoningModel()
+        const adjustedOptions = this.shouldOmitSamplingParams(options)
             ? { ...options, temperature: undefined }
             : options;
 
         return super.streamMessage(messages, adjustedOptions);
+    }
+
+
+    /**
+     * DeepSeek reasoning models reject sampling parameters. Remove them after
+     * OpenAI-compatible params are built so saved global defaults cannot leak in.
+     */
+    protected buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
+        const params = super.buildCompletionParams(messages, options, streaming);
+
+        const thinking = this.resolveThinkingMode(options);
+
+        if (thinking !== undefined) {
+            params.thinking = { type: thinking ? 'enabled' : 'disabled' };
+        }
+
+        if (thinking) {
+            const effort = options?.reasoningEffort || this.config.reasoningEffort || 'high';
+            params.reasoning_effort = effort === 'max' ? 'max' : 'high';
+        }
+
+        if (this.shouldOmitSamplingParams(options)) {
+            delete params.temperature;
+            delete params.top_p;
+        }
+
+        return params;
     }
 
     validateConfig(config: AIModelConfig): true | string {
@@ -58,9 +85,10 @@ export class DeepSeekProvider extends OpenAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            'deepseek-chat': 8192,      // Updated 2025: DeepSeek-V3 supports 8K output
-            'deepseek-coder': 8192,     // Updated 2025: Same as chat model
-            'deepseek-reasoner': 8192,  // DeepSeek-R1 can do 32K but 8K recommended for quality
+            'deepseek-v4-flash': 393216,    // DeepSeek-V4 Flash, 1M context, 384K max output
+            'deepseek-v4-pro': 393216,      // DeepSeek-V4 Pro, 1M context, 384K max output
+            'deepseek-chat': 393216,        // Deprecated 2026-07-24, maps to V4 Flash non-thinking
+            'deepseek-reasoner': 393216,    // Deprecated 2026-07-24, maps to V4 Flash thinking
         };
 
         // Try exact match first
@@ -75,21 +103,22 @@ export class DeepSeekProvider extends OpenAIProvider {
             }
         }
 
-        return 8192; // Updated 2025: Safe default for all models
+        return 8192; // Safe fallback for unknown/relay models
     }
 
     getParameterLimits(): ParameterLimits {
         // Note: this.config might not be set yet if called during construction validation
         // Use safe defaults
-        const modelId = this.config?.modelId || 'deepseek-chat';
-        const isReasoning = modelId.includes('reasoner');
+        const modelId = this.config?.modelId || 'deepseek-v4-flash';
+        const isReasoning = this.resolveThinkingMode();
 
-        // Reasoning model doesn't support temperature/top_p
+        // Thinking mode ignores sampling params, but keep normal UI/validation limits
+        // because the provider removes temperature/top_p before sending requests.
         if (isReasoning) {
             return {
-                temperature: { min: 0, max: 0, default: 0 }, // Disabled for reasoning
+                temperature: { min: 0, max: 2, default: 1 },
                 maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
-                topP: { min: 0, max: 0, default: 0 }, // Disabled for reasoning
+                topP: { min: 0, max: 1, default: 1 },
             };
         }
 
@@ -104,30 +133,38 @@ export class DeepSeekProvider extends OpenAIProvider {
         return {
             type: 'deepseek',
             displayName: 'DeepSeek',
-            description: 'DeepSeek Chat, Coder, Reasoner 模型',
+            description: 'DeepSeek-V4 Flash / Pro 模型，支持 Thinking 开关与 effort',
             icon: '🧠',
             apiKeyUrl: 'https://platform.deepseek.com/api_keys',
-            defaultBaseURL: 'https://api.deepseek.com/v1',
-            defaultModel: 'deepseek-chat',
+            defaultBaseURL: 'https://api.deepseek.com',
+            defaultModel: 'deepseek-v4-flash',
             models: [
                 {
-                    id: 'deepseek-chat',
-                    displayName: 'DeepSeek Chat (推荐)',
-                    contextWindow: 131072,
-                    description: 'DeepSeek对话模型 (128K)',
+                    id: 'deepseek-v4-flash',
+                    displayName: 'DeepSeek V4 Flash (推荐)',
+                    contextWindow: 1000000,
+                    description: 'DeepSeek-V4-Flash，1M上下文，384K输出，支持Thinking开关',
                     recommended: true,
                 },
                 {
-                    id: 'deepseek-coder',
-                    displayName: 'DeepSeek Coder (编程)',
-                    contextWindow: 131072,
-                    description: 'DeepSeek编程专用模型',
+                    id: 'deepseek-v4-pro',
+                    displayName: 'DeepSeek V4 Pro',
+                    contextWindow: 1000000,
+                    description: 'DeepSeek-V4-Pro，1M上下文，384K输出，支持Thinking与high/max effort',
+                },
+                {
+                    id: 'deepseek-chat',
+                    displayName: 'DeepSeek Chat (兼容，将弃用)',
+                    contextWindow: 1000000,
+                    description: '兼容别名：对应deepseek-v4-flash非思考模式，官方计划2026-07-24弃用',
+                    deprecated: true,
                 },
                 {
                     id: 'deepseek-reasoner',
-                    displayName: 'DeepSeek Reasoner (推理)',
-                    contextWindow: 131072,
-                    description: 'DeepSeek推理模型，不支持temperature/top_p',
+                    displayName: 'DeepSeek Reasoner (兼容，将弃用)',
+                    contextWindow: 1000000,
+                    description: '兼容别名：对应deepseek-v4-flash思考模式，官方计划2026-07-24弃用，不支持temperature/top_p',
+                    deprecated: true,
                 },
             ],
             features: {
@@ -150,5 +187,29 @@ export class DeepSeekProvider extends OpenAIProvider {
      */
     private isReasoningModel(): boolean {
         return this.config.modelId.includes('reasoner');
+    }
+
+    private isV4Model(): boolean {
+        return this.config.modelId.startsWith('deepseek-v4');
+    }
+
+    /**
+     * DeepSeek V4 supports explicit thinking toggles. Legacy aliases keep their
+     * fixed behavior: chat = non-thinking, reasoner = thinking.
+     */
+    private resolveThinkingMode(options?: AIRequestOptions): boolean | undefined {
+        if (this.isReasoningModel()) return true;
+        if (this.config.modelId === 'deepseek-chat') return false;
+        if (!this.isV4Model()) return undefined;
+
+        if (options?.thinkingMode !== undefined) {
+            return options.thinkingMode;
+        }
+
+        return this.config.thinkingMode ?? true;
+    }
+
+    private shouldOmitSamplingParams(options?: AIRequestOptions): boolean {
+        return this.resolveThinkingMode(options) === true;
     }
 }

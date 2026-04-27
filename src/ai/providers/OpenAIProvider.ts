@@ -5,8 +5,7 @@
 
 import OpenAI from 'openai';
 import type { ChatCompletionContentPart, ChatCompletionContentPartImage, ChatCompletionContentPartText } from 'openai/resources/chat/completions';
-import type { Message, ContentBlock, ImageContent, TextContent } from '../../claude/types';
-import { extractText } from '../../claude/types';
+import type { Message, ContentBlock } from '../../claude/types';
 import type {
     AIModelConfig,
     AIRequestOptions,
@@ -15,11 +14,22 @@ import type {
 } from '../types';
 import { BaseAIProvider } from '../BaseAIProvider';
 
+type ResponsesContentPart =
+    | { type: 'input_text'; text: string }
+    | { type: 'input_image'; image_url: string; detail?: 'auto' | 'low' | 'high' };
+
+type ResponsesInputMessage = {
+    role: string;
+    content: string | ResponsesContentPart[];
+};
+
 export class OpenAIProvider extends BaseAIProvider {
     readonly providerType = 'openai' as const;
     readonly providerName = 'OpenAI';
 
     private client: OpenAI;
+    private baseURL: string;
+    private apiKey: string;
 
     constructor(config: AIModelConfig) {
         super(config);
@@ -28,9 +38,12 @@ export class OpenAIProvider extends BaseAIProvider {
         console.log(`[OpenAIProvider] Model ID: ${config.modelId}`);
         console.log(`[OpenAIProvider] Base URL: ${config.baseURL || 'https://api.openai.com/v1'}`);
 
+        this.apiKey = config.apiKey;
+        this.baseURL = (config.baseURL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+
         this.client = new OpenAI({
             apiKey: config.apiKey,
-            baseURL: config.baseURL || 'https://api.openai.com/v1',
+            baseURL: this.baseURL,
             timeout: 120000, // 120 seconds
             maxRetries: 2,
             dangerouslyAllowBrowser: true,
@@ -41,7 +54,7 @@ export class OpenAIProvider extends BaseAIProvider {
      * Check if model is GPT-5.x or o-series (uses max_completion_tokens instead of max_tokens)
      * These models also have different temperature handling
      */
-    private isModernReasoningModel(): boolean {
+    protected isModernReasoningModel(): boolean {
         const modelId = this.config.modelId.toLowerCase();
         // GPT-5.x series
         if (modelId.startsWith('gpt-5')) return true;
@@ -50,10 +63,28 @@ export class OpenAIProvider extends BaseAIProvider {
         return false;
     }
 
+
+    /**
+     * Latest GPT-5.4/5.5 models are Responses API-first. Keep older and
+     * OpenAI-compatible custom endpoints on Chat Completions unless needed.
+     */
+    protected usesResponsesApi(): boolean {
+        const mode = this.config.options?.openaiApiMode as 'auto' | 'chat' | 'responses' | undefined;
+        if (mode === 'responses') return true;
+        if (mode === 'chat') return false;
+
+        const modelId = this.config.modelId.toLowerCase();
+        return modelId.startsWith('gpt-5.5') || modelId.startsWith('gpt-5.4');
+    }
+
+    private getResponsesURL(): string {
+        return this.baseURL.endsWith('/responses') ? this.baseURL : `${this.baseURL}/responses`;
+    }
+
     /**
      * Build completion parameters based on model type
      */
-    private buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
+    protected buildCompletionParams(messages: Message[], options?: AIRequestOptions, streaming: boolean = false) {
         const isModernModel = this.isModernReasoningModel();
 
         const baseParams: any = {
@@ -99,6 +130,10 @@ export class OpenAIProvider extends BaseAIProvider {
             return fullResponse;
         }
 
+        if (this.usesResponsesApi()) {
+            return this.sendResponsesMessage(messages, options);
+        }
+
         // Non-streaming mode
         try {
             const completion = await this.client.chat.completions.create(
@@ -106,7 +141,11 @@ export class OpenAIProvider extends BaseAIProvider {
                 { signal: options?.signal }
             );
 
-            return completion.choices[0]?.message?.content || '';
+            const content = completion.choices?.[0]?.message?.content;
+            if (content === undefined || content === null) {
+                throw new Error('Invalid OpenAI response: missing message content');
+            }
+            return content;
         } catch (error) {
             this.handleError(error, 'sendMessage');
         }
@@ -114,6 +153,11 @@ export class OpenAIProvider extends BaseAIProvider {
 
     async streamMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
         this.validateStreamingOptions(options);
+
+        if (this.usesResponsesApi()) {
+            await this.streamResponsesMessage(messages, options);
+            return;
+        }
 
         try {
             const stream = await this.client.chat.completions.create(
@@ -130,6 +174,127 @@ export class OpenAIProvider extends BaseAIProvider {
         } catch (error) {
             this.handleError(error, 'streamMessage');
         }
+    }
+
+    private buildResponsesBody(messages: Message[], options?: AIRequestOptions, streaming: boolean = false): any {
+        const body: any = {
+            model: this.config.modelId,
+            input: this.convertResponsesInput(messages),
+            max_output_tokens: this.getEffectiveMaxTokens(options),
+        };
+
+        if (options?.systemPrompt?.trim()) {
+            body.instructions = options.systemPrompt.trim();
+        }
+
+        if (options?.thinkingMode) {
+            body.reasoning = {
+                effort: options.reasoningEffort || 'medium',
+            };
+        }
+
+        if (streaming) {
+            body.stream = true;
+        }
+
+        if (options?.stopSequences?.length) {
+            body.stop = options.stopSequences;
+        }
+
+        return body;
+    }
+
+    private async sendResponsesMessage(messages: Message[], options?: AIRequestOptions): Promise<string> {
+        try {
+            const response = await fetch(this.getResponsesURL(), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(this.buildResponsesBody(messages, options, false)),
+                signal: options?.signal,
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI Responses API error: ${response.status} ${await response.text()}`);
+            }
+
+            const data = await response.json();
+            return this.extractResponsesText(data);
+        } catch (error) {
+            this.handleError(error, 'sendResponsesMessage');
+        }
+    }
+
+    private async streamResponsesMessage(messages: Message[], options?: AIRequestOptions): Promise<void> {
+        try {
+            const response = await fetch(this.getResponsesURL(), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(this.buildResponsesBody(messages, options, true)),
+                signal: options?.signal,
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI Responses API error: ${response.status} ${await response.text()}`);
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('OpenAI Responses API stream is not readable');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split('\n\n');
+                buffer = events.pop() || '';
+
+                for (const event of events) {
+                    for (const line of event.split('\n')) {
+                        const trimmed = line.trim();
+                        if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') continue;
+
+                        try {
+                            const payload = JSON.parse(trimmed.slice(6));
+                            if (payload.type === 'response.output_text.delta' && payload.delta) {
+                                options?.onStream?.(payload.delta);
+                            }
+                        } catch (parseError) {
+                            console.warn('[OpenAIProvider] Failed to parse Responses SSE payload:', trimmed);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            this.handleError(error, 'streamResponsesMessage');
+        }
+    }
+
+    private extractResponsesText(data: any): string {
+        if (typeof data.output_text === 'string') {
+            return data.output_text;
+        }
+
+        const chunks: string[] = [];
+        for (const item of data.output || []) {
+            for (const part of item.content || []) {
+                if (part.type === 'output_text' && typeof part.text === 'string') {
+                    chunks.push(part.text);
+                }
+            }
+        }
+
+        return chunks.join('');
     }
 
     validateConfig(config: AIModelConfig): true | string {
@@ -165,11 +330,16 @@ export class OpenAIProvider extends BaseAIProvider {
 
     getMaxTokenLimit(model: string): number {
         const limits: Record<string, number> = {
-            // GPT-5 Series (2025-2026)
-            'gpt-5.2': 65536,                 // 64k output, 256k context
-            'gpt-5.1': 65536,                 // 64k output, 256k context
-            'gpt-5': 65536,                   // 64k output, 256k context
-            'gpt-5-mini': 32768,              // 32k output, 128k context
+            // GPT-5 Series (Responses API-first for latest 5.4/5.5)
+            'gpt-5.5': 128000,
+            'gpt-5.4': 128000,
+            'gpt-5.4-mini': 65536,
+            'gpt-5.4-nano': 32768,
+            'gpt-5.2': 65536,
+            'gpt-5.1': 65536,
+            'gpt-5': 65536,
+            'gpt-5-mini': 32768,
+            'gpt-5-nano': 16384,
 
             // GPT-4.1 Series (1M context window)
             'gpt-4.1': 32768,                 // 32k output, 1M context
@@ -203,10 +373,6 @@ export class OpenAIProvider extends BaseAIProvider {
             'gpt-4': 8192,                    // 8k output, 8k context
             'gpt-4-32k': 32768,               // 32k output, 32k context
 
-            // Open-Weight Models
-            'gpt-oss-120b': 32768,            // 32k output
-            'gpt-oss-20b': 16384,             // 16k output
-
             // GPT-3.5 Series
             'gpt-3.5-turbo': 4096,           // 4k output, 16k context
         };
@@ -232,7 +398,7 @@ export class OpenAIProvider extends BaseAIProvider {
         const modelId = this.config?.modelId || 'gpt-4-turbo-preview';
         return {
             temperature: { min: 0, max: 2, default: 1 },
-            maxTokens: { min: 1, max: 100000, default: 4096 },  // Updated 2025: o-series supports 100K, GPT-5.1 supports 64K
+            maxTokens: { min: 1, max: this.getMaxTokenLimit(modelId), default: 4096 },
             topP: { min: 0, max: 1, default: 1 },
         };
     }
@@ -241,45 +407,73 @@ export class OpenAIProvider extends BaseAIProvider {
         return {
             type: 'openai',
             displayName: 'OpenAI',
-            description: 'GPT-5, GPT-4.1, o-series 等 OpenAI 模型',
+            description: 'GPT-5.5/5.4, GPT-4.1, o-series 等 OpenAI 模型',
             icon: '⚡',
             apiKeyUrl: 'https://platform.openai.com/api-keys',
             defaultBaseURL: 'https://api.openai.com/v1',
-            defaultModel: 'gpt-5-mini',
+            defaultModel: 'gpt-5.4-mini',
             models: [
-                // GPT-5 Series (Latest)
+                // GPT-5 Series (latest models use Responses API)
                 {
-                    id: 'gpt-5.2',
-                    displayName: 'GPT-5.2 (最新旗舰)',
-                    contextWindow: 256000,
-                    description: '最新GPT-5.2，最强性能 (2025-12)',
+                    id: 'gpt-5.5',
+                    displayName: 'GPT-5.5 (最新旗舰)',
+                    contextWindow: 512000,
+                    description: '最新旗舰模型，适合复杂推理、编码和智能体任务（Responses API）',
                     recommended: true,
                 },
                 {
-                    id: 'gpt-5-mini',
-                    displayName: 'GPT-5 Mini (推荐)',
-                    contextWindow: 128000,
-                    description: '快速且经济的GPT-5版本',
+                    id: 'gpt-5.4',
+                    displayName: 'GPT-5.4 (旗舰)',
+                    contextWindow: 512000,
+                    description: '旗舰通用模型（Responses API）',
+                },
+                {
+                    id: 'gpt-5.4-mini',
+                    displayName: 'GPT-5.4 Mini (推荐，快速)',
+                    contextWindow: 256000,
+                    description: '推荐默认模型，速度和成本平衡（Responses API）',
                     recommended: true,
+                },
+                {
+                    id: 'gpt-5.4-nano',
+                    displayName: 'GPT-5.4 Nano (最快)',
+                    contextWindow: 128000,
+                    description: '最快、最低成本的GPT-5.4模型（Responses API）',
+                },
+                {
+                    id: 'gpt-5.2',
+                    displayName: 'GPT-5.2 (旧旗舰)',
+                    contextWindow: 256000,
+                    description: '上一代旗舰模型',
+                    deprecated: true,
                 },
                 {
                     id: 'gpt-5.1',
-                    displayName: 'GPT-5.1 (256K上下文)',
+                    displayName: 'GPT-5.1',
                     contextWindow: 256000,
-                    description: 'GPT-5.1 旗舰模型',
+                    description: '上一代GPT-5模型',
+                    deprecated: true,
                 },
                 {
-                    id: 'gpt-5',
-                    displayName: 'GPT-5 (256K上下文)',
-                    contextWindow: 256000,
-                    description: 'GPT-5 基础旗舰',
+                    id: 'gpt-5-mini',
+                    displayName: 'GPT-5 Mini',
+                    contextWindow: 128000,
+                    description: '旧版快速模型',
+                    deprecated: true,
+                },
+                {
+                    id: 'gpt-5-nano',
+                    displayName: 'GPT-5 Nano',
+                    contextWindow: 128000,
+                    description: '旧版经济模型',
+                    deprecated: true,
                 },
                 // GPT-4.1 Series (1M context)
                 {
                     id: 'gpt-4.1',
                     displayName: 'GPT-4.1 (1M上下文，代码优化)',
                     contextWindow: 1000000,
-                    description: '代码优化，超长上下文',
+                    description: '最强非推理模型，超长上下文',
                 },
                 {
                     id: 'gpt-4.1-mini',
@@ -298,7 +492,7 @@ export class OpenAIProvider extends BaseAIProvider {
                     id: 'o3',
                     displayName: 'o3 (推理模型，200K)',
                     contextWindow: 200000,
-                    description: '最新推理模型，数学/科学/代码',
+                    description: '推理模型，已被GPT-5接替',
                 },
                 {
                     id: 'o3-pro',
@@ -310,7 +504,7 @@ export class OpenAIProvider extends BaseAIProvider {
                     id: 'o4-mini',
                     displayName: 'o4-mini (高效推理)',
                     contextWindow: 128000,
-                    description: '高效推理模型',
+                    description: '高效推理，已被GPT-5 Mini接替',
                 },
                 {
                     id: 'o3-mini',
@@ -320,9 +514,9 @@ export class OpenAIProvider extends BaseAIProvider {
                 },
                 {
                     id: 'o1',
-                    displayName: 'o1 (推理模型，200K)',
+                    displayName: 'o1 (推理模型)',
                     contextWindow: 200000,
-                    description: '推理模型，适合复杂问题',
+                    description: '早期推理模型',
                 },
                 // GPT-4o Series
                 {
@@ -330,14 +524,23 @@ export class OpenAIProvider extends BaseAIProvider {
                     displayName: 'GPT-4o (128K上下文)',
                     contextWindow: 128000,
                     description: 'GPT-4o，平衡性能和成本',
+                    deprecated: true,
                 },
                 {
                     id: 'gpt-4o-mini',
                     displayName: 'GPT-4o Mini (快速、经济)',
                     contextWindow: 128000,
                     description: 'Mini版本，快速且经济',
+                    deprecated: true,
                 },
                 // Legacy
+                {
+                    id: 'gpt-4-turbo-preview',
+                    displayName: 'GPT-4 Turbo Preview (128K)',
+                    contextWindow: 128000,
+                    description: 'GPT-4 Turbo预览版，兼容旧配置',
+                    deprecated: true,
+                },
                 {
                     id: 'gpt-4-turbo',
                     displayName: 'GPT-4 Turbo (128K)',
@@ -354,7 +557,7 @@ export class OpenAIProvider extends BaseAIProvider {
                 },
                 {
                     id: 'gpt-3.5-turbo',
-                    displayName: 'GPT-3.5 Turbo (16K，预算选择)',
+                    displayName: 'GPT-3.5 Turbo (16K)',
                     contextWindow: 16384,
                     description: '预算友好型模型',
                     deprecated: true,
@@ -374,6 +577,44 @@ export class OpenAIProvider extends BaseAIProvider {
         };
     }
 
+    private convertResponsesInput(messages: Message[]): ResponsesInputMessage[] {
+        const normalized = this.normalizeMessages(messages);
+        const converted: ResponsesInputMessage[] = [];
+
+        for (const msg of normalized) {
+            if (typeof msg.content !== 'string' && Array.isArray(msg.content)) {
+                converted.push({
+                    role: msg.role,
+                    content: this.convertResponsesContentBlocks(msg.content),
+                });
+            } else {
+                converted.push({
+                    role: msg.role,
+                    content: msg.content as string,
+                });
+            }
+        }
+
+        return converted;
+    }
+
+    private convertResponsesContentBlocks(blocks: ContentBlock[]): ResponsesContentPart[] {
+        const parts: ResponsesContentPart[] = [];
+
+        for (const block of blocks) {
+            if (block.type === 'text') {
+                parts.push({ type: 'input_text', text: block.text });
+            } else if (block.type === 'image') {
+                const imageUrl = block.source.type === 'base64'
+                    ? `data:${block.source.media_type};base64,${block.source.data}`
+                    : block.source.data;
+                parts.push({ type: 'input_image', image_url: imageUrl, detail: 'auto' });
+            }
+        }
+
+        return parts;
+    }
+
     /**
      * Convert messages to OpenAI format
      * OpenAI uses separate system message instead of system prompt in options
@@ -387,13 +628,6 @@ export class OpenAIProvider extends BaseAIProvider {
         const converted: Array<{ role: string; content: string | ChatCompletionContentPart[] }> = [];
 
         // Add system message if provided
-        if (systemPrompt && systemPrompt.trim()) {
-            converted.push({
-                role: 'system',
-                content: systemPrompt.trim(),
-            });
-        }
-
         // Convert user/assistant messages
         for (const msg of normalized) {
             // Check if content is multimodal (ContentBlock array)

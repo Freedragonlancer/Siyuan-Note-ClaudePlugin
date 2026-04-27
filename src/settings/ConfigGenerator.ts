@@ -31,7 +31,7 @@ export class ConfigGenerator {
             temperature: number;
             thinkingMode?: boolean;
             thinkingBudget?: number;
-            reasoningEffort?: 'low' | 'high';
+            reasoningEffort?: 'low' | 'high' | 'max';
         }> = {
             'anthropic': {
                 maxTokens: 4096,
